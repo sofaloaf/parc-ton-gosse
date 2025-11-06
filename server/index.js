@@ -174,6 +174,25 @@ app.use((err, req, res, next) => {
 	res.status(err.status || 500).json({ error: errorMessage });
 });
 
-app.listen(PORT, () => {
-	console.log(`Server listening on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+	console.log(`✅ Server listening on port ${PORT}`);
+	console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
+	console.log(`✅ Data backend: ${process.env.DATA_BACKEND || 'memory'}`);
+});
+
+// Handle uncaught errors gracefully
+process.on('uncaughtException', (error) => {
+	console.error('❌ Uncaught Exception:', error);
+	// Don't exit in production - let Railway handle restarts
+	if (process.env.NODE_ENV !== 'production') {
+		process.exit(1);
+	}
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+	console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+	// Don't exit in production - let Railway handle restarts
+	if (process.env.NODE_ENV !== 'production') {
+		process.exit(1);
+	}
 });

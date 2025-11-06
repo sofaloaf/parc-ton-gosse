@@ -97,40 +97,51 @@ const authLimiter = rateLimit({
 });
 
 // Data store binding on app with error handling
-let dataStore;
-try {
-	const backend = process.env.DATA_BACKEND || 'memory';
-	console.log(`📦 Initializing data store: ${backend}`);
-	
-	dataStore = await createDataStore({
-		backend: backend,
-		airtable: {
-			apiKey: process.env.AIRTABLE_API_KEY,
-			baseId: process.env.AIRTABLE_BASE_ID,
-		},
-		sheets: {
-			serviceAccount: process.env.GS_SERVICE_ACCOUNT,
-			privateKey: process.env.GS_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-			sheetId: process.env.GS_SHEET_ID,
-		}
-	});
-	console.log(`✅ Data store initialized: ${backend}`);
-} catch (error) {
-	console.error('❌ Failed to initialize data store:', error.message);
-	// Fallback to memory backend if sheets/airtable fails
-	if (process.env.DATA_BACKEND !== 'memory') {
-		console.warn('⚠️  Falling back to memory backend');
+// Initialize data store asynchronously - don't block server startup
+let dataStore = null;
+(async () => {
+	try {
+		const backend = process.env.DATA_BACKEND || 'memory';
+		console.log(`📦 Initializing data store: ${backend}`);
+		
 		dataStore = await createDataStore({
-			backend: 'memory',
-			airtable: {},
-			sheets: {}
+			backend: backend,
+			airtable: {
+				apiKey: process.env.AIRTABLE_API_KEY,
+				baseId: process.env.AIRTABLE_BASE_ID,
+			},
+			sheets: {
+				serviceAccount: process.env.GS_SERVICE_ACCOUNT,
+				privateKey: process.env.GS_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+				sheetId: process.env.GS_SHEET_ID,
+			}
 		});
-	} else {
-		// If memory also fails, we have a bigger problem
-		throw error;
+		app.set('dataStore', dataStore);
+		console.log(`✅ Data store initialized: ${backend}`);
+	} catch (error) {
+		console.error('❌ Failed to initialize data store:', error.message);
+		console.error('Stack:', error.stack);
+		// Fallback to memory backend if sheets/airtable fails
+		if (process.env.DATA_BACKEND !== 'memory') {
+			console.warn('⚠️  Falling back to memory backend');
+			try {
+				dataStore = await createDataStore({
+					backend: 'memory',
+					airtable: {},
+					sheets: {}
+				});
+				app.set('dataStore', dataStore);
+				console.log('✅ Fallback to memory backend successful');
+			} catch (fallbackError) {
+				console.error('❌ Fallback to memory backend also failed:', fallbackError.message);
+				// Server will still start, but data operations will fail
+			}
+		} else {
+			console.error('❌ Memory backend failed - this is a critical error');
+			// Server will still start, but data operations will fail
+		}
 	}
-}
-app.set('dataStore', dataStore);
+})();
 
 // Health check - should work even if data store fails
 app.get('/api/health', (req, res) => {

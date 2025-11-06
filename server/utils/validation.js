@@ -9,16 +9,16 @@ export const envSchema = Joi.object({
 		then: Joi.string().min(16).required(), // Reduced from 32 to 16 for flexibility
 		otherwise: Joi.optional()
 	}),
-	CORS_ORIGIN: Joi.string().optional(), // Allow empty initially, will be set after frontend deploy
+	CORS_ORIGIN: Joi.string().optional().allow(''), // Allow empty initially, will be set after frontend deploy
 	DATA_BACKEND: Joi.string().valid('memory', 'airtable', 'sheets').default('memory'),
-	STRIPE_SECRET_KEY: Joi.string().optional(),
-	STRIPE_WEBHOOK_SECRET: Joi.string().optional(),
+	STRIPE_SECRET_KEY: Joi.string().optional().allow(''), // Allow empty - Stripe is optional
+	STRIPE_WEBHOOK_SECRET: Joi.string().optional().allow(''), // Allow empty - Stripe is optional
 	GOOGLE_CLIENT_ID: Joi.string().optional(),
 	GS_SERVICE_ACCOUNT: Joi.string().optional(),
 	GS_PRIVATE_KEY: Joi.string().optional(),
-	GS_SHEET_ID: Joi.string().optional(),
-	AIRTABLE_API_KEY: Joi.string().optional(),
-	AIRTABLE_BASE_ID: Joi.string().optional()
+	GS_SHEET_ID: Joi.string().optional().allow(''),
+	AIRTABLE_API_KEY: Joi.string().optional().allow(''),
+	AIRTABLE_BASE_ID: Joi.string().optional().allow('')
 }).unknown();
 
 // Validate environment variables

@@ -70,10 +70,11 @@ app.use(helmet({
 // CORS configuration - restrict in production
 const allowedOrigins = process.env.CORS_ORIGIN?.split(',').map(o => o.trim()).filter(Boolean) || [];
 if (allowedOrigins.length === 0 && process.env.NODE_ENV === 'production') {
-	console.warn('⚠️  WARNING: CORS_ORIGIN not set in production. Allowing all origins is insecure!');
+	console.warn('⚠️  WARNING: CORS_ORIGIN not set in production. Allowing all origins for now.');
 }
+// Allow all origins in production if CORS_ORIGIN not set (for initial deployment)
 app.use(cors({ 
-	origin: allowedOrigins.length > 0 ? allowedOrigins : (process.env.NODE_ENV === 'production' ? false : '*'), 
+	origin: allowedOrigins.length > 0 ? allowedOrigins : '*', 
 	credentials: true 
 }));
 app.use(cookieParser());

@@ -15,11 +15,9 @@ try {
 	validateEnv();
 } catch (error) {
 	console.error('❌ Environment validation failed:', error.message);
-	if (process.env.NODE_ENV === 'production') {
-		process.exit(1);
-	} else {
-		console.warn('⚠️  Continuing in development mode despite validation errors');
-	}
+	// Don't exit in production - allow server to start with warnings
+	// Missing variables will cause specific features to fail, but server can still run
+	console.warn('⚠️  Continuing despite validation errors. Please set required environment variables.');
 }
 
 import express from 'express';

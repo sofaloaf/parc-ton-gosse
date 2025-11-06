@@ -144,6 +144,16 @@ let dataStore = null;
 	}
 })();
 
+// Root endpoint for Railway health checks
+app.get('/', (req, res) => {
+	res.json({ 
+		message: 'Parc Ton Gosse API',
+		status: 'running',
+		health: '/api/health',
+		timestamp: new Date().toISOString()
+	});
+});
+
 // Health check - should work even if data store fails
 app.get('/api/health', (req, res) => {
 	res.json({ 

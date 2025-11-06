@@ -144,24 +144,35 @@ let dataStore = null;
 	}
 })();
 
-// Root endpoint for Railway health checks
+// Root endpoint for Railway health checks - register BEFORE routes
 app.get('/', (req, res) => {
-	res.json({ 
-		message: 'Parc Ton Gosse API',
-		status: 'running',
-		health: '/api/health',
-		timestamp: new Date().toISOString()
-	});
+	try {
+		res.json({ 
+			message: 'Parc Ton Gosse API',
+			status: 'running',
+			health: '/api/health',
+			timestamp: new Date().toISOString()
+		});
+	} catch (error) {
+		console.error('Error in root endpoint:', error);
+		res.status(500).json({ error: 'Internal server error' });
+	}
 });
 
 // Health check - should work even if data store fails
 app.get('/api/health', (req, res) => {
-	res.json({ 
-		ok: true, 
-		status: 'healthy',
-		timestamp: new Date().toISOString(),
-		dataStore: !!app.get('dataStore')
-	});
+	try {
+		res.json({ 
+			ok: true, 
+			status: 'healthy',
+			timestamp: new Date().toISOString(),
+			dataStore: !!app.get('dataStore'),
+			port: process.env.PORT || 4000
+		});
+	} catch (error) {
+		console.error('Error in health endpoint:', error);
+		res.status(500).json({ error: 'Internal server error' });
+	}
 });
 
 // Routes

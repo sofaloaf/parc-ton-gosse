@@ -238,11 +238,26 @@ app.use((err, req, res, next) => {
 	res.status(err.status || 500).json({ error: errorMessage });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+// Start server
+const server = app.listen(PORT, '0.0.0.0', () => {
 	console.log(`✅ Server listening on port ${PORT}`);
 	console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
 	console.log(`✅ Data backend: ${process.env.DATA_BACKEND || 'memory'}`);
+	console.log(`✅ Health check: http://0.0.0.0:${PORT}/api/health`);
+	console.log(`✅ Root endpoint: http://0.0.0.0:${PORT}/`);
 });
+
+// Handle server errors
+server.on('error', (error) => {
+	console.error('❌ Server error:', error);
+	if (error.code === 'EADDRINUSE') {
+		console.error(`❌ Port ${PORT} is already in use`);
+	}
+});
+
+// Keep server alive for Railway
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
 
 // Handle uncaught errors gracefully
 process.on('uncaughtException', (error) => {

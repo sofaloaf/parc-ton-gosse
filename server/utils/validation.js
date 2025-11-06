@@ -1,0 +1,59 @@
+import Joi from 'joi';
+
+// Environment variable validation schema
+export const envSchema = Joi.object({
+	NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
+	PORT: Joi.number().default(4000),
+	JWT_SECRET: Joi.string().min(32).when('NODE_ENV', {
+		is: 'production',
+		then: Joi.required(),
+		otherwise: Joi.optional()
+	}),
+	CORS_ORIGIN: Joi.string().when('NODE_ENV', {
+		is: 'production',
+		then: Joi.required(),
+		otherwise: Joi.optional()
+	}),
+	DATA_BACKEND: Joi.string().valid('memory', 'airtable', 'sheets').default('memory'),
+	STRIPE_SECRET_KEY: Joi.string().optional(),
+	STRIPE_WEBHOOK_SECRET: Joi.string().optional(),
+	GOOGLE_CLIENT_ID: Joi.string().optional(),
+	GS_SERVICE_ACCOUNT: Joi.string().optional(),
+	GS_PRIVATE_KEY: Joi.string().optional(),
+	GS_SHEET_ID: Joi.string().optional(),
+	AIRTABLE_API_KEY: Joi.string().optional(),
+	AIRTABLE_BASE_ID: Joi.string().optional()
+}).unknown();
+
+// Validate environment variables
+export function validateEnv() {
+	const { error, value } = envSchema.validate(process.env);
+	if (error) {
+		throw new Error(`Environment validation error: ${error.details.map(d => d.message).join(', ')}`);
+	}
+	return value;
+}
+
+// Helper to sanitize error messages for production
+export function sanitizeError(error, isProduction = false) {
+	if (!isProduction) {
+		return error.message || 'An error occurred';
+	}
+	
+	// Generic error messages for production
+	if (error.message?.includes('password') || error.message?.includes('credential')) {
+		return 'Invalid credentials';
+	}
+	if (error.message?.includes('email')) {
+		return 'Invalid email address';
+	}
+	if (error.message?.includes('token') || error.message?.includes('unauthorized')) {
+		return 'Authentication required';
+	}
+	if (error.message?.includes('forbidden')) {
+		return 'Access denied';
+	}
+	
+	return 'An error occurred. Please try again.';
+}
+

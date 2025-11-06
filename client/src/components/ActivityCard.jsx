@@ -1,0 +1,230 @@
+import React from 'react';
+import { Link } from 'react-router-dom';
+
+export default function ActivityCard({ activity, locale }) {
+	const title = activity.title?.[locale] || activity.title?.en || activity.title?.fr;
+	const desc = activity.description?.[locale] || activity.description?.en || activity.description?.fr;
+	const addressStr = activity.addresses || activity.addresse || '';
+	
+	// Parse addresses in new format: "Location: Address - Location: Address"
+	const parseAddresses = (str) => {
+		if (!str) return [];
+		const parts = str.split(' - ').map(p => p.trim().replace(/^\s*-\s*|\s*-\s*$/g, '')).filter(p => p);
+		return parts.map(part => {
+			const colonIndex = part.indexOf(':');
+			if (colonIndex > 0) {
+				const locationName = part.substring(0, colonIndex).trim();
+				const address = part.substring(colonIndex + 1).trim().replace(/^\s*-\s*|\s*-\s*$/g, '');
+				return { location: locationName, address: address };
+			}
+			return { location: '', address: part.replace(/^\s*-\s*|\s*-\s*$/g, '') };
+		});
+	};
+	
+	const addresses = parseAddresses(addressStr);
+	const email = activity.contact__email_ || activity.contactEmail;
+	const phone = activity.contact__t_l_phone_ || activity.contactPhone;
+	const categories = activity.categories || [];
+	const price = activity.price?.amount || activity.price;
+	
+	// ProductHunt-inspired design with blue color scheme
+	return (
+		<Link 
+			to={`/activity/${activity.id}`} 
+			style={{ 
+				textDecoration: 'none', 
+				color: 'inherit',
+				display: 'block'
+			}}
+		>
+			<div style={{ 
+				background: 'white',
+				borderRadius: '12px',
+				border: '1px solid #e0e7f0',
+				padding: '20px',
+				display: 'flex',
+				flexDirection: 'column',
+				gap: '12px',
+				transition: 'all 0.2s ease',
+				boxShadow: '0 1px 3px rgba(59, 130, 246, 0.1)',
+				cursor: 'pointer',
+				height: '100%'
+			}}
+			onMouseEnter={(e) => {
+				e.currentTarget.style.transform = 'translateY(-4px)';
+				e.currentTarget.style.boxShadow = '0 8px 16px rgba(59, 130, 246, 0.15)';
+				e.currentTarget.style.borderColor = '#3b82f6';
+			}}
+			onMouseLeave={(e) => {
+				e.currentTarget.style.transform = 'translateY(0)';
+				e.currentTarget.style.boxShadow = '0 1px 3px rgba(59, 130, 246, 0.1)';
+				e.currentTarget.style.borderColor = '#e0e7f0';
+			}}
+			>
+				{/* Header with upvote-style element */}
+				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+					<div style={{ flex: 1 }}>
+						<h3 style={{ 
+							margin: 0, 
+							fontSize: '18px',
+							fontWeight: 600,
+							color: '#1e293b',
+							lineHeight: '1.4',
+							marginBottom: '8px'
+						}}>
+							{title}
+						</h3>
+						{desc && (
+							<p style={{ 
+								color: '#64748b', 
+								margin: 0, 
+								fontSize: '14px',
+								lineHeight: '1.5',
+								display: '-webkit-box',
+								WebkitLineClamp: 3,
+								WebkitBoxOrient: 'vertical',
+								overflow: 'hidden'
+							}}>
+								{String(desc)}
+							</p>
+						)}
+					</div>
+					{/* Upvote-style indicator */}
+					<div style={{
+						background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+						color: 'white',
+						borderRadius: '8px',
+						width: '40px',
+						height: '40px',
+						display: 'flex',
+						alignItems: 'center',
+						justifyContent: 'center',
+						fontSize: '18px',
+						fontWeight: 600,
+						flexShrink: 0
+					}}>
+						↑
+					</div>
+				</div>
+
+				{/* Categories/Tags */}
+				{categories.length > 0 && (
+					<div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+						{Array.isArray(categories) ? categories.slice(0, 3).map((cat, idx) => (
+							<span key={idx} style={{
+								background: '#eff6ff',
+								color: '#1e40af',
+								padding: '4px 10px',
+								borderRadius: '12px',
+								fontSize: '12px',
+								fontWeight: 500
+							}}>
+								{cat}
+							</span>
+						)) : (
+							<span style={{
+								background: '#eff6ff',
+								color: '#1e40af',
+								padding: '4px 10px',
+								borderRadius: '12px',
+								fontSize: '12px',
+								fontWeight: 500
+							}}>
+								{categories}
+							</span>
+						)}
+					</div>
+				)}
+
+				{/* Address */}
+				{addresses.length > 0 && (
+					<div style={{ color: '#64748b', fontSize: '13px', lineHeight: '1.6' }}>
+						<div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', marginBottom: '4px' }}>
+							<span style={{ color: '#3b82f6' }}>📍</span>
+							<div style={{ flex: 1 }}>
+								{addresses.slice(0, 2).map((addr, idx) => (
+									<div key={idx} style={{ marginBottom: idx < addresses.slice(0, 2).length - 1 ? '6px' : 0 }}>
+										{addr.location && <strong style={{ color: '#1e293b' }}>{addr.location}: </strong>}
+										<span>{addr.address.substring(0, 60)}{addr.address.length > 60 ? '...' : ''}</span>
+									</div>
+								))}
+								{addresses.length > 2 && (
+									<div style={{ color: '#3b82f6', fontSize: '12px', marginTop: '4px' }}>
+										+{addresses.length - 2} more
+									</div>
+								)}
+							</div>
+						</div>
+					</div>
+				)}
+
+				{/* Footer with price and contact */}
+				<div style={{ 
+					marginTop: 'auto',
+					paddingTop: '12px',
+					borderTop: '1px solid #e0e7f0',
+					display: 'flex',
+					justifyContent: 'space-between',
+					alignItems: 'center',
+					flexWrap: 'wrap',
+					gap: '8px'
+				}}>
+					<div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+						{price && (
+							<div style={{ 
+								fontWeight: 600, 
+								color: '#1e40af',
+								fontSize: '16px'
+							}}>
+								{typeof price === 'object' ? `${price.amount}€` : `${price}€`}
+							</div>
+						)}
+						{activity.neighborhood && (
+							<div style={{
+								background: '#f1f5f9',
+								color: '#475569',
+								padding: '2px 8px',
+								borderRadius: '6px',
+								fontSize: '12px'
+							}}>
+								{activity.neighborhood}
+							</div>
+						)}
+					</div>
+					<div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+						{email && (
+							<a 
+								href={`mailto:${email}`} 
+								onClick={(e) => e.stopPropagation()}
+								style={{ 
+									color: '#3b82f6', 
+									fontSize: '20px', 
+									textDecoration: 'none',
+									lineHeight: 1
+								}}
+							>
+								📧
+							</a>
+						)}
+						{phone && (
+							<a 
+								href={`tel:${phone.replace(/[^\d+]/g, '')}`} 
+								onClick={(e) => e.stopPropagation()}
+								style={{ 
+									color: '#3b82f6', 
+									fontSize: '20px', 
+									textDecoration: 'none',
+									lineHeight: 1
+								}}
+							>
+								📞
+							</a>
+						)}
+					</div>
+				</div>
+			</div>
+		</Link>
+	);
+}
+
+

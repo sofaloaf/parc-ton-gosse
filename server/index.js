@@ -44,6 +44,12 @@ import { csrfProtection } from './middleware/csrf.js';
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// Log all incoming requests for debugging
+app.use((req, res, next) => {
+	console.log(`📥 ${req.method} ${req.path}`);
+	next();
+});
+
 // Security headers with CSP
 app.use(helmet({
 	contentSecurityPolicy: {
@@ -146,6 +152,7 @@ let dataStore = null;
 
 // Root endpoint for Railway health checks - register BEFORE routes
 app.get('/', (req, res) => {
+	console.log('📥 Root endpoint hit');
 	try {
 		res.json({ 
 			message: 'Parc Ton Gosse API',
@@ -153,14 +160,16 @@ app.get('/', (req, res) => {
 			health: '/api/health',
 			timestamp: new Date().toISOString()
 		});
+		console.log('✅ Root endpoint responded');
 	} catch (error) {
-		console.error('Error in root endpoint:', error);
+		console.error('❌ Error in root endpoint:', error);
 		res.status(500).json({ error: 'Internal server error' });
 	}
 });
 
 // Health check - should work even if data store fails
 app.get('/api/health', (req, res) => {
+	console.log('📥 Health endpoint hit');
 	try {
 		res.json({ 
 			ok: true, 
@@ -169,8 +178,9 @@ app.get('/api/health', (req, res) => {
 			dataStore: !!app.get('dataStore'),
 			port: process.env.PORT || 4000
 		});
+		console.log('✅ Health endpoint responded');
 	} catch (error) {
-		console.error('Error in health endpoint:', error);
+		console.error('❌ Error in health endpoint:', error);
 		res.status(500).json({ error: 'Internal server error' });
 	}
 });

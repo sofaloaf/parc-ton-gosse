@@ -1,0 +1,25 @@
+node_modules
+.env
+.DS_Store
+dist
+build
+*.log
+
+# Google Cloud credentials - NEVER commit these!
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!railway.json
+!vercel.json
+*-credentials.json
+*-key.json
+service-account*.json
+parc-ton-gosse*.json
+*-b0cae53f*.json
+
+# Environment files
+.env.local
+.env.production
+.env.development
+

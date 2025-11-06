@@ -96,19 +96,40 @@ const authLimiter = rateLimit({
 	legacyHeaders: false,
 });
 
-// Data store binding on app
-const dataStore = await createDataStore({
-	backend: process.env.DATA_BACKEND || 'memory',
-	airtable: {
-		apiKey: process.env.AIRTABLE_API_KEY,
-		baseId: process.env.AIRTABLE_BASE_ID,
-	},
-	sheets: {
-		serviceAccount: process.env.GS_SERVICE_ACCOUNT,
-		privateKey: process.env.GS_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-		sheetId: process.env.GS_SHEET_ID,
+// Data store binding on app with error handling
+let dataStore;
+try {
+	const backend = process.env.DATA_BACKEND || 'memory';
+	console.log(`📦 Initializing data store: ${backend}`);
+	
+	dataStore = await createDataStore({
+		backend: backend,
+		airtable: {
+			apiKey: process.env.AIRTABLE_API_KEY,
+			baseId: process.env.AIRTABLE_BASE_ID,
+		},
+		sheets: {
+			serviceAccount: process.env.GS_SERVICE_ACCOUNT,
+			privateKey: process.env.GS_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+			sheetId: process.env.GS_SHEET_ID,
+		}
+	});
+	console.log(`✅ Data store initialized: ${backend}`);
+} catch (error) {
+	console.error('❌ Failed to initialize data store:', error.message);
+	// Fallback to memory backend if sheets/airtable fails
+	if (process.env.DATA_BACKEND !== 'memory') {
+		console.warn('⚠️  Falling back to memory backend');
+		dataStore = await createDataStore({
+			backend: 'memory',
+			airtable: {},
+			sheets: {}
+		});
+	} else {
+		// If memory also fails, we have a bigger problem
+		throw error;
 	}
-});
+}
 app.set('dataStore', dataStore);
 
 // Health

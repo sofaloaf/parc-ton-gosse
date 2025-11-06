@@ -132,8 +132,15 @@ try {
 }
 app.set('dataStore', dataStore);
 
-// Health
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+// Health check - should work even if data store fails
+app.get('/api/health', (req, res) => {
+	res.json({ 
+		ok: true, 
+		status: 'healthy',
+		timestamp: new Date().toISOString(),
+		dataStore: !!app.get('dataStore')
+	});
+});
 
 // Routes
 app.use('/api/auth/login', authLimiter);
@@ -154,6 +161,9 @@ app.use('/api/preorders', preordersRouter);
 // Get current user with trial status
 app.get('/api/me', requireAuth(), async (req, res) => {
 	const store = req.app.get('dataStore');
+	if (!store) {
+		return res.status(503).json({ error: 'Data store not initialized' });
+	}
 	const user = await store.users.get(req.user.id);
 	if (!user) return res.status(404).json({ error: 'User not found' });
 	

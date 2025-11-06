@@ -195,3 +195,4 @@ Open `http://localhost:5173`.
 - Payments use Stripe Payment Intents; integrate Stripe Elements on the client to capture payment details.
 - Email/SMS are stubbed; integrate SendGrid/Twilio or SMTP.
 # parc-ton-gosse
+# parc-ton-gosse

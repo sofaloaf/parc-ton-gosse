@@ -194,3 +194,4 @@ Open `http://localhost:5173`.
 - Passwords are stored in-memory in plain text for demo. Replace with hashing + real DB for production.
 - Payments use Stripe Payment Intents; integrate Stripe Elements on the client to capture payment details.
 - Email/SMS are stubbed; integrate SendGrid/Twilio or SMTP.
+# parc-ton-gosse

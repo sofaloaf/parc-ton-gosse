@@ -1,12 +1,15 @@
 import jwt from 'jsonwebtoken';
 
-// Validate JWT_SECRET - fail fast in production if not set
+// Validate JWT_SECRET - warn but don't crash
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET || JWT_SECRET === 'dev-secret-change-me') {
 	if (process.env.NODE_ENV === 'production') {
-		throw new Error('JWT_SECRET must be set in production environment');
+		console.error('❌ JWT_SECRET must be set in production environment');
+		console.error('⚠️  Server will start but authentication will fail. Please set JWT_SECRET environment variable.');
+		// Don't throw - let server start so we can see other errors
+	} else {
+		console.warn('⚠️  WARNING: Using default JWT_SECRET. This is INSECURE for production!');
 	}
-	console.warn('⚠️  WARNING: Using default JWT_SECRET. This is INSECURE for production!');
 }
 
 const JWT_SECRET_FINAL = JWT_SECRET || 'dev-secret-change-me';

@@ -476,7 +476,11 @@ async function ensureSheet(sheets, sheetId, sheetName, sheetType) {
 
 export async function createSheetsStore({ serviceAccount, privateKey, sheetId }) {
 	if (!serviceAccount || !privateKey || !sheetId) {
-		throw new Error('Google Sheets credentials required: GS_SERVICE_ACCOUNT, GS_PRIVATE_KEY, GS_SHEET_ID');
+		const missing = [];
+		if (!serviceAccount) missing.push('GS_SERVICE_ACCOUNT');
+		if (!privateKey) missing.push('GS_PRIVATE_KEY');
+		if (!sheetId) missing.push('GS_SHEET_ID');
+		throw new Error(`Google Sheets credentials required but missing: ${missing.join(', ')}. Set DATA_BACKEND=memory to use memory backend instead.`);
 	}
 
 	const auth = getAuthClient(serviceAccount, privateKey);

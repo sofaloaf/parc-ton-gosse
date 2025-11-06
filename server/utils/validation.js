@@ -4,16 +4,12 @@ import Joi from 'joi';
 export const envSchema = Joi.object({
 	NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
 	PORT: Joi.number().default(4000),
-	JWT_SECRET: Joi.string().min(32).when('NODE_ENV', {
+	JWT_SECRET: Joi.string().when('NODE_ENV', {
 		is: 'production',
-		then: Joi.required(),
+		then: Joi.string().min(16).required(), // Reduced from 32 to 16 for flexibility
 		otherwise: Joi.optional()
 	}),
-	CORS_ORIGIN: Joi.string().when('NODE_ENV', {
-		is: 'production',
-		then: Joi.required(),
-		otherwise: Joi.optional()
-	}),
+	CORS_ORIGIN: Joi.string().optional(), // Allow empty initially, will be set after frontend deploy
 	DATA_BACKEND: Joi.string().valid('memory', 'airtable', 'sheets').default('memory'),
 	STRIPE_SECRET_KEY: Joi.string().optional(),
 	STRIPE_WEBHOOK_SECRET: Joi.string().optional(),

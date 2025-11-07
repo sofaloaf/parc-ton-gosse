@@ -2,22 +2,28 @@ const isBrowser = typeof window !== 'undefined';
 const envBaseUrlRaw = import.meta.env.VITE_API_URL;
 const envBaseUrl = typeof envBaseUrlRaw === 'string' ? envBaseUrlRaw.trim() : '';
 
-const BASE_URL = (() => {
-	if (envBaseUrl) {
-		return envBaseUrl;
+let cachedBaseUrl = envBaseUrl || null;
+
+function resolveBaseUrl() {
+	if (cachedBaseUrl) {
+		return cachedBaseUrl;
 	}
+
 	if (!isBrowser) {
 		return 'http://localhost:4000/api';
 	}
-	const hostname = window.location.hostname;
-	if (hostname === 'localhost' || hostname === '127.0.0.1') {
-		return 'http://localhost:4000/api';
-	}
-	return 'https://parc-ton-gosse-production.up.railway.app/api';
-})();
+
+	const { hostname } = window.location;
+	const computed = (hostname === 'localhost' || hostname === '127.0.0.1')
+		? 'http://localhost:4000/api'
+		: 'https://parc-ton-gosse-production.up.railway.app/api';
+
+	cachedBaseUrl = computed;
+	return cachedBaseUrl;
+}
 
 if (isBrowser && !envBaseUrl) {
-	console.warn('[api] VITE_API_URL not set, falling back to', BASE_URL);
+	console.warn('[api] VITE_API_URL not set, falling back to', resolveBaseUrl());
 }
 
 if (isBrowser && !envBaseUrl) {
@@ -46,7 +52,8 @@ function getCsrfToken() {
 export async function api(path, { method = 'GET', body, headers } = {}) {
 	// Include credentials to send cookies (httpOnly cookies)
 	const csrfToken = getCsrfToken();
-	const res = await fetch(`${BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`, {
+	const baseUrl = resolveBaseUrl();
+	const res = await fetch(`${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`, {
 		method,
 		credentials: 'include', // Include cookies in request
 		headers: {

@@ -1,8 +1,8 @@
 const isBrowser = typeof window !== 'undefined';
-const envBaseUrlRaw = import.meta.env.VITE_API_URL;
-const envBaseUrl = typeof envBaseUrlRaw === 'string' ? envBaseUrlRaw.trim() : '';
+const LOCAL_API_URL = 'http://localhost:4000/api';
+const PRODUCTION_API_URL = 'https://parc-ton-gosse-production.up.railway.app/api';
 
-let cachedBaseUrl = envBaseUrl || null;
+let cachedBaseUrl = null;
 
 function resolveBaseUrl() {
 	if (cachedBaseUrl) {
@@ -10,20 +10,30 @@ function resolveBaseUrl() {
 	}
 
 	if (!isBrowser) {
-		return 'http://localhost:4000/api';
+		cachedBaseUrl = LOCAL_API_URL;
+		return cachedBaseUrl;
 	}
 
-	const { hostname } = window.location;
-	const computed = (hostname === 'localhost' || hostname === '127.0.0.1')
-		? 'http://localhost:4000/api'
-		: 'https://parc-ton-gosse-production.up.railway.app/api';
+	const { hostname, origin } = window.location;
+	const globalOverride = typeof window.__PTG_API_URL__ === 'string' ? window.__PTG_API_URL__.trim() : '';
 
-	cachedBaseUrl = computed;
+	if (globalOverride) {
+		cachedBaseUrl = globalOverride;
+		return cachedBaseUrl;
+	}
+
+	if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
+		cachedBaseUrl = LOCAL_API_URL;
+		return cachedBaseUrl;
+	}
+
+	if (hostname.includes('victorious-gentleness')) {
+		cachedBaseUrl = PRODUCTION_API_URL;
+		return cachedBaseUrl;
+	}
+
+	cachedBaseUrl = `${origin.replace(/\/$/, '')}/api`;
 	return cachedBaseUrl;
-}
-
-if (isBrowser && !envBaseUrl) {
-	console.warn('[api] VITE_API_URL not set, falling back to', resolveBaseUrl());
 }
 
 if (isBrowser && !envBaseUrl) {

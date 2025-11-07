@@ -6,7 +6,8 @@ import { api } from '../shared/api.js';
 import { useI18n } from '../shared/i18n.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
+const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 
 // Payment form component
 function PreorderForm({ amount, originalAmount, discountApplied, onSuccess }) {
@@ -199,6 +200,7 @@ export default function Preorder() {
 	const [originalAmount, setOriginalAmount] = useState(4.99);
 	const [discountApplied, setDiscountApplied] = useState(false);
 	const [loading, setLoading] = useState(true);
+	const paymentsEnabled = Boolean(stripePromise);
 
 	useEffect(() => {
 		// Check if user is logged in (cookies are sent automatically)
@@ -320,14 +322,30 @@ export default function Preorder() {
 					border: '1px solid #e0e7f0',
 					boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
 				}}>
-					<Elements stripe={stripePromise}>
-						<PreorderForm
-							amount={amount}
-							originalAmount={originalAmount}
-							discountApplied={discountApplied}
-							onSuccess={handlePaymentSuccess}
-						/>
-					</Elements>
+					{paymentsEnabled ? (
+						<Elements stripe={stripePromise}>
+							<PreorderForm
+								amount={amount}
+								originalAmount={originalAmount}
+								discountApplied={discountApplied}
+								onSuccess={handlePaymentSuccess}
+							/>
+						</Elements>
+					) : (
+						<div style={{ display: 'grid', gap: 12, color: '#475569', fontSize: 16 }}>
+							<strong>{locale === 'fr' ? 'Paiements bientôt disponibles' : 'Payments coming soon'}</strong>
+							<span>
+								{locale === 'fr'
+									? 'La fonctionnalité de paiement est temporairement désactivée pendant la phase de test.'
+									: 'The payment feature is temporarily disabled while we finish testing.'}
+							</span>
+							<span>
+								{locale === 'fr'
+									? 'Revenez bientôt pour précommander avec votre carte bancaire.'
+									: 'Check back soon to preorder with your credit card.'}
+							</span>
+						</div>
+					)}
 				</div>
 			</div>
 		</div>

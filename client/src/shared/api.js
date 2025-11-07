@@ -1,4 +1,18 @@
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+const isBrowser = typeof window !== 'undefined';
+const defaultBaseUrl = (() => {
+	if (!isBrowser) return 'http://localhost:4000/api';
+	const hostname = window.location.hostname;
+	if (hostname === 'localhost' || hostname === '127.0.0.1') {
+		return 'http://localhost:4000/api';
+	}
+	return 'https://parc-ton-gosse-production.up.railway.app/api';
+})();
+
+const BASE_URL = import.meta.env.VITE_API_URL || defaultBaseUrl;
+
+if (isBrowser && !import.meta.env.VITE_API_URL) {
+	console.warn('[api] VITE_API_URL not set, falling back to', BASE_URL);
+}
 
 // CSRF token helper (double-submit cookie pattern)
 function getCsrfToken() {

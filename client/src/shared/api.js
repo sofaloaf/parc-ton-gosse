@@ -1,4 +1,6 @@
 const isBrowser = typeof window !== 'undefined';
+const envBaseUrl = (import.meta.env.VITE_API_URL || '').trim();
+
 const defaultBaseUrl = (() => {
 	if (!isBrowser) return 'http://localhost:4000/api';
 	const hostname = window.location.hostname;
@@ -8,9 +10,9 @@ const defaultBaseUrl = (() => {
 	return 'https://parc-ton-gosse-production.up.railway.app/api';
 })();
 
-const BASE_URL = import.meta.env.VITE_API_URL || defaultBaseUrl;
+const BASE_URL = envBaseUrl || defaultBaseUrl;
 
-if (isBrowser && !import.meta.env.VITE_API_URL) {
+if (isBrowser && !envBaseUrl) {
 	console.warn('[api] VITE_API_URL not set, falling back to', BASE_URL);
 }
 

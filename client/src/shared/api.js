@@ -36,10 +36,6 @@ function resolveBaseUrl() {
 	return cachedBaseUrl;
 }
 
-if (isBrowser && !envBaseUrl) {
-	console.warn('[api] VITE_API_URL not set, falling back to', BASE_URL);
-}
-
 // CSRF token helper (double-submit cookie pattern)
 function getCsrfToken() {
 	// Get CSRF token from cookie (set by server)

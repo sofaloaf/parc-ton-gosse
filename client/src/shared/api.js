@@ -12,6 +12,11 @@ const defaultBaseUrl = (() => {
 
 const BASE_URL = envBaseUrl || defaultBaseUrl;
 
+// Log the resolved base URL once in development to make debugging easier
+if (import.meta.env.DEV) {
+	console.info('[api] Using base URL:', BASE_URL);
+}
+
 if (isBrowser && !envBaseUrl) {
 	console.warn('[api] VITE_API_URL not set, falling back to', BASE_URL);
 }

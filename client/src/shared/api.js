@@ -1,12 +1,24 @@
 const isBrowser = typeof window !== 'undefined';
+const envBaseUrlRaw = import.meta.env.VITE_API_URL;
+const envBaseUrl = typeof envBaseUrlRaw === 'string' ? envBaseUrlRaw.trim() : '';
+
 const BASE_URL = (() => {
-	if (!isBrowser) return 'http://localhost:4000/api';
+	if (envBaseUrl) {
+		return envBaseUrl;
+	}
+	if (!isBrowser) {
+		return 'http://localhost:4000/api';
+	}
 	const hostname = window.location.hostname;
 	if (hostname === 'localhost' || hostname === '127.0.0.1') {
 		return 'http://localhost:4000/api';
 	}
 	return 'https://parc-ton-gosse-production.up.railway.app/api';
 })();
+
+if (isBrowser && !envBaseUrl) {
+	console.warn('[api] VITE_API_URL not set, falling back to', BASE_URL);
+}
 
 if (isBrowser && !envBaseUrl) {
 	console.warn('[api] VITE_API_URL not set, falling back to', BASE_URL);

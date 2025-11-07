@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node start.js",
+    "start": "node index.js",
     "dev": "node start.js",
     "start:server": "cd server && npm run dev",
     "start:client": "cd client && npm run dev",

@@ -1,6 +1,6 @@
 const isBrowser = typeof window !== 'undefined';
 const LOCAL_API_URL = 'http://localhost:4000/api';
-const PRODUCTION_API_URL = 'https://parc-ton-gosse-production.up.railway.app/api';
+const PRODUCTION_API_URL = 'https://parc-ton-gosse-backend.up.railway.app/api';
 
 let cachedBaseUrl = null;
 
@@ -15,23 +15,34 @@ function resolveBaseUrl() {
 	}
 
 	const { hostname, origin } = window.location;
-	const globalOverride = typeof window.__PTG_API_URL__ === 'string' ? window.__PTG_API_URL__.trim() : '';
+	
+	// Check for VITE_API_URL environment variable first (set at build time)
+	const envApiUrl = import.meta.env.VITE_API_URL;
+	if (envApiUrl && typeof envApiUrl === 'string' && envApiUrl.trim()) {
+		cachedBaseUrl = envApiUrl.trim().replace(/\/$/, '') + (envApiUrl.endsWith('/api') ? '' : '/api');
+		return cachedBaseUrl;
+	}
 
+	// Check for runtime override
+	const globalOverride = typeof window.__PTG_API_URL__ === 'string' ? window.__PTG_API_URL__.trim() : '';
 	if (globalOverride) {
 		cachedBaseUrl = globalOverride;
 		return cachedBaseUrl;
 	}
 
+	// Localhost detection
 	if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
 		cachedBaseUrl = LOCAL_API_URL;
 		return cachedBaseUrl;
 	}
 
-	if (hostname.includes('victorious-gentleness')) {
+	// Production Railway frontend - use new backend URL
+	if (hostname.includes('victorious-gentleness') || hostname.includes('railway')) {
 		cachedBaseUrl = PRODUCTION_API_URL;
 		return cachedBaseUrl;
 	}
 
+	// Fallback: assume API is at /api on same origin
 	cachedBaseUrl = `${origin.replace(/\/$/, '')}/api`;
 	return cachedBaseUrl;
 }

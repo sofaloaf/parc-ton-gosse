@@ -1,6 +1,6 @@
 const isBrowser = typeof window !== 'undefined';
 const LOCAL_API_URL = 'http://localhost:4000/api';
-const PRODUCTION_API_URL = 'https://parc-ton-gosse-backend.up.railway.app/api';
+const PRODUCTION_API_URL = 'https://parc-ton-gosse-backend-production.up.railway.app/api';
 
 let cachedBaseUrl = null;
 

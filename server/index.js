@@ -143,6 +143,43 @@ let dataStore = null;
 	try {
 		const backend = process.env.DATA_BACKEND || 'memory';
 		console.log(`📦 Initializing data store: ${backend}`);
+		console.log('🔍 DEBUG: About to check environment variables...');
+		console.log('🔍 DEBUG: All env vars starting with GS_:', Object.keys(process.env).filter(k => k.startsWith('GS_')).join(', '));
+		
+		// Process private key BEFORE passing to createDataStore
+		let processedPrivateKey = null;
+		console.log('🔍 Checking for private key...');
+		console.log('GS_PRIVATE_KEY_BASE64 exists:', !!process.env.GS_PRIVATE_KEY_BASE64);
+		console.log('GS_PRIVATE_KEY_BASE64 length:', process.env.GS_PRIVATE_KEY_BASE64?.length || 0);
+		console.log('GS_PRIVATE_KEY exists:', !!process.env.GS_PRIVATE_KEY);
+		console.log('GS_PRIVATE_KEY length:', process.env.GS_PRIVATE_KEY?.length || 0);
+		
+		if (process.env.GS_PRIVATE_KEY_BASE64) {
+			console.log('✅ Using GS_PRIVATE_KEY_BASE64 (base64-encoded)');
+			try {
+				const decoded = Buffer.from(process.env.GS_PRIVATE_KEY_BASE64, 'base64').toString('utf-8');
+				console.log('✅ Base64 key decoded successfully');
+				console.log('Decoded key length:', decoded.length);
+				console.log('Key preview (first 50 chars):', decoded.substring(0, 50));
+				console.log('Key has newlines:', decoded.includes('\n'));
+				if (!decoded.includes('BEGIN PRIVATE KEY')) {
+					console.error('❌ Decoded key does not contain BEGIN PRIVATE KEY marker');
+					throw new Error('Decoded base64 key is not a valid private key');
+				}
+				processedPrivateKey = decoded;
+			} catch (error) {
+				console.error('❌ Failed to decode GS_PRIVATE_KEY_BASE64:', error.message);
+				throw new Error('GS_PRIVATE_KEY_BASE64 is invalid base64: ' + error.message);
+			}
+		} else if (process.env.GS_PRIVATE_KEY) {
+			console.log('⚠️  Using GS_PRIVATE_KEY (not base64-encoded)');
+			processedPrivateKey = process.env.GS_PRIVATE_KEY;
+		} else {
+			console.error('❌ Neither GS_PRIVATE_KEY_BASE64 nor GS_PRIVATE_KEY is set');
+			throw new Error('Neither GS_PRIVATE_KEY_BASE64 nor GS_PRIVATE_KEY is set');
+		}
+		
+		console.log('✅ Private key processed, length:', processedPrivateKey?.length || 0);
 		
 		dataStore = await createDataStore({
 			backend: backend,
@@ -152,13 +189,7 @@ let dataStore = null;
 			},
 			sheets: {
 				serviceAccount: process.env.GS_SERVICE_ACCOUNT,
-				// Support both regular key and base64-encoded key
-				privateKey: (() => {
-					console.log('🔍 Checking for private key...');
-					console.log('GS_PRIVATE_KEY_BASE64 exists:', !!process.env.GS_PRIVATE_KEY_BASE64);
-					console.log('GS_PRIVATE_KEY_BASE64 length:', process.env.GS_PRIVATE_KEY_BASE64?.length || 0);
-					console.log('GS_PRIVATE_KEY exists:', !!process.env.GS_PRIVATE_KEY);
-					console.log('GS_PRIVATE_KEY length:', process.env.GS_PRIVATE_KEY?.length || 0);
+				privateKey: processedPrivateKey,
 					
 					if (process.env.GS_PRIVATE_KEY_BASE64) {
 						console.log('✅ Using GS_PRIVATE_KEY_BASE64 (base64-encoded)');

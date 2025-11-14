@@ -42,6 +42,8 @@ import { requireAuth } from './middleware/auth.js';
 import { csrfProtection } from './middleware/csrf.js';
 
 const app = express();
+// Trust proxy for Railway (needed for rate limiting and correct IP detection)
+app.set('trust proxy', true);
 const PORT = process.env.PORT || 4000;
 
 // Log all incoming requests for debugging
@@ -74,14 +76,45 @@ app.use(helmet({
 }));
 
 // CORS configuration - restrict in production
-const allowedOrigins = process.env.CORS_ORIGIN?.split(',').map(o => o.trim()).filter(Boolean) || [];
+const corsOriginRaw = process.env.CORS_ORIGIN || '';
+const allowedOrigins = corsOriginRaw
+	.split(',')
+	.map(o => o.trim())
+	.filter(o => o.length > 0)
+	.map(o => o.replace(/\/$/, '')); // Remove trailing slashes
+
 if (allowedOrigins.length === 0 && process.env.NODE_ENV === 'production') {
 	console.warn('⚠️  WARNING: CORS_ORIGIN not set in production. Allowing all origins for now.');
+} else {
+	console.log(`✅ CORS configured for origins: ${allowedOrigins.join(', ')}`);
 }
-// Allow all origins in production if CORS_ORIGIN not set (for initial deployment)
+
+// CORS middleware with detailed logging
 app.use(cors({ 
-	origin: allowedOrigins.length > 0 ? allowedOrigins : '*', 
-	credentials: true 
+	origin: function (origin, callback) {
+		// Allow requests with no origin (like mobile apps or curl requests)
+		if (!origin) {
+			return callback(null, true);
+		}
+		
+		// In production, check against allowed origins
+		if (allowedOrigins.length > 0) {
+			if (allowedOrigins.includes(origin)) {
+				console.log(`✅ CORS allowed for origin: ${origin}`);
+				return callback(null, true);
+			} else {
+				console.warn(`❌ CORS blocked for origin: ${origin} (not in allowed list)`);
+				return callback(new Error('Not allowed by CORS'));
+			}
+		}
+		
+		// Allow all origins if CORS_ORIGIN not set (development or initial deployment)
+		return callback(null, true);
+	},
+	credentials: true,
+	methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+	allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+	exposedHeaders: ['X-CSRF-Token']
 }));
 app.use(cookieParser());
 app.use(express.json({ limit: '5mb' }));
@@ -119,7 +152,39 @@ let dataStore = null;
 			},
 			sheets: {
 				serviceAccount: process.env.GS_SERVICE_ACCOUNT,
-				privateKey: process.env.GS_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+				// Support both regular key and base64-encoded key
+				privateKey: (() => {
+					console.log('🔍 Checking for private key...');
+					console.log('GS_PRIVATE_KEY_BASE64 exists:', !!process.env.GS_PRIVATE_KEY_BASE64);
+					console.log('GS_PRIVATE_KEY_BASE64 length:', process.env.GS_PRIVATE_KEY_BASE64?.length || 0);
+					console.log('GS_PRIVATE_KEY exists:', !!process.env.GS_PRIVATE_KEY);
+					console.log('GS_PRIVATE_KEY length:', process.env.GS_PRIVATE_KEY?.length || 0);
+					
+					if (process.env.GS_PRIVATE_KEY_BASE64) {
+						console.log('✅ Using GS_PRIVATE_KEY_BASE64 (base64-encoded)');
+						try {
+							const decoded = Buffer.from(process.env.GS_PRIVATE_KEY_BASE64, 'base64').toString('utf-8');
+							console.log('✅ Base64 key decoded successfully');
+							console.log('Decoded key length:', decoded.length);
+							console.log('Key preview (first 50 chars):', decoded.substring(0, 50));
+							console.log('Key has newlines:', decoded.includes('\n'));
+							if (!decoded.includes('BEGIN PRIVATE KEY')) {
+								console.error('❌ Decoded key does not contain BEGIN PRIVATE KEY marker');
+								throw new Error('Decoded base64 key is not a valid private key');
+							}
+							return decoded;
+						} catch (error) {
+							console.error('❌ Failed to decode GS_PRIVATE_KEY_BASE64:', error.message);
+							throw new Error('GS_PRIVATE_KEY_BASE64 is invalid base64: ' + error.message);
+						}
+					} else if (process.env.GS_PRIVATE_KEY) {
+						console.log('⚠️  Using GS_PRIVATE_KEY (not base64-encoded)');
+						return process.env.GS_PRIVATE_KEY;
+					} else {
+						console.error('❌ Neither GS_PRIVATE_KEY_BASE64 nor GS_PRIVATE_KEY is set');
+						throw new Error('Neither GS_PRIVATE_KEY_BASE64 nor GS_PRIVATE_KEY is set');
+					}
+				})(),
 				sheetId: process.env.GS_SHEET_ID,
 			}
 		});

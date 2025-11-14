@@ -190,32 +190,6 @@ let dataStore = null;
 			sheets: {
 				serviceAccount: process.env.GS_SERVICE_ACCOUNT,
 				privateKey: processedPrivateKey,
-					
-					if (process.env.GS_PRIVATE_KEY_BASE64) {
-						console.log('✅ Using GS_PRIVATE_KEY_BASE64 (base64-encoded)');
-						try {
-							const decoded = Buffer.from(process.env.GS_PRIVATE_KEY_BASE64, 'base64').toString('utf-8');
-							console.log('✅ Base64 key decoded successfully');
-							console.log('Decoded key length:', decoded.length);
-							console.log('Key preview (first 50 chars):', decoded.substring(0, 50));
-							console.log('Key has newlines:', decoded.includes('\n'));
-							if (!decoded.includes('BEGIN PRIVATE KEY')) {
-								console.error('❌ Decoded key does not contain BEGIN PRIVATE KEY marker');
-								throw new Error('Decoded base64 key is not a valid private key');
-							}
-							return decoded;
-						} catch (error) {
-							console.error('❌ Failed to decode GS_PRIVATE_KEY_BASE64:', error.message);
-							throw new Error('GS_PRIVATE_KEY_BASE64 is invalid base64: ' + error.message);
-						}
-					} else if (process.env.GS_PRIVATE_KEY) {
-						console.log('⚠️  Using GS_PRIVATE_KEY (not base64-encoded)');
-						return process.env.GS_PRIVATE_KEY;
-					} else {
-						console.error('❌ Neither GS_PRIVATE_KEY_BASE64 nor GS_PRIVATE_KEY is set');
-						throw new Error('Neither GS_PRIVATE_KEY_BASE64 nor GS_PRIVATE_KEY is set');
-					}
-				})(),
 				sheetId: process.env.GS_SHEET_ID,
 			}
 		});

@@ -180,22 +180,140 @@ function findFieldName(sheetType, columnName, mappings = COLUMN_MAPPINGS) {
 
 // Helper to get auth client
 function getAuthClient(serviceAccount, privateKey) {
-	const auth = new google.auth.JWT(
-		serviceAccount,
-		null,
-		privateKey?.replace(/\\n/g, '\n'),
-		['https://www.googleapis.com/auth/spreadsheets']
-	);
-	return auth;
+	if (!privateKey) {
+		throw new Error('GS_PRIVATE_KEY is missing or empty');
+	}
+	
+	// Handle different formats of newlines in the private key
+	// Railway might store it with literal \n or actual newlines
+	let processedKey = privateKey.trim();
+	
+	// Remove surrounding quotes if present (both single and double)
+	if ((processedKey.startsWith('"') && processedKey.endsWith('"')) ||
+	    (processedKey.startsWith("'") && processedKey.endsWith("'"))) {
+		processedKey = processedKey.slice(1, -1);
+	}
+	
+	// Try base64 decoding first (if it looks like base64)
+	if (processedKey.length > 100 && !processedKey.includes('BEGIN') && !processedKey.includes('PRIVATE')) {
+		try {
+			const decoded = Buffer.from(processedKey, 'base64').toString('utf-8');
+			if (decoded.includes('BEGIN PRIVATE KEY')) {
+				console.log('✅ Detected base64-encoded key, decoded successfully');
+				processedKey = decoded;
+			}
+		} catch (e) {
+			// Not base64, continue with normal processing
+		}
+	}
+	
+	// If key contains literal \n (backslash + n), replace with actual newlines
+	// This is the most common format from JSON files
+	if (processedKey.includes('\\n')) {
+		processedKey = processedKey.replace(/\\n/g, '\n');
+	}
+	
+	// If key doesn't have newlines but should, try to detect and fix
+	// Check if it's all on one line (common issue with Railway)
+	if (!processedKey.includes('\n') && processedKey.includes('BEGIN PRIVATE KEY')) {
+		console.warn('⚠️  Private key appears to be on one line, attempting to fix...');
+		// Try to add newlines at key boundaries
+		processedKey = processedKey
+			.replace(/-----BEGIN PRIVATE KEY-----/g, '-----BEGIN PRIVATE KEY-----\n')
+			.replace(/-----END PRIVATE KEY-----/g, '\n-----END PRIVATE KEY-----')
+			.replace(/\n+/g, '\n'); // Normalize multiple newlines
+		
+		// Also try to add newlines every 64 characters (typical PEM format)
+		// But only in the middle part (between BEGIN and END)
+		const beginMatch = processedKey.match(/-----BEGIN PRIVATE KEY-----(.*)-----END PRIVATE KEY-----/s);
+		if (beginMatch) {
+			const keyBody = beginMatch[1];
+			// If key body is very long without newlines, it's probably corrupted
+			if (keyBody.length > 100 && !keyBody.includes('\n')) {
+				console.error('❌ Private key body has no newlines - key may be corrupted');
+			}
+		}
+	}
+	
+	// Validate key format
+	if (!processedKey.includes('BEGIN PRIVATE KEY') || !processedKey.includes('END PRIVATE KEY')) {
+		throw new Error('GS_PRIVATE_KEY format is invalid. Must include BEGIN and END markers.');
+	}
+	
+	// Ensure proper newline at the end
+	if (!processedKey.endsWith('\n')) {
+		processedKey += '\n';
+	}
+	
+	// Validate the key structure more strictly
+	const keyLines = processedKey.split('\n');
+	const beginLine = keyLines.find(line => line.includes('BEGIN PRIVATE KEY'));
+	const endLine = keyLines.find(line => line.includes('END PRIVATE KEY'));
+	
+	if (!beginLine || !endLine) {
+		throw new Error('GS_PRIVATE_KEY is missing BEGIN or END markers');
+	}
+	
+	// Check if key body exists
+	const beginIndex = processedKey.indexOf('BEGIN PRIVATE KEY');
+	const endIndex = processedKey.indexOf('END PRIVATE KEY');
+	const keyBody = processedKey.substring(beginIndex + 'BEGIN PRIVATE KEY'.length, endIndex).trim();
+	
+	if (keyBody.length < 100) {
+		throw new Error('GS_PRIVATE_KEY body is too short - key may be corrupted');
+	}
+	
+	try {
+		const auth = new google.auth.JWT(
+			serviceAccount,
+			null,
+			processedKey,
+			['https://www.googleapis.com/auth/spreadsheets']
+		);
+		
+		return auth;
+	} catch (error) {
+		console.error('❌ Failed to create Google Auth client:', error.message);
+		console.error('Key preview (first 100 chars):', processedKey.substring(0, 100));
+		console.error('Key has newlines:', processedKey.includes('\n'));
+		console.error('Key length:', processedKey.length);
+		
+		if (error.code === 'ERR_OSSL_UNSUPPORTED') {
+			const helpfulError = new Error(
+				'GS_PRIVATE_KEY format is invalid. OpenSSL cannot decode the key.\n\n' +
+				'Common causes:\n' +
+				'1. The \\n characters were not preserved when pasting into Railway\n' +
+				'2. The key was corrupted (extra spaces, missing characters)\n' +
+				'3. The key format is unsupported\n\n' +
+				'Solution:\n' +
+				'1. Regenerate the service account key in Google Cloud Console\n' +
+				'2. Open the JSON file and copy the ENTIRE "private_key" value\n' +
+				'3. In Railway, paste it EXACTLY as: "-----BEGIN PRIVATE KEY-----\\nMIIE...\\n-----END PRIVATE KEY-----\\n"\n' +
+				'4. Ensure \\n characters are preserved (backslash + n, not actual newlines)\n' +
+				'5. The entire key must be on ONE line in Railway'
+			);
+			helpfulError.code = 'ERR_OSSL_UNSUPPORTED';
+			throw helpfulError;
+		}
+		throw error;
+	}
 }
 
 // Enhanced helper to read sheet data with dynamic column mapping
 async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 	try {
-		const response = await sheets.spreadsheets.values.get({
+		// Add timeout to prevent hanging requests
+		const timeoutMs = 10000; // 10 seconds
+		const timeoutPromise = new Promise((_, reject) => 
+			setTimeout(() => reject(new Error(`Google Sheets API timeout after ${timeoutMs}ms`)), timeoutMs)
+		);
+		
+		const apiPromise = sheets.spreadsheets.values.get({
 			spreadsheetId: sheetId,
 			range: `${sheetName}!A:Z`
 		});
+		
+		const response = await Promise.race([apiPromise, timeoutPromise]);
 		const rows = response.data.values || [];
 		if (rows.length === 0) return [];
 		

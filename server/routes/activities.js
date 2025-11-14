@@ -6,9 +6,17 @@ export const activitiesRouter = express.Router();
 
 // List with filters: category, ageRange, date, price, neighborhood, q
 activitiesRouter.get('/', async (req, res) => {
-	const store = req.app.get('dataStore');
-	const { category, minAge, maxAge, startDate, endDate, minPrice, maxPrice, neighborhood, q } = req.query;
-	const all = await store.activities.list();
+	try {
+		const store = req.app.get('dataStore');
+		if (!store) {
+			console.error('❌ Data store not initialized');
+			return res.status(503).json({ error: 'Data store not available' });
+		}
+		
+		const { category, minAge, maxAge, startDate, endDate, minPrice, maxPrice, neighborhood, q } = req.query;
+		console.log('📥 Fetching activities from data store...');
+		const all = await store.activities.list();
+		console.log(`✅ Retrieved ${all.length} activities from data store`);
 	const results = all.filter((a) => {
 		let ok = true;
 		if (category) ok = ok && a.categories?.includes(category);
@@ -32,7 +40,16 @@ activitiesRouter.get('/', async (req, res) => {
 		}
 		return ok;
 	});
+	console.log(`✅ Returning ${results.length} filtered activities`);
 	res.json(results);
+	} catch (error) {
+		console.error('❌ Error in /api/activities:', error.message);
+		console.error('Stack:', error.stack);
+		res.status(500).json({ 
+			error: 'Failed to fetch activities',
+			message: error.message 
+		});
+	}
 });
 
 activitiesRouter.get('/:id', async (req, res) => {

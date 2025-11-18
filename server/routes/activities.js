@@ -10,12 +10,24 @@ activitiesRouter.get('/', async (req, res) => {
 		const store = req.app.get('dataStore');
 		if (!store) {
 			console.error('❌ Data store not initialized');
-			return res.status(503).json({ error: 'Data store not available' });
+			return res.status(503).json({ 
+				error: 'Data store not available',
+				message: 'The data store is still initializing. Please try again in a moment.',
+				code: 'DATA_STORE_NOT_READY'
+			});
 		}
 		
 		const { category, minAge, maxAge, startDate, endDate, minPrice, maxPrice, neighborhood, q } = req.query;
 		console.log('📥 Fetching activities from data store...');
-		const all = await store.activities.list();
+		
+		// Add timeout protection
+		const timeoutMs = 30000; // 30 seconds
+		const timeoutPromise = new Promise((_, reject) => 
+			setTimeout(() => reject(new Error('Data store operation timed out')), timeoutMs)
+		);
+		
+		const dataPromise = store.activities.list();
+		const all = await Promise.race([dataPromise, timeoutPromise]);
 		console.log(`✅ Retrieved ${all.length} activities from data store`);
 	const results = all.filter((a) => {
 		let ok = true;
@@ -45,9 +57,26 @@ activitiesRouter.get('/', async (req, res) => {
 	} catch (error) {
 		console.error('❌ Error in /api/activities:', error.message);
 		console.error('Stack:', error.stack);
-		res.status(500).json({ 
+		
+		// Sanitize error message for production
+		const isProduction = process.env.NODE_ENV === 'production';
+		const errorMessage = isProduction 
+			? 'Failed to fetch activities. Please try again later.'
+			: error.message;
+		
+		// Determine appropriate status code
+		let statusCode = 500;
+		if (error.message.includes('timeout')) {
+			statusCode = 504; // Gateway Timeout
+		} else if (error.message.includes('not available') || error.message.includes('not initialized')) {
+			statusCode = 503; // Service Unavailable
+		}
+		
+		res.status(statusCode).json({ 
 			error: 'Failed to fetch activities',
-			message: error.message 
+			message: errorMessage,
+			code: 'ACTIVITIES_FETCH_ERROR',
+			timestamp: new Date().toISOString()
 		});
 	}
 });

@@ -32,23 +32,71 @@ export default function Browse() {
 		});
 	};
 
+	// Helper to get user-friendly error message
+	const getErrorMessage = (err) => {
+		const message = err.message || 'Failed to load activities';
+		if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
+			return locale === 'fr' 
+				? 'Impossible de se connecter au serveur. Vérifiez votre connexion internet.'
+				: 'Unable to connect to server. Please check your internet connection.';
+		}
+		if (message.includes('Data store not available') || message.includes('not initialized')) {
+			return locale === 'fr'
+				? 'Le serveur est en cours d\'initialisation. Veuillez réessayer dans un instant.'
+				: 'Server is initializing. Please try again in a moment.';
+		}
+		if (message.includes('timeout')) {
+			return locale === 'fr'
+				? 'La requête a pris trop de temps. Veuillez réessayer.'
+				: 'Request timed out. Please try again.';
+		}
+		return locale === 'fr'
+			? 'Échec du chargement des activités. Veuillez réessayer.'
+			: 'Failed to load activities. Please try again.';
+	};
+
 	useEffect(() => {
 		const qs = new URLSearchParams(Object.entries(params).filter(([,v]) => v !== '' && v != null)).toString();
 		setLoading(true);
 		setError(null);
-		api(`/activities${qs ? `?${qs}` : ''}`).then((data) => {
-			setActivities(data);
-			setError(null);
-		}).catch((err) => {
-			if (process.env.NODE_ENV === 'development') {
-				console.error('Error fetching activities:', err);
+		
+		// Add retry logic for network failures
+		const fetchWithRetry = async (url, retries = 2) => {
+			for (let i = 0; i < retries; i++) {
+				try {
+					return await api(url);
+				} catch (err) {
+					// Only retry on network errors, not on 4xx/5xx errors
+					const isNetworkError = err.message?.includes('Failed to fetch') || 
+					                     err.message?.includes('NetworkError');
+					
+					if (i === retries - 1 || !isNetworkError) {
+						throw err;
+					}
+					
+					// Wait before retry (exponential backoff)
+					await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+				}
 			}
+		};
+		
+		fetchWithRetry(`/activities${qs ? `?${qs}` : ''}`).then((data) => {
+			setActivities(Array.isArray(data) ? data : []);
+			setError(null);
+			console.log(`✅ Loaded ${data.length} activities`);
+		}).catch((err) => {
+			// Always log errors for debugging
+			console.error('❌ Error fetching activities:', {
+				message: err.message,
+				url: `/activities${qs ? `?${qs}` : ''}`,
+				timestamp: new Date().toISOString()
+			});
 			setActivities([]);
-			setError(err.message || 'Failed to load activities');
+			setError(getErrorMessage(err));
 		}).finally(() => {
 			setLoading(false);
 		});
-	}, [params]);
+	}, [params, locale]);
 
 	// If viewMode is set to 'map' (hidden), fallback to 'table'
 	useEffect(() => {

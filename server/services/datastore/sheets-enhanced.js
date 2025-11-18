@@ -601,7 +601,41 @@ export async function createSheetsStore({ serviceAccount, privateKey, sheetId })
 		throw new Error(`Google Sheets credentials required but missing: ${missing.join(', ')}. Set DATA_BACKEND=memory to use memory backend instead.`);
 	}
 
-	const auth = getAuthClient(serviceAccount, privateKey);
+	console.log('🔍 Creating Google Sheets auth client...');
+	console.log('Service Account:', serviceAccount);
+	console.log('Private Key length:', privateKey.length);
+	console.log('Private Key has newlines:', privateKey.includes('\n'));
+	console.log('Private Key preview:', privateKey.substring(0, 100).replace(/\n/g, '\\n'));
+	
+	let auth;
+	try {
+		auth = getAuthClient(serviceAccount, privateKey);
+		console.log('✅ Google Sheets auth client created successfully');
+		
+		// Test the auth client by trying to get an access token
+		try {
+			const token = await auth.getAccessToken();
+			if (token) {
+				console.log('✅ Successfully obtained access token - credentials are valid');
+			} else {
+				console.warn('⚠️  Access token is null - credentials may be invalid');
+			}
+		} catch (tokenError) {
+			console.error('❌ Failed to get access token:', tokenError.message);
+			throw new Error(`Invalid Google Sheets credentials: ${tokenError.message}. Please check your GS_SERVICE_ACCOUNT and GS_PRIVATE_KEY.`);
+		}
+	} catch (error) {
+		console.error('❌ Failed to create Google Sheets auth client:', error.message);
+		console.error('Error details:', {
+			message: error.message,
+			code: error.code,
+			serviceAccount: serviceAccount,
+			privateKeyLength: privateKey.length,
+			privateKeyHasNewlines: privateKey.includes('\n')
+		});
+		throw error;
+	}
+	
 	const sheets = google.sheets({ version: 'v4', auth });
 
 	// Initialize sheets with headers if they don't exist

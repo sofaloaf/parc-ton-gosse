@@ -43,12 +43,24 @@ import { csrfProtection } from './middleware/csrf.js';
 
 const app = express();
 // Trust proxy for Railway (needed for rate limiting and correct IP detection)
-app.set('trust proxy', true);
+// Only enable in production to avoid security warnings
+if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === 'true') {
+	app.set('trust proxy', true);
+	console.log('✅ Trust proxy enabled (production mode)');
+} else {
+	app.set('trust proxy', false);
+	console.log('✅ Trust proxy disabled (development mode)');
+}
 const PORT = process.env.PORT || 4000;
 
 // Log all incoming requests for debugging
 app.use((req, res, next) => {
-	console.log(`📥 ${req.method} ${req.path}`);
+	const origin = req.headers.origin;
+	if (origin) {
+		console.log(`📥 ${req.method} ${req.path} from origin: ${origin}`);
+	} else {
+		console.log(`📥 ${req.method} ${req.path} (no origin)`);
+	}
 	next();
 });
 
@@ -83,38 +95,113 @@ const allowedOrigins = corsOriginRaw
 	.filter(o => o.length > 0)
 	.map(o => o.replace(/\/$/, '')); // Remove trailing slashes
 
+console.log('🔍 CORS Configuration:');
+console.log(`   CORS_ORIGIN env var: "${corsOriginRaw}"`);
+console.log(`   Parsed origins: [${allowedOrigins.join(', ')}]`);
+console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+
 if (allowedOrigins.length === 0 && process.env.NODE_ENV === 'production') {
 	console.warn('⚠️  WARNING: CORS_ORIGIN not set in production. Allowing all origins for now.');
-} else {
+	console.warn('   This is insecure! Set CORS_ORIGIN in Railway variables.');
+	console.warn('   Expected: CORS_ORIGIN=https://victorious-gentleness-production.up.railway.app');
+} else if (allowedOrigins.length > 0) {
 	console.log(`✅ CORS configured for origins: ${allowedOrigins.join(', ')}`);
+} else {
+	console.log('ℹ️  CORS_ORIGIN not set (development mode - allowing all origins)');
 }
 
-// CORS middleware with detailed logging
+// Explicit OPTIONS handler for all routes - MUST be BEFORE CORS middleware
+app.options('*', (req, res) => {
+	const origin = req.headers.origin;
+	console.log(`📥 OPTIONS preflight request from: ${origin}`);
+	
+	// Always set CORS headers for OPTIONS
+	if (origin) {
+		// Check if origin is allowed
+		if (allowedOrigins.length > 0) {
+			const normalizedOrigin = origin.replace(/\/$/, '').toLowerCase();
+			const normalizedAllowed = allowedOrigins.map(o => o.replace(/\/$/, '').toLowerCase());
+			
+			if (normalizedAllowed.includes(normalizedOrigin)) {
+				res.header('Access-Control-Allow-Origin', origin);
+				res.header('Access-Control-Allow-Credentials', 'true');
+				res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+				res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-CSRF-Token');
+				res.header('Access-Control-Expose-Headers', 'X-CSRF-Token');
+				res.header('Access-Control-Max-Age', '86400'); // 24 hours
+				res.status(204).end();
+				console.log(`✅ OPTIONS preflight allowed for: ${origin}`);
+				return;
+			} else {
+				console.warn(`❌ OPTIONS preflight blocked for: ${origin} (not in allowed list)`);
+				console.warn(`   Allowed origins: ${normalizedAllowed.join(', ')}`);
+			}
+		} else {
+			// No CORS_ORIGIN set - allow all in development, but warn
+			if (process.env.NODE_ENV === 'production') {
+				console.warn(`⚠️  OPTIONS preflight: CORS_ORIGIN not set, but allowing ${origin} (production mode)`);
+			}
+			res.header('Access-Control-Allow-Origin', origin);
+			res.header('Access-Control-Allow-Credentials', 'true');
+			res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+			res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-CSRF-Token');
+			res.header('Access-Control-Expose-Headers', 'X-CSRF-Token');
+			res.header('Access-Control-Max-Age', '86400');
+			res.status(204).end();
+			return;
+		}
+	}
+	
+	// No origin header - allow anyway
+	res.header('Access-Control-Allow-Origin', '*');
+	res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+	res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-CSRF-Token');
+	res.status(204).end();
+});
+
+// CORS middleware with detailed logging and explicit preflight handling
 app.use(cors({ 
 	origin: function (origin, callback) {
 		// Allow requests with no origin (like mobile apps or curl requests)
 		if (!origin) {
+			console.log('📥 Request with no origin header - allowing');
 			return callback(null, true);
 		}
 		
 		// In production, check against allowed origins
 		if (allowedOrigins.length > 0) {
-			if (allowedOrigins.includes(origin)) {
+			// Normalize origin (remove trailing slash)
+			const normalizedOrigin = origin.replace(/\/$/, '').toLowerCase();
+			const normalizedAllowed = allowedOrigins.map(o => o.replace(/\/$/, '').toLowerCase());
+			
+			if (normalizedAllowed.includes(normalizedOrigin)) {
 				console.log(`✅ CORS allowed for origin: ${origin}`);
 				return callback(null, true);
 			} else {
-				console.warn(`❌ CORS blocked for origin: ${origin} (not in allowed list)`);
+				console.warn(`❌ CORS blocked for origin: ${origin}`);
+				console.warn(`   Normalized: ${normalizedOrigin}`);
+				console.warn(`   Allowed (normalized): ${normalizedAllowed.join(', ')}`);
+				console.warn(`   CORS_ORIGIN env var: ${process.env.CORS_ORIGIN || 'NOT SET'}`);
 				return callback(new Error('Not allowed by CORS'));
 			}
 		}
 		
 		// Allow all origins if CORS_ORIGIN not set (development or initial deployment)
+		if (process.env.NODE_ENV === 'production') {
+			console.warn(`⚠️  CORS allowing origin in production (CORS_ORIGIN not set): ${origin}`);
+			console.warn(`   This is insecure! Set CORS_ORIGIN in Railway variables.`);
+		} else {
+			console.log(`✅ CORS allowing origin (development): ${origin}`);
+		}
 		return callback(null, true);
 	},
 	credentials: true,
 	methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
 	allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
-	exposedHeaders: ['X-CSRF-Token']
+	exposedHeaders: ['X-CSRF-Token'],
+	preflightContinue: false,
+	optionsSuccessStatus: 204,
+	maxAge: 86400 // 24 hours
 }));
 app.use(cookieParser());
 app.use(express.json({ limit: '5mb' }));
@@ -124,7 +211,12 @@ app.use(express.urlencoded({ extended: true }));
 app.use(csrfProtection());
 
 // General rate limiting
-const limiter = rateLimit({ windowMs: 60 * 1000, max: 120 });
+// Fix trust proxy warning by only trusting proxy in production
+const limiter = rateLimit({ 
+	windowMs: 60 * 1000, 
+	max: 120,
+	trustProxy: process.env.NODE_ENV === 'production' ? true : false
+});
 app.use(limiter);
 
 // Stricter rate limiting for auth endpoints
@@ -174,6 +266,33 @@ let dataStore = null;
 		} else if (process.env.GS_PRIVATE_KEY) {
 			console.log('⚠️  Using GS_PRIVATE_KEY (not base64-encoded)');
 			processedPrivateKey = process.env.GS_PRIVATE_KEY;
+			
+			// Pre-process the key to ensure proper format
+			// Replace literal \n with actual newlines if needed
+			if (processedPrivateKey.includes('\\n')) {
+				console.log('🔧 Converting \\n to actual newlines');
+				processedPrivateKey = processedPrivateKey.replace(/\\n/g, '\n');
+			}
+			
+			// Ensure key has proper newlines
+			if (!processedPrivateKey.includes('\n') && processedPrivateKey.includes('BEGIN PRIVATE KEY')) {
+				console.log('🔧 Adding newlines to private key');
+				processedPrivateKey = processedPrivateKey
+					.replace(/-----BEGIN PRIVATE KEY-----/g, '-----BEGIN PRIVATE KEY-----\n')
+					.replace(/-----END PRIVATE KEY-----/g, '\n-----END PRIVATE KEY-----')
+					.replace(/\n+/g, '\n');
+			}
+			
+			// Validate key format
+			if (!processedPrivateKey.includes('BEGIN PRIVATE KEY') || !processedPrivateKey.includes('END PRIVATE KEY')) {
+				console.error('❌ Private key format validation failed');
+				console.error('Key preview (first 100 chars):', processedPrivateKey.substring(0, 100));
+				throw new Error('GS_PRIVATE_KEY format is invalid. Must include BEGIN and END markers.');
+			}
+			
+			console.log('✅ Private key format validated');
+			console.log('Key has newlines:', processedPrivateKey.includes('\n'));
+			console.log('Key preview (first 80 chars):', processedPrivateKey.substring(0, 80).replace(/\n/g, '\\n'));
 		} else {
 			console.error('❌ Neither GS_PRIVATE_KEY_BASE64 nor GS_PRIVATE_KEY is set');
 			throw new Error('Neither GS_PRIVATE_KEY_BASE64 nor GS_PRIVATE_KEY is set');
@@ -251,6 +370,44 @@ app.get('/api/health', (req, res) => {
 		console.log('✅ Health endpoint responded');
 	} catch (error) {
 		console.error('❌ Error in health endpoint:', error);
+		res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+// Data store health check - verifies data store is working
+app.get('/api/health/datastore', async (req, res) => {
+	console.log('📥 Data store health endpoint hit');
+	try {
+		const store = app.get('dataStore');
+		if (!store) {
+			return res.json({ 
+				status: 'not_initialized',
+				message: 'Data store has not been initialized yet',
+				timestamp: new Date().toISOString()
+			});
+		}
+		
+		// Test data store by fetching activities
+		try {
+			const activities = await store.activities.list();
+			res.json({ 
+				status: 'healthy',
+				activityCount: activities.length,
+				backend: process.env.DATA_BACKEND || 'memory',
+				timestamp: new Date().toISOString()
+			});
+			console.log(`✅ Data store health check: ${activities.length} activities found`);
+		} catch (error) {
+			console.error('❌ Data store health check failed:', error.message);
+			res.json({ 
+				status: 'error',
+				error: error.message,
+				backend: process.env.DATA_BACKEND || 'memory',
+				timestamp: new Date().toISOString()
+			});
+		}
+	} catch (error) {
+		console.error('❌ Error in data store health endpoint:', error);
 		res.status(500).json({ error: 'Internal server error' });
 	}
 });

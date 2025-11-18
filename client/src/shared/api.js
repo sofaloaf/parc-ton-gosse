@@ -17,11 +17,18 @@ function resolveBaseUrl() {
 
 	const { hostname, origin } = window.location;
 	
+	// Debug logging
+	console.log('🔍 API URL Resolution Debug:');
+	console.log('   hostname:', hostname);
+	console.log('   origin:', origin);
+	console.log('   window.__PTG_API_URL__:', window.__PTG_API_URL__);
+	console.log('   import.meta.env.VITE_API_URL:', import.meta.env.VITE_API_URL);
+	
 	// Check for runtime override FIRST (highest priority - works even if VITE_API_URL wasn't set)
 	const globalOverride = typeof window.__PTG_API_URL__ === 'string' ? window.__PTG_API_URL__.trim() : '';
 	if (globalOverride) {
 		cachedBaseUrl = globalOverride;
-		console.log('🔍 API URL resolved from runtime override:', cachedBaseUrl);
+		console.log('✅ API URL resolved from runtime override:', cachedBaseUrl);
 		return cachedBaseUrl;
 	}
 
@@ -54,6 +61,16 @@ function resolveBaseUrl() {
 			console.log('   Frontend hostname:', hostname);
 			return cachedBaseUrl;
 		}
+	}
+
+	// Fallback: NEVER use same-origin for Railway domains - always use backend URL
+	// This prevents falling back to wrong URL like parc-ton-gosse-production/api
+	if (hostname.includes('.up.railway.app')) {
+		console.warn('⚠️  Railway domain detected but override/VITE_API_URL not set!');
+		console.warn('   Using hardcoded backend URL as fallback');
+		cachedBaseUrl = PRODUCTION_API_URL;
+		console.log('🔍 API URL resolved (Railway fallback):', cachedBaseUrl);
+		return cachedBaseUrl;
 	}
 
 	// Fallback: assume API is at /api on same origin (only for non-Railway domains)

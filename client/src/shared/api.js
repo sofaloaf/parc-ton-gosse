@@ -17,6 +17,19 @@ function resolveBaseUrl() {
 
 	const { hostname, origin } = window.location;
 	
+	// CRITICAL: For ANY Railway domain, ALWAYS use backend URL - never same-origin
+	// This is the most important check - do it FIRST before anything else
+	if (hostname.includes('.up.railway.app')) {
+		// Only use PRODUCTION_API_URL if this is NOT the backend service itself
+		if (!hostname.includes('backend')) {
+			cachedBaseUrl = PRODUCTION_API_URL;
+			console.log('✅ API URL resolved (Railway domain detected):', cachedBaseUrl);
+			console.log('   Frontend hostname:', hostname);
+			console.log('   Frontend origin:', origin);
+			return cachedBaseUrl;
+		}
+	}
+	
 	// Debug logging
 	console.log('🔍 API URL Resolution Debug:');
 	console.log('   hostname:', hostname);
@@ -24,7 +37,7 @@ function resolveBaseUrl() {
 	console.log('   window.__PTG_API_URL__:', window.__PTG_API_URL__);
 	console.log('   import.meta.env.VITE_API_URL:', import.meta.env.VITE_API_URL);
 	
-	// Check for runtime override FIRST (highest priority - works even if VITE_API_URL wasn't set)
+	// Check for runtime override (works even if VITE_API_URL wasn't set)
 	const globalOverride = typeof window.__PTG_API_URL__ === 'string' ? window.__PTG_API_URL__.trim() : '';
 	if (globalOverride) {
 		cachedBaseUrl = globalOverride;
@@ -36,7 +49,7 @@ function resolveBaseUrl() {
 	const envApiUrl = import.meta.env.VITE_API_URL;
 	if (envApiUrl && typeof envApiUrl === 'string' && envApiUrl.trim()) {
 		cachedBaseUrl = envApiUrl.trim().replace(/\/$/, '') + (envApiUrl.endsWith('/api') ? '' : '/api');
-		console.log('🔍 API URL resolved from VITE_API_URL:', cachedBaseUrl);
+		console.log('✅ API URL resolved from VITE_API_URL:', cachedBaseUrl);
 		return cachedBaseUrl;
 	}
 
@@ -47,33 +60,7 @@ function resolveBaseUrl() {
 		return cachedBaseUrl;
 	}
 
-	// Production Railway frontend - use new backend URL
-	// Check for any Railway domain (victorious-gentleness, parc-ton-gosse, etc.)
-	// IMPORTANT: This check must come BEFORE the fallback to same-origin
-	if (hostname.includes('victorious-gentleness') || 
-	    hostname.includes('parc-ton-gosse') || 
-	    hostname.includes('railway') ||
-	    hostname.includes('.up.railway.app')) {
-		// Only use PRODUCTION_API_URL if this is NOT the backend service itself
-		if (!hostname.includes('backend')) {
-			cachedBaseUrl = PRODUCTION_API_URL;
-			console.log('🔍 API URL resolved (Railway production):', cachedBaseUrl);
-			console.log('   Frontend hostname:', hostname);
-			return cachedBaseUrl;
-		}
-	}
-
-	// Fallback: NEVER use same-origin for Railway domains - always use backend URL
-	// This prevents falling back to wrong URL like parc-ton-gosse-production/api
-	if (hostname.includes('.up.railway.app')) {
-		console.warn('⚠️  Railway domain detected but override/VITE_API_URL not set!');
-		console.warn('   Using hardcoded backend URL as fallback');
-		cachedBaseUrl = PRODUCTION_API_URL;
-		console.log('🔍 API URL resolved (Railway fallback):', cachedBaseUrl);
-		return cachedBaseUrl;
-	}
-
-	// Fallback: assume API is at /api on same origin (only for non-Railway domains)
+	// Final fallback: assume API is at /api on same origin (only for non-Railway domains)
 	console.warn('⚠️  Falling back to same-origin API - this may not work!');
 	console.warn(`   Frontend origin: ${origin}`);
 	console.warn(`   Consider setting VITE_API_URL environment variable`);

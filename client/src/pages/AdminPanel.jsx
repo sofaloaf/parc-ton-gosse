@@ -268,7 +268,18 @@ export default function AdminPanel() {
 		);
 	}
 
-	const { summary, userGrowth, loginActivity, pageViews, recent, roleBreakdown, conversionFunnel, conversionRates, conversionEventsByType } = metrics;
+	// Safely destructure metrics with defaults to prevent errors
+	const { 
+		summary = {}, 
+		userGrowth = [], 
+		loginActivity = [], 
+		pageViews = [], 
+		recent = {}, 
+		roleBreakdown = {}, 
+		conversionFunnel = {}, 
+		conversionRates = {}, 
+		conversionEventsByType = {} 
+	} = metrics || {};
 
 	const roleData = Object.keys(roleBreakdown || {}).map(role => ({
 		name: role.charAt(0).toUpperCase() + role.slice(1),
@@ -319,13 +330,13 @@ export default function AdminPanel() {
 				<KPICard title="Total Logins" value={summary.totalLogins} subtitle={`${summary.uniqueLoginUsers} users`} />
 				<KPICard title="Total Sessions" value={summary.totalSessions} subtitle={`${summary.activeSessions} active`} />
 				<KPICard title="Avg Session Duration" value={formatDuration(summary.avgSessionDuration)} subtitle="per session" />
-				<KPICard title="Total Page Views" value={summary.totalPageViews.toLocaleString()} subtitle="all time" />
-				<KPICard title="Total Activities" value={summary.totalActivities} subtitle={`${summary.totalRegistrations} registrations`} />
-				<KPICard title="Registration Rate" value={`${summary.registrationRate}%`} subtitle="conversion" />
-				<KPICard title="Total Feedback" value={summary.totalFeedback} subtitle="submissions" />
-				<KPICard title="Active Trials" value={summary.activeTrials} subtitle={`${summary.expiredTrials} expired`} color="#FFBB28" />
-				<KPICard title="Total Commitments" value={summary.totalPreorders} subtitle={`€${summary.preorderRevenue}`} color="#10b981" />
-				<KPICard title="Conversion Rate" value={`${summary.conversionRate.toFixed(1)}%`} subtitle="trial to paid" color="#3b82f6" />
+				<KPICard title="Total Page Views" value={(summary.totalPageViews || 0).toLocaleString()} subtitle="all time" />
+				<KPICard title="Total Activities" value={summary.totalActivities || 0} subtitle={`${summary.totalRegistrations || 0} registrations`} />
+				<KPICard title="Registration Rate" value={`${summary.registrationRate || 0}%`} subtitle="conversion" />
+				<KPICard title="Total Feedback" value={summary.totalFeedback || 0} subtitle="submissions" />
+				<KPICard title="Active Trials" value={summary.activeTrials || 0} subtitle={`${summary.expiredTrials || 0} expired`} color="#FFBB28" />
+				<KPICard title="Total Commitments" value={summary.totalCommitments || 0} subtitle={`€${summary.commitmentRevenue || 0}`} color="#10b981" />
+				<KPICard title="Conversion Rate" value={`${(summary.conversionRate || 0).toFixed(1)}%`} subtitle="trial to paid" color="#3b82f6" />
 			</div>
 
 			{/* Conversion Funnel */}
@@ -346,27 +357,27 @@ export default function AdminPanel() {
 						<div style={{ textAlign: 'center', padding: 16, background: '#f8fafc', borderRadius: 8 }}>
 							<div style={{ fontSize: 32, fontWeight: 700, color: '#1e40af' }}>{conversionFunnel.trialsStarted || 0}</div>
 							<div style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>Trials Started</div>
-							{conversionRates && conversionRates.signupToTrial > 0 && (
+							{conversionRates && conversionRates.signupToTrialRate > 0 && (
 								<div style={{ fontSize: 12, color: '#10b981', marginTop: 4 }}>
-									{conversionRates.signupToTrial.toFixed(1)}% conversion
+									{conversionRates.signupToTrialRate.toFixed(1)}% conversion
 								</div>
 							)}
 						</div>
 						<div style={{ textAlign: 'center', padding: 16, background: '#f8fafc', borderRadius: 8 }}>
 							<div style={{ fontSize: 32, fontWeight: 700, color: '#1e40af' }}>{conversionFunnel.trialsExpired || 0}</div>
 							<div style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>Trials Expired</div>
-							{conversionRates && conversionRates.trialToExpired > 0 && (
+							{conversionRates && conversionRates.trialToExpiryRate > 0 && (
 								<div style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>
-									{conversionRates.trialToExpired.toFixed(1)}% expired
+									{conversionRates.trialToExpiryRate.toFixed(1)}% expired
 								</div>
 							)}
 						</div>
 						<div style={{ textAlign: 'center', padding: 16, background: '#f8fafc', borderRadius: 8 }}>
 							<div style={{ fontSize: 32, fontWeight: 700, color: '#1e40af' }}>{conversionFunnel.preorderPageViews || 0}</div>
 							<div style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>Page Views</div>
-							{conversionRates && conversionRates.expiredToPageView > 0 && (
+							{conversionRates && conversionRates.expiryToPageViewRate > 0 && (
 								<div style={{ fontSize: 12, color: '#10b981', marginTop: 4 }}>
-									{conversionRates.expiredToPageView.toFixed(1)}% viewed
+									{conversionRates.expiryToPageViewRate.toFixed(1)}% viewed
 								</div>
 							)}
 						</div>
@@ -388,7 +399,7 @@ export default function AdminPanel() {
 							border: '1px solid #3b82f6'
 						}}>
 							<div style={{ fontSize: 18, fontWeight: 600, color: '#1e40af', marginBottom: 8 }}>
-								Overall Conversion Rate: {conversionRates.overallConversion.toFixed(2)}%
+								Overall Conversion Rate: {(conversionRates.overallConversionRate || 0).toFixed(2)}%
 							</div>
 							<div style={{ fontSize: 14, color: '#475569' }}>
 								{conversionFunnel.signups || 0} signups → {conversionFunnel.commitmentsMade || 0} commitments

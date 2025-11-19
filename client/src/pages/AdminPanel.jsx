@@ -116,9 +116,12 @@ export default function AdminPanel() {
 
 			// Token is now in httpOnly cookie, no need to store locally
 			setIsAuthenticated(true);
+			setLoading(false);
 			setError('');
-			loadMetrics();
+			await loadMetrics();
 		} catch (err) {
+			setIsAuthenticated(false);
+			setLoading(false);
 			setError(err.message || 'Login failed. Only authorized admin can access.');
 			if (process.env.NODE_ENV === 'development') {
 				console.error('Admin login error:', err);
@@ -128,13 +131,17 @@ export default function AdminPanel() {
 
 	const loadMetrics = async () => {
 		try {
+			setLoading(true);
 			const data = await api('/metrics/dashboard');
 			setMetrics(data);
+			setError('');
 		} catch (err) {
 			if (process.env.NODE_ENV === 'development') {
 				console.error('Failed to load metrics:', err);
 			}
 			setError('Failed to load dashboard metrics');
+		} finally {
+			setLoading(false);
 		}
 	};
 

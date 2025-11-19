@@ -128,14 +128,55 @@ metricsRouter.get('/dashboard', requireAuth('admin'), async (req, res) => {
 			const trialDuration = 24 * 60 * 60 * 1000;
 			return (now - trialStart) <= trialDuration;
 		});
-		const preorderedUsers = users.filter(u => u.hasPreordered);
-		const totalPreorderRevenue = preorders
-			.filter(p => p.status === 'completed')
+		const committedUsers = users.filter(u => u.hasPreordered && u.preorderStatus === 'committed');
+		const totalCommitmentRevenue = preorders
+			.filter(p => p.status === 'committed')
 			.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
-		// Preorder conversion rate
-		const totalTrials = usersWithTrial.length + preorderedUsers.length;
-		const conversionRate = totalTrials > 0 ? (preorderedUsers.length / totalTrials) * 100 : 0;
+		// Conversion Funnel Steps
+		const signups = conversionEvents.filter(e => e.eventType === 'signup').length;
+		const trialsStarted = conversionEvents.filter(e => e.eventType === 'trial_started').length;
+		const trialsExpired = conversionEvents.filter(e => e.eventType === 'trial_expired').length;
+		const preorderPageViews = conversionEvents.filter(e => e.eventType === 'preorder_page_viewed').length;
+		const commitmentsMade = conversionEvents.filter(e => e.eventType === 'commitment_made').length;
+
+		// Conversion Rates
+		const signupToTrialRate = signups > 0 ? (trialsStarted / signups) * 100 : 0;
+		const trialToExpiryRate = trialsStarted > 0 ? (trialsExpired / trialsStarted) * 100 : 0;
+		const expiryToPageViewRate = trialsExpired > 0 ? (preorderPageViews / trialsExpired) * 100 : 0;
+		const pageViewToCommitmentRate = preorderPageViews > 0 ? (commitmentsMade / preorderPageViews) * 100 : 0;
+		const overallConversionRate = signups > 0 ? (commitmentsMade / signups) * 100 : 0;
+
+		// Conversion Events over time
+		const conversionEventsByDate = groupByDate(conversionEvents, 'timestamp');
+		const conversionEventsArray = Object.keys(conversionEventsByDate)
+			.sort()
+			.map(date => ({ date, count: conversionEventsByDate[date] }));
+
+		// Conversion Events by Type
+		const conversionEventsByType = {};
+		conversionEvents.forEach(event => {
+			const type = event.eventType || 'unknown';
+			conversionEventsByType[type] = (conversionEventsByType[type] || 0) + 1;
+		});
+
+		// Conversion Funnel Object
+		const conversionFunnel = {
+			signups,
+			trialsStarted,
+			trialsExpired,
+			preorderPageViews,
+			commitmentsMade
+		};
+
+		// Conversion Rates Object
+		const conversionRates = {
+			signupToTrialRate: Math.round(signupToTrialRate * 100) / 100,
+			trialToExpiryRate: Math.round(trialToExpiryRate * 100) / 100,
+			expiryToPageViewRate: Math.round(expiryToPageViewRate * 100) / 100,
+			pageViewToCommitmentRate: Math.round(pageViewToCommitmentRate * 100) / 100,
+			overallConversionRate: Math.round(overallConversionRate * 100) / 100
+		};
 
 		// Preorders over time
 		const preordersByDate = groupByDate(preorders, 'createdAt');
@@ -168,9 +209,9 @@ metricsRouter.get('/dashboard', requireAuth('admin'), async (req, res) => {
 				// Trial and preorder metrics
 				activeTrials: activeTrials.length,
 				expiredTrials: expiredTrials.length,
-				totalPreorders: preorderedUsers.length,
-				preorderRevenue: Math.round(totalPreorderRevenue * 100) / 100,
-				conversionRate: Math.round(conversionRate * 100) / 100
+				totalCommitments: committedUsers.length,
+				commitmentRevenue: Math.round(totalCommitmentRevenue * 100) / 100,
+				conversionRate: Math.round(overallConversionRate * 100) / 100
 			},
 			
 			// Recent activity (7 days)

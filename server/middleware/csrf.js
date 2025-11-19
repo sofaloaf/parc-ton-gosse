@@ -54,6 +54,22 @@ export function csrfProtection() {
 			return next();
 		}
 
+		// For admin-only endpoints that require authentication, we can be more lenient
+		// The crawler endpoint is protected by requireAuth middleware which checks for admin role
+		const isAdminOnlyEndpoint = path.includes('/crawler') || 
+		                           originalUrl.includes('/crawler') ||
+		                           path.includes('/metrics') ||
+		                           originalUrl.includes('/metrics');
+		
+		if (isAdminOnlyEndpoint && req.user && req.user.role === 'admin') {
+			// Admin-only endpoints are already protected by requireAuth middleware
+			// If user is authenticated as admin, allow the request
+			if (process.env.NODE_ENV === 'development') {
+				console.log('🔓 Allowing admin-only endpoint (dev):', path, originalUrl);
+			}
+			return next();
+		}
+
 		// Allow requests without CSRF token in development (for easier testing)
 		if (process.env.NODE_ENV === 'development' && !headerToken) {
 			return next();

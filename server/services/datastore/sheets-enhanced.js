@@ -12,7 +12,8 @@ const SHEETS = {
 	organizationSuggestions: 'Organization Suggestions',
 	logins: 'Logins',
 	sessions: 'Sessions',
-	preorders: 'Preorders'
+	preorders: 'Preorders',
+	referrals: 'Referrals'
 };
 
 // Column mapping configuration - maps Google Sheet column names to our app's field names
@@ -136,16 +137,24 @@ const COLUMN_MAPPINGS = {
 			'createdAt': ['createdAt', 'created_at', 'Created At', 'Date de création'],
 			'updatedAt': ['updatedAt', 'updated_at', 'Updated At', 'Date de mise à jour']
 		},
-		preorders: {
-			'userId': ['userId', 'user_id', 'User ID'],
-			'userEmail': ['userEmail', 'user_email', 'Email', 'E-mail'],
-			'paymentIntentId': ['paymentIntentId', 'payment_intent_id', 'Payment Intent ID', 'Stripe Payment ID'],
-			'amount': ['amount', 'Amount', 'Montant'],
-			'promoCode': ['promoCode', 'promo_code', 'Promo Code', 'Code Promo'],
-			'status': ['status', 'Status', 'Statut'],
-			'createdAt': ['createdAt', 'created_at', 'Created At', 'Date de création'],
-			'updatedAt': ['updatedAt', 'updated_at', 'Updated At', 'Date de mise à jour']
-		}
+	preorders: {
+		'userId': ['userId', 'user_id', 'User ID'],
+		'userEmail': ['userEmail', 'user_email', 'Email', 'E-mail'],
+		'paymentIntentId': ['paymentIntentId', 'payment_intent_id', 'Payment Intent ID', 'Stripe Payment ID'],
+		'amount': ['amount', 'Amount', 'Montant'],
+		'promoCode': ['promoCode', 'promo_code', 'Promo Code', 'Code Promo'],
+		'status': ['status', 'Status', 'Statut'],
+		'createdAt': ['createdAt', 'created_at', 'Created At', 'Date de création'],
+		'updatedAt': ['updatedAt', 'updated_at', 'Updated At', 'Date de mise à jour']
+	},
+	referrals: {
+		'referrerId': ['referrerId', 'referrer_id', 'Referrer ID', 'ID du parrain'],
+		'referredUserId': ['referredUserId', 'referred_user_id', 'Referred User ID', 'ID de l\'utilisateur parrainé'],
+		'referralCode': ['referralCode', 'referral_code', 'Referral Code', 'Code de parrainage'],
+		'status': ['status', 'Status', 'Statut'],
+		'createdAt': ['createdAt', 'created_at', 'Created At', 'Date de création'],
+		'updatedAt': ['updatedAt', 'updated_at', 'Updated At', 'Date de mise à jour']
+	}
 	};
 
 // Helper to normalize column names (trim, lowercase, remove special chars)
@@ -649,7 +658,8 @@ export async function createSheetsStore({ serviceAccount, privateKey, sheetId })
 		ensureSheet(sheets, sheetId, SHEETS.organizationSuggestions, 'organizationSuggestions'),
 		ensureSheet(sheets, sheetId, SHEETS.logins, 'logins'),
 		ensureSheet(sheets, sheetId, SHEETS.sessions, 'sessions'),
-		ensureSheet(sheets, sheetId, SHEETS.preorders, 'preorders')
+		ensureSheet(sheets, sheetId, SHEETS.preorders, 'preorders'),
+		ensureSheet(sheets, sheetId, SHEETS.referrals, 'referrals')
 	]);
 
 	// Helper to create CRUD for a sheet
@@ -705,6 +715,7 @@ export async function createSheetsStore({ serviceAccount, privateKey, sheetId })
 		logins: createCrud(SHEETS.logins, 'logins'),
 		sessions: createCrud(SHEETS.sessions, 'sessions'),
 		preorders: createCrud(SHEETS.preorders, 'preorders'),
+		referrals: createCrud(SHEETS.referrals, 'referrals'),
 		i18n: {
 			getAll: async () => {
 				const all = await readSheet(sheets, sheetId, SHEETS.i18n, 'i18n');

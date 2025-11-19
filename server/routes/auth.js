@@ -4,6 +4,8 @@ import { OAuth2Client } from 'google-auth-library';
 import bcrypt from 'bcrypt';
 import { body, validationResult } from 'express-validator';
 import { signToken } from '../middleware/auth.js';
+import { sendEmail } from '../services/notifications/index.js';
+import { welcomeEmail, passwordResetEmail, trialExpirationEmail } from '../services/notifications/templates.js';
 
 export const authRouter = express.Router();
 
@@ -12,6 +14,16 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'sofiane.boukhalfa@gmail.com';
 // Helper to get Google Client ID (read at request time, not module load time)
 function getGoogleClientId() {
 	return process.env.GOOGLE_CLIENT_ID;
+}
+
+// Generate referral code (8 characters, alphanumeric)
+function generateReferralCode() {
+	const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude confusing chars (0, O, I, 1)
+	let code = '';
+	for (let i = 0; i < 8; i++) {
+		code += chars.charAt(Math.floor(Math.random() * chars.length));
+	}
+	return code;
 }
 
 // Password hashing with bcrypt - secure password storage
@@ -35,7 +47,7 @@ authRouter.post('/signup', validateSignup, async (req, res) => {
 	}
 
 	const store = req.app.get('dataStore');
-	const { email, password, role = 'parent', profile = {}, name } = req.body;
+	const { email, password, role = 'parent', profile = {}, name, referralCode } = req.body;
 	
 	const userExists = await store.users.findByEmail(email);
 	if (userExists) {
@@ -44,6 +56,22 @@ authRouter.post('/signup', validateSignup, async (req, res) => {
 
 	// Hash password with bcrypt
 	const hashedPassword = await bcrypt.hash(password, 10);
+	
+	// Generate email verification token
+	const verificationToken = uuidv4();
+	
+	// Generate referral code for new user
+	const userReferralCode = generateReferralCode();
+	
+	// Check if referral code is valid (if provided)
+	let referredBy = null;
+	if (referralCode) {
+		const allUsers = await store.users.list();
+		const referrer = allUsers.find(u => u.referralCode === referralCode.toUpperCase());
+		if (referrer) {
+			referredBy = referralCode.toUpperCase();
+		}
+	}
 	
 	const now = new Date().toISOString();
 	const user = { 
@@ -54,9 +82,34 @@ authRouter.post('/signup', validateSignup, async (req, res) => {
 		profile: { ...profile, name: name || profile.name }, 
 		trialStartTime: now, // Start 24-hour trial
 		hasPreordered: false,
+		emailVerified: false, // Email not verified yet
+		verificationToken: verificationToken,
+		verificationTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+		referralCode: userReferralCode, // Generate unique referral code
+		referredBy: referredBy, // Apply referral code if provided and valid
 		createdAt: now 
 	};
 	await store.users.create(user);
+	
+	// Send welcome email with verification link
+	try {
+		const locale = req.headers['accept-language']?.includes('fr') ? 'fr' : 'en';
+		const emailContent = welcomeEmail({ 
+			name: name || profile.name, 
+			email, 
+			verificationToken,
+			locale 
+		});
+		await sendEmail({ 
+			to: email, 
+			subject: emailContent.subject, 
+			html: emailContent.html 
+		});
+	} catch (emailError) {
+		console.error('Failed to send welcome email:', emailError);
+		// Don't fail signup if email fails
+	}
+	
 	const token = signToken({ id: user.id, email: user.email, role: user.role });
 	
 	// Set httpOnly cookie for token (more secure than localStorage)
@@ -67,7 +120,18 @@ authRouter.post('/signup', validateSignup, async (req, res) => {
 		maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
 	});
 	
-	res.json({ token, user: { id: user.id, email: user.email, role: user.role, profile: user.profile, trialStartTime: user.trialStartTime, hasPreordered: user.hasPreordered } });
+	res.json({ 
+		token, 
+		user: { 
+			id: user.id, 
+			email: user.email, 
+			role: user.role, 
+			profile: user.profile, 
+			trialStartTime: user.trialStartTime, 
+			hasPreordered: user.hasPreordered,
+			emailVerified: false // User needs to verify email
+		} 
+	});
 });
 
 authRouter.post('/login', validateLogin, async (req, res) => {
@@ -104,6 +168,10 @@ authRouter.post('/login', validateLogin, async (req, res) => {
 		return res.status(401).json({ error: 'Invalid credentials' });
 	}
 	
+	// Check if email is verified (optional - can be enforced later)
+	// For now, we'll allow login but show a warning if not verified
+	const emailVerified = user.emailVerified !== false;
+	
 	// If user doesn't have trialStartTime, set it now (for existing users)
 	const now = new Date().toISOString();
 	if (!user.trialStartTime && !user.hasPreordered && user.role === 'parent') {
@@ -136,10 +204,101 @@ authRouter.post('/login', validateLogin, async (req, res) => {
 		}
 	}
 	
-	res.json({ token, user: { id: user.id, email: user.email, role: user.role, profile: user.profile, trialStartTime: user.trialStartTime, hasPreordered: user.hasPreordered || false } });
+	res.json({ 
+		token, 
+		user: { 
+			id: user.id, 
+			email: user.email, 
+			role: user.role, 
+			profile: user.profile, 
+			trialStartTime: user.trialStartTime, 
+			hasPreordered: user.hasPreordered || false,
+			emailVerified: emailVerified
+		} 
+	});
 });
 
-// Password reset request (placeholder - requires email service)
+// Email verification endpoint
+authRouter.get('/verify-email', async (req, res) => {
+	const store = req.app.get('dataStore');
+	const { token, email } = req.query;
+	
+	if (!token || !email) {
+		return res.status(400).json({ error: 'Token and email required' });
+	}
+	
+	const user = await store.users.findByEmail(email);
+	if (!user) {
+		return res.status(404).json({ error: 'User not found' });
+	}
+	
+	// Check if token matches and hasn't expired
+	if (user.verificationToken !== token) {
+		return res.status(400).json({ error: 'Invalid verification token' });
+	}
+	
+	if (new Date(user.verificationTokenExpiry) < new Date()) {
+		return res.status(400).json({ error: 'Verification token has expired' });
+	}
+	
+	// Mark email as verified
+	await store.users.update(user.id, {
+		emailVerified: true,
+		verificationToken: null,
+		verificationTokenExpiry: null
+	});
+	
+	res.json({ success: true, message: 'Email verified successfully' });
+});
+
+// Resend verification email
+authRouter.post('/resend-verification', async (req, res) => {
+	const store = req.app.get('dataStore');
+	const { email } = req.body;
+	
+	if (!email) {
+		return res.status(400).json({ error: 'Email required' });
+	}
+	
+	const user = await store.users.findByEmail(email);
+	if (!user) {
+		// Always return success to prevent user enumeration
+		return res.json({ message: 'If an account exists, a verification email has been sent.' });
+	}
+	
+	if (user.emailVerified) {
+		return res.status(400).json({ error: 'Email already verified' });
+	}
+	
+	// Generate new verification token
+	const verificationToken = uuidv4();
+	await store.users.update(user.id, {
+		verificationToken: verificationToken,
+		verificationTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+	});
+	
+	// Send verification email
+	try {
+		const locale = req.headers['accept-language']?.includes('fr') ? 'fr' : 'en';
+		const emailContent = welcomeEmail({ 
+			name: user.profile?.name, 
+			email, 
+			verificationToken,
+			locale 
+		});
+		await sendEmail({ 
+			to: email, 
+			subject: emailContent.subject, 
+			html: emailContent.html 
+		});
+		res.json({ message: 'Verification email sent' });
+	} catch (error) {
+		console.error('Failed to send verification email:', error);
+		res.status(500).json({ error: 'Failed to send verification email' });
+	}
+});
+
+// Password reset request
 authRouter.post('/forgot-password', async (req, res) => {
 	const store = req.app.get('dataStore');
 	const { email } = req.body;
@@ -153,24 +312,73 @@ authRouter.post('/forgot-password', async (req, res) => {
 	res.json({ message: 'If an account exists, a password reset link has been sent.' });
 	
 	if (user) {
-		// TODO: Generate reset token and send email
-		// For now, just log (in production, this would send an email)
-		if (process.env.NODE_ENV === 'development') {
-			console.log('Password reset requested for:', email);
+		// Generate reset token (expires in 1 hour)
+		const resetToken = uuidv4();
+		const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+		
+		await store.users.update(user.id, {
+			resetToken: resetToken,
+			resetTokenExpiry: resetTokenExpiry
+		});
+		
+		// Send password reset email
+		try {
+			const locale = req.headers['accept-language']?.includes('fr') ? 'fr' : 'en';
+			const emailContent = passwordResetEmail({ 
+				name: user.profile?.name, 
+				email, 
+				resetToken,
+				locale 
+			});
+			await sendEmail({ 
+				to: email, 
+				subject: emailContent.subject, 
+				html: emailContent.html 
+			});
+		} catch (error) {
+			console.error('Failed to send password reset email:', error);
+			// Don't fail the request if email fails
 		}
 	}
 });
 
-// Password reset confirmation (placeholder)
+// Password reset confirmation
 authRouter.post('/reset-password', async (req, res) => {
-	const { token, newPassword } = req.body;
+	const { token, email, newPassword } = req.body;
 	
-	if (!token || !newPassword || newPassword.length < 8) {
-		return res.status(400).json({ error: 'Valid token and password (8+ chars) required' });
+	if (!token || !email || !newPassword) {
+		return res.status(400).json({ error: 'Token, email, and new password required' });
 	}
 	
-	// TODO: Verify reset token and update password
-	res.status(501).json({ error: 'Password reset not yet implemented' });
+	if (newPassword.length < 8) {
+		return res.status(400).json({ error: 'Password must be at least 8 characters' });
+	}
+	
+	const store = req.app.get('dataStore');
+	const user = await store.users.findByEmail(email);
+	
+	if (!user) {
+		return res.status(404).json({ error: 'User not found' });
+	}
+	
+	// Check if token matches and hasn't expired
+	if (user.resetToken !== token) {
+		return res.status(400).json({ error: 'Invalid reset token' });
+	}
+	
+	if (!user.resetTokenExpiry || new Date(user.resetTokenExpiry) < new Date()) {
+		return res.status(400).json({ error: 'Reset token has expired' });
+	}
+	
+	// Hash new password and update
+	const hashedPassword = await bcrypt.hash(newPassword, 10);
+	await store.users.update(user.id, {
+		password: hashedPassword,
+		resetToken: null,
+		resetTokenExpiry: null
+	});
+	
+	res.json({ success: true, message: 'Password reset successfully' });
 });
 
 // Track login (public endpoint for frontend to call)
@@ -205,7 +413,117 @@ authRouter.post('/logout', (req, res) => {
 	res.json({ success: true });
 });
 
-// Google OAuth login for admin
+// Google OAuth login for all users (not just admin)
+authRouter.post('/google', async (req, res) => {
+	const { idToken } = req.body;
+	
+	if (!idToken) {
+		return res.status(400).json({ error: 'ID token required' });
+	}
+
+	const GOOGLE_CLIENT_ID = getGoogleClientId();
+	if (!GOOGLE_CLIENT_ID) {
+		return res.status(500).json({ error: 'Google OAuth not configured' });
+	}
+
+	try {
+		const client = new OAuth2Client(GOOGLE_CLIENT_ID);
+		const ticket = await client.verifyIdToken({
+			idToken: idToken,
+			audience: GOOGLE_CLIENT_ID,
+		});
+		
+		const payload = ticket.getPayload();
+		const email = payload.email;
+		const name = payload.name;
+		const picture = payload.picture;
+
+		// Create or update user
+		const store = req.app.get('dataStore');
+		let user = await store.users.findByEmail(email);
+		
+		if (!user) {
+			// New user - create account
+			const now = new Date().toISOString();
+			user = {
+				id: uuidv4(),
+				email: email,
+				password: '', // No password needed for OAuth
+				role: 'parent', // Default role
+				profile: {
+					name: name,
+					picture: picture
+				},
+				trialStartTime: now, // Start 24-hour trial
+				hasPreordered: false,
+				emailVerified: true, // Google emails are verified
+				createdAt: now
+			};
+			await store.users.create(user);
+		} else {
+			// Existing user - update profile with latest Google info
+			await store.users.update(user.id, {
+				profile: {
+					...user.profile,
+					name: name || user.profile?.name,
+					picture: picture || user.profile?.picture
+				},
+				emailVerified: true // Google emails are verified
+			});
+			user.profile = { ...user.profile, name: name || user.profile?.name, picture: picture || user.profile?.picture };
+		}
+
+		// Track login
+		try {
+			const now = new Date().toISOString();
+			await store.logins.create({
+				id: uuidv4(),
+				email: email,
+				timestamp: now,
+				createdAt: now,
+				updatedAt: now
+			});
+		} catch (e) {
+			if (process.env.NODE_ENV === 'development') {
+				console.error('Failed to track login:', e);
+			}
+		}
+
+		const token = signToken({ 
+			id: user.id, 
+			email: user.email, 
+			role: user.role 
+		});
+
+		// Set httpOnly cookie for token (more secure than localStorage)
+		res.cookie('token', token, {
+			httpOnly: true,
+			secure: process.env.NODE_ENV === 'production',
+			sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' required for cross-origin in production
+			maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+		});
+
+		res.json({ 
+			token, 
+			user: { 
+				id: user.id, 
+				email: user.email, 
+				role: user.role, 
+				profile: user.profile,
+				trialStartTime: user.trialStartTime,
+				hasPreordered: user.hasPreordered || false,
+				emailVerified: true
+			} 
+		});
+	} catch (error) {
+		if (process.env.NODE_ENV === 'development') {
+			console.error('Google OAuth error:', error);
+		}
+		res.status(401).json({ error: 'Invalid Google token' });
+	}
+});
+
+// Google OAuth login for admin (kept for backward compatibility)
 authRouter.post('/admin/google', async (req, res) => {
 	const { idToken } = req.body;
 	
@@ -306,4 +624,3 @@ authRouter.post('/admin/google', async (req, res) => {
 		res.status(401).json({ error: 'Invalid Google token' });
 	}
 });
-

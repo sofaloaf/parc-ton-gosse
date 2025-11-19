@@ -1,14 +1,20 @@
 import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { auth, api } from '../shared/api.js';
 import { useI18n } from '../shared/i18n.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import PasswordStrength from '../components/PasswordStrength.jsx';
+import GoogleSignIn from '../components/GoogleSignIn.jsx';
+import ReferralCodeDisplay from '../components/ReferralCodeDisplay.jsx';
+import { trackSignup, trackLogin } from '../utils/analytics.js';
 
 export default function Profile() {
 	const { locale, t } = useI18n();
+	const navigate = useNavigate();
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
 	const [name, setName] = useState('');
+	const [referralCode, setReferralCode] = useState('');
 	const [message, setMessage] = useState('');
 	const [user, setUser] = useState(null);
 	const [loading, setLoading] = useState(false);
@@ -19,12 +25,19 @@ export default function Profile() {
 		setLoading(true);
 		api('/me').then(data => {
 			setUser(data.user);
+			// Check if user needs onboarding
+			if (data.user && !data.user.profile?.onboardingCompleted && data.user.role === 'parent') {
+				// Redirect to onboarding after a short delay
+				setTimeout(() => {
+					navigate('/onboarding');
+				}, 2000);
+			}
 		}).catch(() => {
 			setUser(null);
 		}).finally(() => {
 			setLoading(false);
 		});
-	}, []);
+	}, [navigate]);
 
 	// Client-side validation
 	const validateForm = () => {
@@ -60,6 +73,15 @@ export default function Profile() {
 			setEmail('');
 			setPassword('');
 			
+			trackLogin('email');
+			
+			// Check if user needs onboarding
+			if (result.user && !result.user.profile?.onboardingCompleted && result.user.role === 'parent') {
+				setTimeout(() => {
+					navigate('/onboarding');
+				}, 1500);
+			}
+			
 			// Track login
 			try {
 				await api('/auth/track-login', {
@@ -94,12 +116,26 @@ export default function Profile() {
 		setErrors({});
 		
 		try {
-			const result = await auth.signup(email, password, 'parent', { name: name.trim() || undefined });
+			// Apply referral code if provided
+			const signupData = { email, password, role: 'parent', profile: { name: name.trim() || undefined } };
+			if (referralCode.trim()) {
+				signupData.referralCode = referralCode.trim().toUpperCase();
+			}
+			
+			const result = await auth.signup(email, password, 'parent', { name: name.trim() || undefined }, referralCode.trim() || undefined);
 			setUser(result.user);
 			setMessage(locale === 'fr' ? 'Inscription réussie! Accès gratuit de 24h activé.' : 'Signup successful! 24-hour free trial activated.');
 			setEmail('');
 			setPassword('');
 			setName('');
+			setReferralCode('');
+			
+			trackSignup('email');
+			
+			// Redirect to onboarding
+			setTimeout(() => {
+				navigate('/onboarding');
+			}, 1500);
 		} catch (e) {
 			const errorMsg = e.message || (locale === 'fr' ? 'Échec de l\'inscription' : 'Signup failed');
 			setMessage(errorMsg);
@@ -131,6 +167,45 @@ export default function Profile() {
 					<div style={{ marginBottom: 12 }}>
 						<strong>{locale === 'fr' ? 'Rôle:' : 'Role:'}</strong> {user.role}
 					</div>
+					{user.emailVerified === false && (
+						<div style={{ marginBottom: 12, padding: 12, background: '#fff3cd', borderRadius: 4 }}>
+							<strong style={{ color: '#856404' }}>{locale === 'fr' ? '⚠️ Email non vérifié' : '⚠️ Email Not Verified'}</strong>
+							<p style={{ margin: '4px 0 0 0', fontSize: 14, color: '#856404' }}>
+								{locale === 'fr' 
+									? 'Veuillez vérifier votre email pour accéder à toutes les fonctionnalités.'
+									: 'Please verify your email to access all features.'}
+							</p>
+							<button
+								onClick={async () => {
+									try {
+										await api('/auth/resend-verification', {
+											method: 'POST',
+											body: { email: user.email }
+										});
+										setMessage(locale === 'fr' 
+											? 'Email de vérification envoyé ! Vérifiez votre boîte de réception.'
+											: 'Verification email sent! Check your inbox.');
+									} catch (err) {
+										setMessage(err.message || (locale === 'fr' 
+											? 'Échec de l\'envoi de l\'email'
+											: 'Failed to send email'));
+									}
+								}}
+								style={{
+									marginTop: 8,
+									padding: '6px 12px',
+									background: '#ffc107',
+									color: '#333',
+									border: 'none',
+									borderRadius: 4,
+									cursor: 'pointer',
+									fontSize: 12
+								}}
+							>
+								{locale === 'fr' ? 'Renvoyer l\'email de vérification' : 'Resend Verification Email'}
+							</button>
+						</div>
+					)}
 					{user.trialStatus && (
 						<div style={{ marginBottom: 12, padding: 12, background: user.trialStatus.isExpired ? '#fff3cd' : '#d1ecf1', borderRadius: 4 }}>
 							{user.trialStatus.isExpired ? (
@@ -160,6 +235,16 @@ export default function Profile() {
 							</p>
 						</div>
 					)}
+					{/* Referral Code Section */}
+					<div style={{ marginBottom: 12, padding: 12, background: '#e7f3ff', borderRadius: 4 }}>
+						<strong style={{ color: '#004085' }}>{locale === 'fr' ? '🎁 Code de parrainage' : '🎁 Referral Code'}</strong>
+						<p style={{ margin: '8px 0', fontSize: 14, color: '#004085' }}>
+							{locale === 'fr' 
+								? 'Partagez votre code et gagnez des récompenses !'
+								: 'Share your code and earn rewards!'}
+						</p>
+						<ReferralCodeDisplay userId={user.id} />
+					</div>
 					<button 
 						onClick={async () => {
 							try {
@@ -194,6 +279,49 @@ export default function Profile() {
 	return (
 		<div style={{ display: 'grid', gap: 12, maxWidth: 400 }}>
 			<h2>{locale === 'fr' ? 'Connexion / Inscription' : 'Login / Signup'}</h2>
+			<div style={{ marginBottom: 12 }}>
+				<Link 
+					to="/forgot-password" 
+					style={{ 
+						fontSize: 14, 
+						color: '#007bff', 
+						textDecoration: 'none' 
+					}}
+				>
+					{locale === 'fr' ? 'Mot de passe oublié ?' : 'Forgot password?'}
+				</Link>
+			</div>
+			
+			{/* Google Sign In */}
+			<GoogleSignIn 
+				onSuccess={(user) => {
+					setUser(user);
+					setMessage(locale === 'fr' ? 'Connecté avec succès!' : 'Logged in successfully!');
+					// Check if user needs onboarding
+					if (user && !user.profile?.onboardingCompleted && user.role === 'parent') {
+						setTimeout(() => {
+							navigate('/onboarding');
+						}, 1500);
+					}
+				}}
+				onError={(error) => {
+					setMessage(error || (locale === 'fr' ? 'Échec de la connexion Google' : 'Google login failed'));
+				}}
+			/>
+			
+			<div style={{ 
+				display: 'flex', 
+				alignItems: 'center', 
+				gap: 12, 
+				margin: '12px 0',
+				color: '#666',
+				fontSize: 14
+			}}>
+				<div style={{ flex: 1, height: 1, background: '#ddd' }}></div>
+				<span>{locale === 'fr' ? 'ou' : 'or'}</span>
+				<div style={{ flex: 1, height: 1, background: '#ddd' }}></div>
+			</div>
+			
 			<div style={{ display: 'grid', gap: 8 }}>
 				<div>
 					<input 

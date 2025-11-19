@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Routes, Route, Link } from 'react-router-dom';
+import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { useI18n } from './shared/i18n.jsx';
 import Browse from './pages/Browse.jsx';
 import ActivityDetail from './pages/ActivityDetail.jsx';
@@ -9,14 +9,25 @@ import ProviderDashboard from './pages/ProviderDashboard.jsx';
 import AdminPanel from './pages/AdminPanel.jsx';
 import Preorder from './pages/Preorder.jsx';
 import PreorderConfirmation from './pages/PreorderConfirmation.jsx';
+import VerifyEmail from './pages/VerifyEmail.jsx';
+import ResetPassword from './pages/ResetPassword.jsx';
+import ForgotPassword from './pages/ForgotPassword.jsx';
+import Onboarding from './pages/Onboarding.jsx';
 import LanguageToggle from './components/LanguageToggle.jsx';
 import FeedbackWidget from './components/FeedbackWidget.jsx';
 import { api } from './shared/api.js';
 import { auth } from './shared/api.js';
+import { trackPageView } from './utils/analytics.js';
 
 export default function App() {
 	const { t, locale, setRemoteDict } = useI18n();
 	const [user, setUser] = useState(null);
+	const location = useLocation();
+
+	// Track page views with Google Analytics
+	useEffect(() => {
+		trackPageView(location.pathname + location.search);
+	}, [location]);
 
 	useEffect(() => {
 		api(`/i18n/${locale}`).then(setRemoteDictLoc => {
@@ -98,6 +109,10 @@ export default function App() {
 				<Route path="/admin" element={<AdminPanel />} />
 				<Route path="/preorder" element={<Preorder />} />
 				<Route path="/preorder/confirmation" element={<PreorderConfirmation />} />
+				<Route path="/verify-email" element={<VerifyEmail />} />
+				<Route path="/reset-password" element={<ResetPassword />} />
+				<Route path="/forgot-password" element={<ForgotPassword />} />
+				<Route path="/onboarding" element={<Onboarding />} />
 			</Routes>
 			<FeedbackWidget />
 		</div>

@@ -37,7 +37,9 @@ import { importRouter } from './routes/import.js';
 import geocodeRouter from './routes/geocode.js';
 import { feedbackRouter } from './routes/feedback.js';
 import { metricsRouter } from './routes/metrics.js';
+import { referralsRouter } from './routes/referrals.js';
 import { preordersRouter } from './routes/preorders.js';
+import { crawlerRouter } from './routes/crawler.js';
 import { requireAuth } from './middleware/auth.js';
 import { csrfProtection } from './middleware/csrf.js';
 
@@ -426,7 +428,9 @@ app.use('/api/import', importRouter);
 app.use('/api/geocode', geocodeRouter);
 app.use('/api/feedback', feedbackRouter);
 app.use('/api/metrics', metricsRouter);
+app.use('/api/referrals', referralsRouter);
 app.use('/api/preorders', preordersRouter);
+app.use('/api/crawler', crawlerRouter);
 
 // Get current user with trial status
 app.get('/api/me', requireAuth(), async (req, res) => {
@@ -463,7 +467,8 @@ app.get('/api/me', requireAuth(), async (req, res) => {
 			role: user.role,
 			profile: user.profile,
 			trialStatus,
-			hasPreordered: user.hasPreordered || false
+			hasPreordered: user.hasPreordered || false,
+			emailVerified: user.emailVerified !== false // Default to true for existing users
 		}
 	});
 });

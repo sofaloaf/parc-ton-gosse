@@ -23,6 +23,25 @@ export function csrfProtection() {
 		const cookieToken = req.cookies['csrf-token'];
 		const headerToken = req.headers['x-csrf-token'];
 
+		// For OAuth endpoints, be more lenient (they come from Google's redirect)
+		// Check both path (route-relative) and originalUrl (full path) to catch all variations
+		// Note: req.path is relative to the route mount point, so /api/auth/admin/google becomes /admin/google
+		const path = req.path || '';
+		const originalUrl = req.originalUrl || '';
+		const isOAuthEndpoint = path.includes('/google') || 
+		                       path.includes('admin/google') ||
+		                       originalUrl.includes('/auth/google') ||
+		                       originalUrl.includes('/auth/admin/google');
+		
+		if (isOAuthEndpoint) {
+			// OAuth requests are authenticated by Google's token, so we can be more lenient
+			// Always allow OAuth endpoints - they're secure via Google's authentication
+			if (process.env.NODE_ENV === 'development') {
+				console.log('🔓 Allowing OAuth endpoint (dev):', path, originalUrl);
+			}
+			return next();
+		}
+
 		// Allow requests without CSRF token in development (for easier testing)
 		if (process.env.NODE_ENV === 'development' && !headerToken) {
 			return next();

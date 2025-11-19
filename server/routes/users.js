@@ -38,4 +38,31 @@ usersRouter.delete('/:id', requireAuth('admin'), async (req, res) => {
 	res.json({ ok: true });
 });
 
+// Save onboarding data
+usersRouter.post('/onboarding', requireAuth(), async (req, res) => {
+	const store = req.app.get('dataStore');
+	const { childAge, interests, location, newsletter, onboardingCompleted } = req.body;
+	
+	try {
+		const user = await store.users.get(req.user.id);
+		if (!user) return res.status(404).json({ error: 'User not found' });
+		
+		await store.users.update(req.user.id, {
+			profile: {
+				...user.profile,
+				childAge,
+				interests: interests || [],
+				location,
+				newsletter: newsletter !== false,
+				onboardingCompleted: onboardingCompleted !== false
+			}
+		});
+		
+		res.json({ success: true });
+	} catch (error) {
+		console.error('Failed to save onboarding:', error);
+		res.status(500).json({ error: 'Failed to save onboarding data' });
+	}
+});
+
 

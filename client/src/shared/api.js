@@ -115,7 +115,7 @@ export async function api(path, { method = 'GET', body, headers } = {}) {
 
 export const auth = {
 	login: (email, password) => api('/auth/login', { method: 'POST', body: { email, password } }),
-	signup: (email, password, role, profile) => api('/auth/signup', { method: 'POST', body: { email, password, role, profile } }),
+	signup: (email, password, role, profile, referralCode) => api('/auth/signup', { method: 'POST', body: { email, password, role, profile, referralCode } }),
 	logout: () => api('/auth/logout', { method: 'POST' })
 };
 

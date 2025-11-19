@@ -12,9 +12,13 @@ export default function AdminPanel() {
 	const [loading, setLoading] = useState(true);
 	const [metrics, setMetrics] = useState(null);
 	const [error, setError] = useState('');
+	const [crawlerLoading, setCrawlerLoading] = useState(false);
+	const [crawlerResults, setCrawlerResults] = useState(null);
+	const [crawlerError, setCrawlerError] = useState('');
 
 	useEffect(() => {
-		// Check if admin is already logged in (cookies are sent automatically)
+		// First, ensure we have a CSRF token by making a GET request
+		// This will set the CSRF token cookie if it doesn't exist
 		api('/me')
 			.then(data => {
 				if (data.user?.role === 'admin') {
@@ -23,13 +27,15 @@ export default function AdminPanel() {
 				} else {
 					setIsAuthenticated(false);
 					setLoading(false);
+					// Initialize Google Sign-In after ensuring CSRF token is set
+					setTimeout(() => initializeGoogleSignIn(), 100);
 				}
 			})
 			.catch(() => {
 				setIsAuthenticated(false);
 				setLoading(false);
-				// Initialize Google Sign-In when component mounts
-				initializeGoogleSignIn();
+				// Initialize Google Sign-In after ensuring CSRF token is set
+				setTimeout(() => initializeGoogleSignIn(), 100);
 			});
 	}, []);
 
@@ -140,6 +146,27 @@ export default function AdminPanel() {
 		return `${secs}s`;
 	};
 
+	const runCrawler = async () => {
+		setCrawlerLoading(true);
+		setCrawlerError('');
+		setCrawlerResults(null);
+
+		try {
+			const result = await api('/crawler/validate', {
+				method: 'POST'
+			});
+
+			setCrawlerResults(result);
+			setCrawlerError('');
+		} catch (err) {
+			setCrawlerError(err.message || 'Failed to run crawler');
+			setCrawlerResults(null);
+			console.error('Crawler error:', err);
+		} finally {
+			setCrawlerLoading(false);
+		}
+	};
+
 	if (loading) {
 		return (
 			<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
@@ -210,6 +237,12 @@ export default function AdminPanel() {
 
 	return (
 		<div style={{ padding: 20, maxWidth: '1400px', margin: '0 auto' }}>
+			<style>{`
+				@keyframes spin {
+					0% { transform: rotate(0deg); }
+					100% { transform: rotate(360deg); }
+				}
+			`}</style>
 			<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 }}>
 				<h1>Admin Dashboard - KPI Overview</h1>
 				<button
@@ -330,6 +363,112 @@ export default function AdminPanel() {
 							<Tooltip />
 						</PieChart>
 					</ResponsiveContainer>
+				</ChartCard>
+
+				{/* Data Validator/Crawler Section */}
+				<ChartCard title="Data Validator / Crawler">
+					<div style={{ marginBottom: 20 }}>
+						<p style={{ color: '#666', marginBottom: 16 }}>
+							Validate and update activity data by crawling websites. This will:
+						</p>
+					<ul style={{ color: '#666', marginLeft: 20, marginBottom: 16 }}>
+						<li>Read all activities from Google Sheets</li>
+						<li>Visit each activity's website</li>
+						<li>Extract and validate data</li>
+						<li>Create a new versioned sheet with updated data</li>
+					</ul>
+					<button
+						onClick={runCrawler}
+						disabled={crawlerLoading}
+						style={{
+							padding: '12px 24px',
+							background: crawlerLoading ? '#6c757d' : '#28a745',
+							color: 'white',
+							border: 'none',
+							borderRadius: 4,
+							cursor: crawlerLoading ? 'not-allowed' : 'pointer',
+							fontSize: 16,
+							fontWeight: 'bold',
+							display: 'flex',
+							alignItems: 'center',
+							gap: 8
+						}}
+					>
+						{crawlerLoading ? (
+							<>
+								<span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #fff', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
+								Running Crawler...
+							</>
+						) : (
+							<>
+								🚀 Run Data Validator
+							</>
+						)}
+					</button>
+					{crawlerError && (
+						<div style={{
+							marginTop: 16,
+							padding: 12,
+							background: '#f8d7da',
+							color: '#721c24',
+							borderRadius: 4,
+							border: '1px solid #f5c6cb'
+						}}>
+							<strong>Error:</strong> {crawlerError}
+						</div>
+					)}
+					{crawlerResults && (
+						<div style={{
+							marginTop: 16,
+							padding: 16,
+							background: '#d4edda',
+							borderRadius: 4,
+							border: '1px solid #c3e6cb'
+						}}>
+							<h4 style={{ marginTop: 0, color: '#155724' }}>✅ Crawler Completed Successfully!</h4>
+							<div style={{ marginBottom: 12 }}>
+								<strong>New Sheet:</strong> <code style={{ background: 'white', padding: '2px 6px', borderRadius: 3 }}>{crawlerResults.sheetName}</code>
+							</div>
+							<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
+								<div>
+									<strong style={{ color: '#155724' }}>Total:</strong> {crawlerResults.summary.total}
+								</div>
+								<div>
+									<strong style={{ color: '#155724' }}>Successful:</strong> {crawlerResults.summary.successful}
+								</div>
+								<div>
+									<strong style={{ color: '#856404' }}>Errors:</strong> {crawlerResults.summary.errors}
+								</div>
+								<div>
+									<strong style={{ color: '#856404' }}>Skipped:</strong> {crawlerResults.summary.skipped}
+								</div>
+								<div>
+									<strong style={{ color: '#155724' }}>Changes:</strong> {crawlerResults.summary.totalChanges}
+								</div>
+							</div>
+							{crawlerResults.results && crawlerResults.results.length > 0 && (
+								<div style={{ marginTop: 12 }}>
+									<strong style={{ color: '#155724' }}>Sample Results:</strong>
+									<div style={{ marginTop: 8, maxHeight: 200, overflowY: 'auto', background: 'white', padding: 12, borderRadius: 4 }}>
+										{crawlerResults.results.slice(0, 5).map((r, i) => (
+											<div key={i} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: i < 4 ? '1px solid #e0e0e0' : 'none' }}>
+												<div style={{ fontSize: 12, color: '#666' }}>Row {r.row}: {r.url}</div>
+												<div style={{ fontSize: 11, color: r.status === 'success' ? '#28a745' : r.status === 'error' ? '#dc3545' : '#ffc107', marginTop: 4 }}>
+													Status: {r.status}
+													{r.changes && ` • ${r.changes} changes`}
+													{r.error && ` • ${r.error}`}
+												</div>
+											</div>
+										))}
+									</div>
+								</div>
+							)}
+							<div style={{ marginTop: 12, fontSize: 14, color: '#155724' }}>
+								✅ Check your Google Sheets for the new tab: <strong>{crawlerResults.sheetName}</strong>
+							</div>
+						</div>
+					)}
+				</div>
 				</ChartCard>
 			</div>
 

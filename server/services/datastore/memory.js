@@ -94,6 +94,8 @@ export function createMemoryStore() {
 	const registrations = [];
 	const reviews = [];
 	const referrals = [];
+	const preorders = [];
+	const conversionEvents = [];
 	const i18n = { // simple key-value by locale
 		'en': {},
 		'fr': {}
@@ -108,6 +110,8 @@ export function createMemoryStore() {
 		registrations: createCrud(registrations),
 		reviews: createCrud(reviews),
 		referrals: createCrud(referrals),
+		preorders: createCrud(preorders),
+		conversionEvents: createCrud(conversionEvents),
 		i18n: {
 			getAll: async () => i18n,
 			getLocale: async (locale) => i18n[locale] || {},

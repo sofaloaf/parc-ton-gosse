@@ -6,6 +6,7 @@ import { body, validationResult } from 'express-validator';
 import { signToken } from '../middleware/auth.js';
 import { sendEmail } from '../services/notifications/index.js';
 import { welcomeEmail, passwordResetEmail, trialExpirationEmail } from '../services/notifications/templates.js';
+import { trackConversionEvent } from '../utils/conversionTracking.js';
 
 export const authRouter = express.Router();
 
@@ -90,6 +91,38 @@ authRouter.post('/signup', validateSignup, async (req, res) => {
 		createdAt: now 
 	};
 	await store.users.create(user);
+	
+	// Track conversion event: signup
+	try {
+		await trackConversionEvent(store, {
+			userId: user.id,
+			userEmail: user.email,
+			eventType: 'signup',
+			eventData: {
+				role: user.role,
+				referredBy: referredBy || null,
+				trialStartTime: now
+			},
+			timestamp: now
+		});
+	} catch (e) {
+		console.error('Failed to track signup conversion:', e);
+	}
+	
+	// Track conversion event: trial_started
+	try {
+		await trackConversionEvent(store, {
+			userId: user.id,
+			userEmail: user.email,
+			eventType: 'trial_started',
+			eventData: {
+				trialStartTime: now
+			},
+			timestamp: now
+		});
+	} catch (e) {
+		console.error('Failed to track trial_started conversion:', e);
+	}
 	
 	// Send welcome email with verification link
 	try {
@@ -177,6 +210,40 @@ authRouter.post('/login', validateLogin, async (req, res) => {
 	if (!user.trialStartTime && !user.hasPreordered && user.role === 'parent') {
 		await store.users.update(user.id, { trialStartTime: now });
 		user.trialStartTime = now;
+		
+		// Track conversion event: trial_started (for existing users)
+		try {
+			await trackConversionEvent(store, {
+				userId: user.id,
+				userEmail: user.email,
+				eventType: 'trial_started',
+				eventData: {
+					trialStartTime: now,
+					isExistingUser: true
+				},
+				timestamp: now
+			});
+		} catch (e) {
+			console.error('Failed to track trial_started conversion:', e);
+		}
+	}
+	
+	// Track conversion event: login
+	try {
+		const trialActive = !user.hasPreordered && user.trialStartTime && 
+			(new Date() - new Date(user.trialStartTime)) < 24 * 60 * 60 * 1000;
+		await trackConversionEvent(store, {
+			userId: user.id,
+			userEmail: user.email,
+			eventType: 'login',
+			eventData: {
+				hasPreordered: user.hasPreordered || false,
+				trialActive: trialActive
+			},
+			timestamp: now
+		});
+	} catch (e) {
+		console.error('Failed to track login conversion:', e);
 	}
 	
 	const token = signToken({ id: user.id, email: user.email, role: user.role });

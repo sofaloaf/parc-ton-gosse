@@ -13,7 +13,8 @@ const SHEETS = {
 	logins: 'Logins',
 	sessions: 'Sessions',
 	preorders: 'Preorders',
-	referrals: 'Referrals'
+	referrals: 'Referrals',
+	conversionEvents: 'Conversion Events'
 };
 
 // Column mapping configuration - maps Google Sheet column names to our app's field names
@@ -152,6 +153,15 @@ const COLUMN_MAPPINGS = {
 		'referredUserId': ['referredUserId', 'referred_user_id', 'Referred User ID', 'ID de l\'utilisateur parrainé'],
 		'referralCode': ['referralCode', 'referral_code', 'Referral Code', 'Code de parrainage'],
 		'status': ['status', 'Status', 'Statut'],
+		'createdAt': ['createdAt', 'created_at', 'Created At', 'Date de création'],
+		'updatedAt': ['updatedAt', 'updated_at', 'Updated At', 'Date de mise à jour']
+	},
+	conversionEvents: {
+		'userId': ['userId', 'user_id', 'User ID'],
+		'userEmail': ['userEmail', 'user_email', 'Email', 'E-mail'],
+		'eventType': ['eventType', 'event_type', 'Event Type', 'Type d\'événement'],
+		'eventData': ['eventData', 'event_data', 'Event Data', 'Données de l\'événement'],
+		'timestamp': ['timestamp', 'Timestamp', 'Date et heure'],
 		'createdAt': ['createdAt', 'created_at', 'Created At', 'Date de création'],
 		'updatedAt': ['updatedAt', 'updated_at', 'Updated At', 'Date de mise à jour']
 	}
@@ -659,7 +669,8 @@ export async function createSheetsStore({ serviceAccount, privateKey, sheetId })
 		ensureSheet(sheets, sheetId, SHEETS.logins, 'logins'),
 		ensureSheet(sheets, sheetId, SHEETS.sessions, 'sessions'),
 		ensureSheet(sheets, sheetId, SHEETS.preorders, 'preorders'),
-		ensureSheet(sheets, sheetId, SHEETS.referrals, 'referrals')
+		ensureSheet(sheets, sheetId, SHEETS.referrals, 'referrals'),
+		ensureSheet(sheets, sheetId, SHEETS.conversionEvents, 'conversionEvents')
 	]);
 
 	// Helper to create CRUD for a sheet
@@ -716,6 +727,7 @@ export async function createSheetsStore({ serviceAccount, privateKey, sheetId })
 		sessions: createCrud(SHEETS.sessions, 'sessions'),
 		preorders: createCrud(SHEETS.preorders, 'preorders'),
 		referrals: createCrud(SHEETS.referrals, 'referrals'),
+		conversionEvents: createCrud(SHEETS.conversionEvents, 'conversionEvents'),
 		i18n: {
 			getAll: async () => {
 				const all = await readSheet(sheets, sheetId, SHEETS.i18n, 'i18n');

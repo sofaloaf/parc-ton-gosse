@@ -68,6 +68,24 @@ export async function checkTrialAccess(req, res, next) {
 		const timeElapsed = now - trialStart;
 		
 		if (timeElapsed > trialDuration) {
+			// Track conversion event: trial_expired
+			try {
+				const { trackConversionEvent } = await import('../utils/conversionTracking.js');
+				await trackConversionEvent(store, {
+					userId: user.id,
+					userEmail: user.email,
+					eventType: 'trial_expired',
+					eventData: {
+						trialStartTime: user.trialStartTime,
+						trialDuration: trialDuration,
+						timeElapsed: timeElapsed
+					},
+					timestamp: new Date().toISOString()
+				});
+			} catch (e) {
+				console.error('Failed to track trial_expired conversion:', e);
+			}
+			
 			return res.status(403).json({ 
 				error: 'Trial expired', 
 				trialExpired: true,

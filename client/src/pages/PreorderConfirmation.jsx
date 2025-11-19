@@ -7,7 +7,7 @@ export default function PreorderConfirmation() {
 	const { locale, t } = useI18n();
 	const navigate = useNavigate();
 	const [searchParams] = useSearchParams();
-	const paymentIntentId = searchParams.get('payment');
+	const commitmentId = searchParams.get('commitment') || searchParams.get('payment'); // Support both old and new
 
 	useEffect(() => {
 		// Verify user is logged in and has preordered (cookies are sent automatically)
@@ -74,8 +74,8 @@ export default function PreorderConfirmation() {
 					: 'Your preorder has been confirmed. You\'ll receive a confirmation email shortly with all the details.'}
 			</p>
 
-			{/* Payment ID */}
-			{paymentIntentId && (
+			{/* Commitment ID */}
+			{commitmentId && (
 				<div style={{
 					padding: 16,
 					background: '#f8fafc',
@@ -84,10 +84,10 @@ export default function PreorderConfirmation() {
 					textAlign: 'left'
 				}}>
 					<div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>
-						{locale === 'fr' ? 'ID de transaction' : 'Transaction ID'}
+						{locale === 'fr' ? 'ID d\'engagement' : 'Commitment ID'}
 					</div>
 					<div style={{ fontSize: 14, fontFamily: 'monospace', color: '#1e293b' }}>
-						{paymentIntentId}
+						{commitmentId}
 					</div>
 				</div>
 			)}
@@ -121,8 +121,8 @@ export default function PreorderConfirmation() {
 							<strong style={{ display: 'block', marginBottom: 4 }}>{locale === 'fr' ? 'Lancement prévu' : 'Expected Launch'}</strong>
 							<span style={{ fontSize: 14, color: '#475569' }}>
 								{locale === 'fr' 
-									? 'Q1 2025 - Nous vous enverrons un email avec vos identifiants d\'accès'
-									: 'Q1 2025 - We\'ll send you an email with your access credentials'}
+									? 'Q1 2025 - Nous vous enverrons un email avec vos identifiants d\'accès et les instructions de paiement'
+									: 'Q1 2025 - We\'ll send you an email with your access credentials and payment instructions'}
 							</span>
 						</div>
 					</div>

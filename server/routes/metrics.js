@@ -9,14 +9,15 @@ metricsRouter.get('/dashboard', requireAuth('admin'), async (req, res) => {
 	
 	try {
 		// Get all data
-		const [users, logins, sessions, activities, registrations, feedback, preorders] = await Promise.all([
+		const [users, logins, sessions, activities, registrations, feedback, preorders, conversionEvents] = await Promise.all([
 			store.users.list().catch(() => []),
 			store.logins.list().catch(() => []),
 			store.sessions.list().catch(() => []),
 			store.activities.list().catch(() => []),
 			store.registrations.list().catch(() => []),
 			store.feedback.list().catch(() => []),
-			store.preorders?.list().catch(() => []) || Promise.resolve([])
+			store.preorders?.list().catch(() => []) || Promise.resolve([]),
+			store.conversionEvents?.list().catch(() => []) || Promise.resolve([])
 		]);
 
 		const now = new Date();
@@ -148,6 +149,7 @@ metricsRouter.get('/dashboard', requireAuth('admin'), async (req, res) => {
 			loginActivity: loginActivityArray,
 			pageViews: pageViewsArray,
 			preorders: preordersArray,
+			conversionEvents: conversionEventsArray,
 			
 			// Summary KPIs
 			summary: {
@@ -179,7 +181,12 @@ metricsRouter.get('/dashboard', requireAuth('admin'), async (req, res) => {
 			},
 			
 			// Breakdowns
-			roleBreakdown: roleCounts
+			roleBreakdown: roleCounts,
+			
+			// Conversion Funnel
+			conversionFunnel: conversionFunnel,
+			conversionRates: conversionRates,
+			conversionEventsByType: conversionEventsByType
 		});
 	} catch (error) {
 		console.error('Error fetching metrics:', error);

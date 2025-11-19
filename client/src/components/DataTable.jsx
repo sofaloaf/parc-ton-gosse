@@ -188,21 +188,30 @@ export default function DataTable({ activities, locale }) {
 				</div>
 			</div>
 
-			{/* Table with responsive layout - Crunchbase style */}
+			{/* Table with responsive layout - Modern design */}
 			<div style={{ 
-				border: '1px solid #e0e7f0', 
-				borderRadius: '8px', 
+				border: '1px solid #e2e8f0', 
+				borderRadius: '12px', 
 				overflowX: 'auto',
 				overflowY: 'visible',
 				width: '100%',
 				maxWidth: '100%',
 				WebkitOverflowScrolling: 'touch',
 				background: 'white',
-				boxShadow: '0 1px 3px rgba(59, 130, 246, 0.08)'
+				boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.1)'
 			}}>
-				<table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 14, tableLayout: 'auto' }}>
+				<table style={{ 
+					width: '100%', 
+					borderCollapse: 'separate', 
+					borderSpacing: 0, 
+					fontSize: 14, 
+					tableLayout: 'auto'
+				}}>
 					<thead>
-						<tr style={{ background: '#f8fafc' }}>
+						<tr style={{ 
+							background: 'linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%)',
+							borderBottom: '2px solid #e2e8f0'
+						}}>
 							{columns.map(col => {
 								// Define column widths based on content type
 								const getColumnWidth = (columnName) => {
@@ -221,68 +230,90 @@ export default function DataTable({ activities, locale }) {
 								
 								const colWidth = getColumnWidth(col);
 								
+								// Determine text alignment based on column type
+								const getTextAlign = (columnName) => {
+									if (columnName === 'price' || columnName === 'ageMin' || columnName === 'ageMax') return 'right';
+									if (columnName === 'adults') return 'center';
+									return 'left';
+								};
+								
 								return (
 									<th
 										key={col}
 										onClick={() => handleSort(col)}
 										style={{
-											padding: '12px 16px',
-											textAlign: 'left',
+											padding: '14px 18px',
+											textAlign: getTextAlign(col),
 											cursor: 'pointer',
 											userSelect: 'none',
-											borderBottom: '2px solid #e0e7f0',
 											position: 'relative',
 											fontWeight: 600,
-											fontSize: '12px',
+											fontSize: '11px',
 											color: '#475569',
 											textTransform: 'uppercase',
-											letterSpacing: '0.5px',
-											transition: 'background 0.2s ease',
+											letterSpacing: '0.8px',
+											transition: 'all 0.2s ease',
 											minWidth: colWidth.minWidth,
 											maxWidth: colWidth.maxWidth,
 											whiteSpace: 'nowrap',
 											overflow: 'hidden',
-											textOverflow: 'ellipsis'
+											textOverflow: 'ellipsis',
+											borderRight: '1px solid #e2e8f0'
 										}}
-										onMouseEnter={(e) => e.currentTarget.style.background = '#eff6ff'}
-										onMouseLeave={(e) => e.currentTarget.style.background = '#f8fafc'}
+										onMouseEnter={(e) => {
+											e.currentTarget.style.background = '#e0e7ff';
+											e.currentTarget.style.color = '#1e40af';
+										}}
+										onMouseLeave={(e) => {
+											e.currentTarget.style.background = '';
+											e.currentTarget.style.color = '#475569';
+										}}
 									>
 										{columnLabels[col] || col}
-										<span style={{ marginLeft: 6, fontSize: 11, color: '#3b82f6' }}>
+										<span style={{ marginLeft: 8, fontSize: 10, color: '#3b82f6', opacity: sortColumn === col ? 1 : 0.5 }}>
 											{renderSortArrow(col)}
 										</span>
 									</th>
 								);
-							})}
-							<th style={{ 
-								padding: '16px 20px', 
-								borderBottom: '2px solid #e0e7f0',
-								fontWeight: 600,
-								fontSize: '13px',
-								color: '#475569',
-								textTransform: 'uppercase',
-								letterSpacing: '0.5px'
-							}}>Actions</th>
+								})}
+								<th style={{ 
+									padding: '14px 18px', 
+									fontWeight: 600,
+									fontSize: '11px',
+									color: '#475569',
+									textTransform: 'uppercase',
+									letterSpacing: '0.8px',
+									textAlign: 'center',
+									background: 'linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%)'
+								}}>Actions</th>
 						</tr>
 					</thead>
 					<tbody>
-						{paginatedActivities.map((activity, idx) => (
-							<tr 
-								key={activity.id || idx}
-								style={{ 
-									borderBottom: '1px solid #f1f5f9',
-									background: 'white',
-									transition: 'all 0.2s ease'
-								}}
-								onMouseEnter={(e) => {
-									e.currentTarget.style.background = '#f8faff';
-									e.currentTarget.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.08)';
-								}}
-								onMouseLeave={(e) => {
-									e.currentTarget.style.background = 'white';
-									e.currentTarget.style.boxShadow = 'none';
-								}}
-							>
+						{paginatedActivities.map((activity, idx) => {
+							// Alternating row colors for better readability
+							const isEven = idx % 2 === 0;
+							const rowBg = isEven ? '#ffffff' : '#fafbfc';
+							
+							return (
+								<tr 
+									key={activity.id || idx}
+									style={{ 
+										borderBottom: '1px solid #f1f5f9',
+										background: rowBg,
+										transition: 'all 0.15s ease',
+										height: '56px' // Consistent row height
+									}}
+									onMouseEnter={(e) => {
+										e.currentTarget.style.background = '#f0f4ff';
+										e.currentTarget.style.boxShadow = 'inset 0 0 0 1px #dbeafe';
+										e.currentTarget.style.transform = 'scale(1.001)';
+									}}
+									onMouseLeave={(e) => {
+										e.currentTarget.style.background = rowBg;
+										e.currentTarget.style.boxShadow = 'none';
+										e.currentTarget.style.transform = 'scale(1)';
+									}}
+								>
 								{columns.map(col => {
 									let value = activity[col];
 									
@@ -413,49 +444,58 @@ export default function DataTable({ activities, locale }) {
 										}
 									}
 									
-									// Display N/A for empty/missing values
+									// Display N/A for empty/missing values with better styling
 									const isEmpty = value === '' || value === null || value === undefined || (value === false && !isYesNo);
 									const displayValue = isEmpty ? (t.na || 'N/A') : value;
+									const isEmptyValue = isEmpty && !isYesNo && !isLink && !isEmail && !isPhone;
 									
 									// Define cell styles based on column (matching header widths)
 									const getCellStyle = (columnName) => {
+										const getTextAlign = (col) => {
+											if (col === 'price' || col === 'ageMin' || col === 'ageMax') return 'right';
+											if (col === 'adults') return 'center';
+											return 'left';
+										};
+										
 										const baseStyle = {
-											padding: '12px 16px',
-											borderBottom: '1px solid #f1f5f9',
-											color: '#334155',
+											padding: '14px 18px',
+											borderRight: '1px solid #f1f5f9',
+											color: '#1e293b',
 											fontSize: '13px',
-											lineHeight: '1.5',
-											verticalAlign: 'top'
+											lineHeight: '1.6',
+											verticalAlign: 'middle',
+											textAlign: getTextAlign(columnName),
+											fontWeight: columnName === 'title' ? 500 : 400
 										};
 										
 										if (columnName === 'title') {
-											return { ...baseStyle, minWidth: '120px', maxWidth: '180px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+											return { ...baseStyle, minWidth: '120px', maxWidth: '180px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#1e40af', fontWeight: 600 };
 										}
 										if (columnName === 'description') {
-											return { ...baseStyle, minWidth: '150px', maxWidth: '250px', whiteSpace: 'normal', wordWrap: 'break-word' };
+											return { ...baseStyle, minWidth: '150px', maxWidth: '250px', whiteSpace: 'normal', wordWrap: 'break-word', color: '#475569', fontSize: '12px' };
 										}
 										if (columnName === 'categories') {
-											return { ...baseStyle, minWidth: '100px', maxWidth: '150px', whiteSpace: 'normal', wordWrap: 'break-word', fontSize: '12px' };
+											return { ...baseStyle, minWidth: '100px', maxWidth: '150px', whiteSpace: 'normal', wordWrap: 'break-word', fontSize: '12px', color: '#64748b' };
 										}
 										if (columnName === 'activityType') {
-											return { ...baseStyle, minWidth: '100px', maxWidth: '150px', whiteSpace: 'normal', wordWrap: 'break-word', fontSize: '12px' };
+											return { ...baseStyle, minWidth: '100px', maxWidth: '150px', whiteSpace: 'normal', wordWrap: 'break-word', fontSize: '12px', color: '#64748b' };
 										}
 										if (columnName === 'addresses') {
-											return { ...baseStyle, minWidth: '150px', maxWidth: '200px', whiteSpace: 'normal', wordWrap: 'break-word', fontSize: '12px' };
+											return { ...baseStyle, minWidth: '150px', maxWidth: '200px', whiteSpace: 'normal', wordWrap: 'break-word', fontSize: '12px', color: '#475569' };
 										}
 										if (columnName === 'price') {
-											return { ...baseStyle, minWidth: '80px', maxWidth: '100px', whiteSpace: 'nowrap', textAlign: 'right' };
+											return { ...baseStyle, minWidth: '80px', maxWidth: '100px', whiteSpace: 'nowrap', textAlign: 'right', color: '#059669', fontWeight: 600 };
 										}
 										if (columnName === 'ageMin' || columnName === 'ageMax') {
-											return { ...baseStyle, minWidth: '60px', maxWidth: '80px', whiteSpace: 'nowrap', textAlign: 'center' };
+											return { ...baseStyle, minWidth: '60px', maxWidth: '80px', whiteSpace: 'nowrap', textAlign: 'center', color: '#7c3aed', fontWeight: 500 };
 										}
 										if (columnName === 'websiteLink' || columnName === 'registrationLink') {
-											return { ...baseStyle, minWidth: '120px', maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+											return { ...baseStyle, minWidth: '120px', maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '12px' };
 										}
 										if (columnName === 'contactEmail' || columnName === 'contactPhone') {
-											return { ...baseStyle, minWidth: '120px', maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+											return { ...baseStyle, minWidth: '120px', maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '12px' };
 										}
-										return { ...baseStyle, minWidth: '100px', maxWidth: '120px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+										return { ...baseStyle, minWidth: '100px', maxWidth: '120px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '12px' };
 									};
 									
 									return (
@@ -504,29 +544,38 @@ export default function DataTable({ activities, locale }) {
 													{yesNoIcon}
 												</span>
 											) : (
-												displayValue
+												<span style={{ 
+													color: isEmptyValue ? '#94a3b8' : 'inherit',
+													fontStyle: isEmptyValue ? 'italic' : 'normal',
+													fontSize: isEmptyValue ? '12px' : 'inherit'
+												}}>
+													{displayValue}
+												</span>
 											)}
 										</td>
 									);
 								})}
 								<td style={{ 
-									padding: '16px 20px', 
-									borderBottom: '1px solid #f1f5f9' 
+									padding: '14px 18px', 
+									borderRight: 'none',
+									textAlign: 'center',
+									verticalAlign: 'middle'
 								}}>
-									<div style={{ display: 'flex', gap: 8 }}>
+									<div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
 										<button
 											onClick={() => navigate(`/activity/${activity.id}`)}
 											style={{
-												padding: '8px 16px',
+												padding: '6px 12px',
 												background: '#3b82f6',
 												color: 'white',
 												border: 'none',
 												borderRadius: '6px',
 												cursor: 'pointer',
-												fontSize: '13px',
+												fontSize: '12px',
 												fontWeight: 500,
-												transition: 'all 0.2s ease',
-												boxShadow: '0 1px 2px rgba(59, 130, 246, 0.2)'
+												transition: 'all 0.15s ease',
+												boxShadow: '0 1px 2px rgba(59, 130, 246, 0.2)',
+												whiteSpace: 'nowrap'
 											}}
 											onMouseEnter={(e) => {
 												e.currentTarget.style.background = '#2563eb';
@@ -544,26 +593,27 @@ export default function DataTable({ activities, locale }) {
 										<button
 											onClick={() => navigate(`/register/${activity.id}`)}
 											style={{
-												padding: '8px 16px',
-												background: '#1e40af',
+												padding: '6px 12px',
+												background: '#10b981',
 												color: 'white',
 												border: 'none',
 												borderRadius: '6px',
 												cursor: 'pointer',
-												fontSize: '13px',
+												fontSize: '12px',
 												fontWeight: 500,
-												transition: 'all 0.2s ease',
-												boxShadow: '0 1px 2px rgba(30, 64, 175, 0.2)'
+												transition: 'all 0.15s ease',
+												boxShadow: '0 1px 2px rgba(16, 185, 129, 0.2)',
+												whiteSpace: 'nowrap'
 											}}
 											onMouseEnter={(e) => {
-												e.currentTarget.style.background = '#1e3a8a';
+												e.currentTarget.style.background = '#059669';
 												e.currentTarget.style.transform = 'translateY(-1px)';
-												e.currentTarget.style.boxShadow = '0 2px 4px rgba(30, 64, 175, 0.3)';
+												e.currentTarget.style.boxShadow = '0 2px 4px rgba(16, 185, 129, 0.3)';
 											}}
 											onMouseLeave={(e) => {
-												e.currentTarget.style.background = '#1e40af';
+												e.currentTarget.style.background = '#10b981';
 												e.currentTarget.style.transform = 'translateY(0)';
-												e.currentTarget.style.boxShadow = '0 1px 2px rgba(30, 64, 175, 0.2)';
+												e.currentTarget.style.boxShadow = '0 1px 2px rgba(16, 185, 129, 0.2)';
 											}}
 										>
 											{t.book || 'Book'}
@@ -571,7 +621,8 @@ export default function DataTable({ activities, locale }) {
 									</div>
 								</td>
 							</tr>
-						))}
+						);
+						})}
 					</tbody>
 				</table>
 			</div>

@@ -1,13 +1,14 @@
 /**
  * Session Limit Middleware
- * Enforces 5-minute free browsing limit for non-committed users
+ * Enforces 20-minute authenticated browsing limit for non-committed users
+ * (Anonymous 5-minute browsing is handled by AccessGate on frontend)
  * Best practices:
  * - Server-side enforcement (can't be bypassed)
  * - Clear error messages
  * - Graceful handling for admin/provider roles
  */
 
-const FREE_BROWSING_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
+const AUTHENTICATED_BROWSING_TIME = 20 * 60 * 1000; // 20 minutes in milliseconds
 
 export async function checkSessionLimit(req, res, next) {
 	// Skip for admin and provider roles
@@ -27,13 +28,13 @@ export async function checkSessionLimit(req, res, next) {
 		return next();
 	}
 
-	// Check session time limit (5 minutes)
+	// Check authenticated session time limit (20 minutes)
 	if (user.sessionStartTime) {
 		const sessionStart = new Date(user.sessionStartTime);
 		const now = new Date();
 		const elapsed = now - sessionStart;
 		
-		if (elapsed > FREE_BROWSING_TIME) {
+		if (elapsed > AUTHENTICATED_BROWSING_TIME) {
 			// Session expired - require commitment
 			return res.status(403).json({ 
 				error: 'Free browsing time expired', 
@@ -43,7 +44,7 @@ export async function checkSessionLimit(req, res, next) {
 			});
 		}
 	} else {
-		// No session start time - initialize it
+		// No session start time - initialize it (20 minutes for authenticated users)
 		const now = new Date().toISOString();
 		await store.users.update(req.user.id, { sessionStartTime: now });
 	}

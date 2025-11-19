@@ -42,11 +42,11 @@ sessionsRouter.post('/start', requireAuth(), async (req, res) => {
 		await store.users.update(req.user.id, { sessionStartTime: now });
 	}
 
-	// Calculate time remaining (5 minutes = 300000 ms)
-	const FREE_BROWSING_TIME = 5 * 60 * 1000;
+	// Calculate time remaining (20 minutes = 1200000 ms for authenticated users)
+	const AUTHENTICATED_BROWSING_TIME = 20 * 60 * 1000;
 	const start = new Date(sessionStartTime);
 	const elapsed = new Date() - start;
-	const remaining = Math.max(0, FREE_BROWSING_TIME - elapsed);
+	const remaining = Math.max(0, AUTHENTICATED_BROWSING_TIME - elapsed);
 
 	res.json({
 		sessionStartTime,
@@ -83,15 +83,15 @@ sessionsRouter.get('/status', requireAuth(), async (req, res) => {
 		});
 	}
 
-	// Check session time
-	const FREE_BROWSING_TIME = 5 * 60 * 1000;
+	// Check session time (20 minutes for authenticated users)
+	const AUTHENTICATED_BROWSING_TIME = 20 * 60 * 1000;
 	let sessionStartTime = user.sessionStartTime;
 
 	if (!sessionStartTime) {
-		// No session started yet, return full time
+		// No session started yet, return full time (20 minutes)
 		return res.json({
 			sessionStartTime: null,
-			timeRemaining: FREE_BROWSING_TIME,
+			timeRemaining: AUTHENTICATED_BROWSING_TIME,
 			expired: false
 		});
 	}
@@ -99,7 +99,7 @@ sessionsRouter.get('/status', requireAuth(), async (req, res) => {
 	const start = new Date(sessionStartTime);
 	const now = new Date();
 	const elapsed = now - start;
-	const remaining = Math.max(0, FREE_BROWSING_TIME - elapsed);
+	const remaining = Math.max(0, AUTHENTICATED_BROWSING_TIME - elapsed);
 
 	res.json({
 		sessionStartTime,

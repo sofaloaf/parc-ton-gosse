@@ -3,24 +3,29 @@ import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../shared/i18n.jsx';
 
 /**
- * TimeLimitModal - Modal that appears after 5 minutes requiring commitment to pay
+ * SignupRequiredModal - Modal that appears after 5 minutes requiring signup/login
  * Best practices:
  * - Clear value proposition
  * - Prominent call-to-action
- * - Easy to understand next steps
- * - No way to dismiss without committing
+ * - Easy signup process
+ * - No way to dismiss without signing up
  */
-export default function TimeLimitModal({ onCommit }) {
+export default function SignupRequiredModal({ onSignup }) {
 	const { locale } = useI18n();
 	const navigate = useNavigate();
 
-	const handleCommit = () => {
-		// Clear session timer
-		localStorage.removeItem('sessionStartTime');
-		// Navigate to preorder page
-		navigate('/preorder');
-		if (onCommit) {
-			onCommit();
+	const handleSignup = () => {
+		// Navigate to signup/login page
+		navigate('/profile', { 
+			state: { 
+				from: window.location.pathname,
+				message: locale === 'fr' 
+					? 'Veuillez vous inscrire pour continuer' 
+					: 'Please sign up to continue'
+			}
+		});
+		if (onSignup) {
+			onSignup();
 		}
 	};
 
@@ -52,14 +57,14 @@ export default function TimeLimitModal({ onCommit }) {
 					width: 80,
 					height: 80,
 					margin: '0 auto 24px',
-					background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+					background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
 					borderRadius: '50%',
 					display: 'flex',
 					alignItems: 'center',
 					justifyContent: 'center',
 					fontSize: 40
 				}}>
-					⏰
+					👋
 				</div>
 
 				{/* Title */}
@@ -70,8 +75,8 @@ export default function TimeLimitModal({ onCommit }) {
 					margin: '0 0 16px 0'
 				}}>
 					{locale === 'fr' 
-						? 'Vos 20 minutes de navigation gratuite sont écoulées'
-						: 'Your 20 minutes of free browsing have expired'}
+						? 'Créez un compte pour continuer'
+						: 'Create an account to continue'}
 				</h2>
 
 				{/* Message */}
@@ -82,8 +87,8 @@ export default function TimeLimitModal({ onCommit }) {
 					margin: '0 0 32px 0'
 				}}>
 					{locale === 'fr' 
-						? 'Vous avez exploré Parc Ton Gosse pendant 25 minutes au total (5 minutes anonymes + 20 minutes avec compte). Pour continuer à explorer toutes les activités et fonctionnalités, veuillez vous engager à payer. Aucun paiement ne sera effectué aujourd\'hui - vous serez facturé au lancement de la plateforme (Q1 2025).'
-						: 'You\'ve explored Parc Ton Gosse for 25 minutes total (5 minutes anonymous + 20 minutes with account). To continue exploring all activities and features, please commit to pay. No payment will be processed today - you will be charged when the platform launches (Q1 2025).'}
+						? 'Vous avez exploré Parc Ton Gosse pendant 5 minutes. Créez un compte gratuit pour continuer à découvrir toutes les activités pendant 20 minutes supplémentaires.'
+						: 'You\'ve been exploring Parc Ton Gosse for 5 minutes. Create a free account to continue discovering all activities for an additional 20 minutes.'}
 				</p>
 
 				{/* Benefits */}
@@ -107,12 +112,12 @@ export default function TimeLimitModal({ onCommit }) {
 							<span style={{ fontSize: 20 }}>✓</span>
 							<div>
 								<strong style={{ display: 'block', marginBottom: 4 }}>
-									{locale === 'fr' ? 'Accès illimité' : 'Unlimited access'}
+									{locale === 'fr' ? '20 minutes supplémentaires' : '20 more minutes'}
 								</strong>
 								<span style={{ fontSize: 14, color: '#64748b' }}>
 									{locale === 'fr' 
-										? 'Explorez toutes les activités sans limite de temps'
-										: 'Explore all activities without time limits'}
+										? 'Continuez à explorer toutes les activités gratuitement'
+										: 'Continue exploring all activities for free'}
 								</span>
 							</div>
 						</div>
@@ -120,12 +125,12 @@ export default function TimeLimitModal({ onCommit }) {
 							<span style={{ fontSize: 20 }}>✓</span>
 							<div>
 								<strong style={{ display: 'block', marginBottom: 4 }}>
-									{locale === 'fr' ? 'Prix de lancement' : 'Launch price'}
+									{locale === 'fr' ? 'Inscription gratuite' : 'Free signup'}
 								</strong>
 								<span style={{ fontSize: 14, color: '#64748b' }}>
 									{locale === 'fr' 
-										? 'Bloquez le tarif réduit de précommande de €4.99'
-										: 'Lock in the special preorder price of €4.99'}
+										? 'Aucun paiement requis - créez votre compte en 30 secondes'
+										: 'No payment required - create your account in 30 seconds'}
 								</span>
 							</div>
 						</div>
@@ -133,12 +138,12 @@ export default function TimeLimitModal({ onCommit }) {
 							<span style={{ fontSize: 20 }}>✓</span>
 							<div>
 								<strong style={{ display: 'block', marginBottom: 4 }}>
-									{locale === 'fr' ? 'Paiement différé' : 'Deferred payment'}
+									{locale === 'fr' ? 'Accès complet' : 'Full access'}
 								</strong>
 								<span style={{ fontSize: 14, color: '#64748b' }}>
 									{locale === 'fr' 
-										? 'Aucun paiement requis aujourd\'hui - facturé au lancement'
-										: 'No payment required today - charged at launch'}
+										? 'Explorez toutes les fonctionnalités de la plateforme'
+										: 'Explore all platform features'}
 								</span>
 							</div>
 						</div>
@@ -148,7 +153,7 @@ export default function TimeLimitModal({ onCommit }) {
 				{/* CTA Buttons */}
 				<div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
 					<button
-						onClick={handleCommit}
+						onClick={handleSignup}
 						style={{
 							padding: '14px 32px',
 							background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
@@ -170,7 +175,7 @@ export default function TimeLimitModal({ onCommit }) {
 							e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.4)';
 						}}
 					>
-						{locale === 'fr' ? 'S\'engager maintenant (€4.99)' : 'Commit Now (€4.99)'}
+						{locale === 'fr' ? 'Créer un compte gratuit' : 'Create Free Account'}
 					</button>
 				</div>
 
@@ -182,8 +187,8 @@ export default function TimeLimitModal({ onCommit }) {
 					lineHeight: 1.5
 				}}>
 					{locale === 'fr' 
-						? 'En cliquant sur "S\'engager maintenant", vous acceptez nos conditions générales. Le paiement sera traité au lancement de la plateforme (Q1 2025).'
-						: 'By clicking "Commit Now", you agree to our terms and conditions. Payment will be processed at platform launch (Q1 2025).'}
+						? 'Inscription rapide et sécurisée. Aucun paiement requis pour créer un compte.'
+						: 'Quick and secure signup. No payment required to create an account.'}
 				</p>
 			</div>
 		</div>

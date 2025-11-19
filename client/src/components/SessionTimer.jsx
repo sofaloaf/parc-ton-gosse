@@ -5,15 +5,18 @@ import { useI18n } from '../shared/i18n.jsx';
 import TimeLimitModal from './TimeLimitModal.jsx';
 
 /**
- * SessionTimer - Tracks user session time and enforces 5-minute free browsing limit
+ * SessionTimer - Tracks user session time with two phases:
+ * Phase 1: Anonymous browsing (5 minutes) - handled by AccessGate
+ * Phase 2: Authenticated browsing (20 minutes) - handled here
  * Best practices:
  * - Clear countdown timer visible to user
  * - Warning before time expires
  * - Smooth transition to commitment requirement
  * - Persistent across page refreshes (localStorage)
  */
-const FREE_BROWSING_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
-const WARNING_TIME = 1 * 60 * 1000; // Show warning 1 minute before expiry
+const ANONYMOUS_BROWSING_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds (handled by AccessGate)
+const AUTHENTICATED_BROWSING_TIME = 20 * 60 * 1000; // 20 minutes in milliseconds
+const WARNING_TIME = 2 * 60 * 1000; // Show warning 2 minutes before expiry
 
 export default function SessionTimer({ children }) {
 	const { locale } = useI18n();
@@ -31,7 +34,7 @@ export default function SessionTimer({ children }) {
 				// Check if user is authenticated
 				const userData = await api('/me').catch(() => null);
 				if (!userData?.user) {
-					// Not authenticated, no timer needed (AccessGate will handle)
+					// Not authenticated - AccessGate handles anonymous browsing
 					return;
 				}
 
@@ -44,8 +47,9 @@ export default function SessionTimer({ children }) {
 
 				// Users who have committed to pay have unlimited access
 				if (user.hasPreordered) {
-					// Clear any existing session timer
+					// Clear any existing session timers
 					localStorage.removeItem('sessionStartTime');
+					localStorage.removeItem('anonymousSessionStartTime');
 					return;
 				}
 
@@ -64,13 +68,13 @@ export default function SessionTimer({ children }) {
 						return;
 					}
 
-					// Set timer based on backend response
+					// Set timer based on backend response (20 minutes for authenticated users)
 					if (sessionStatus.sessionStartTime) {
 						setSessionStartTime(sessionStatus.sessionStartTime);
 						localStorage.setItem('sessionStartTime', sessionStatus.sessionStartTime);
 					}
 
-					const remaining = sessionStatus.timeRemaining || FREE_BROWSING_TIME;
+					const remaining = sessionStatus.timeRemaining || AUTHENTICATED_BROWSING_TIME;
 					setTimeRemaining(remaining);
 					
 					// Check if we should show warning
@@ -82,7 +86,7 @@ export default function SessionTimer({ children }) {
 					// Fallback to localStorage if backend fails
 					let startTime = localStorage.getItem('sessionStartTime');
 					if (!startTime) {
-						// First visit - start timer
+						// First authenticated visit - start 20-minute timer
 						startTime = new Date().toISOString();
 						localStorage.setItem('sessionStartTime', startTime);
 						
@@ -98,7 +102,7 @@ export default function SessionTimer({ children }) {
 					const start = new Date(startTime);
 					const now = new Date();
 					const elapsed = now - start;
-					const remaining = Math.max(0, FREE_BROWSING_TIME - elapsed);
+					const remaining = Math.max(0, AUTHENTICATED_BROWSING_TIME - elapsed);
 
 					if (remaining <= 0) {
 						setShowModal(true);
@@ -193,8 +197,8 @@ export default function SessionTimer({ children }) {
 					<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', maxWidth: '1200px', margin: '0 auto' }}>
 						<span style={{ fontWeight: 600, fontSize: 14 }}>
 							⏰ {locale === 'fr' 
-								? `Temps restant: ${formatTime(timeRemaining)} - Engagement requis pour continuer`
-								: `Time remaining: ${formatTime(timeRemaining)} - Commitment required to continue`}
+								? `Temps restant: ${formatTime(timeRemaining)} - Engagement requis pour continuer après expiration`
+								: `Time remaining: ${formatTime(timeRemaining)} - Commitment required to continue after expiry`}
 						</span>
 						<button
 							onClick={handleCloseWarning}

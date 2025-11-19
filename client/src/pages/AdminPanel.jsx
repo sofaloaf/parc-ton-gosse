@@ -23,19 +23,28 @@ export default function AdminPanel() {
 			.then(data => {
 				if (data.user?.role === 'admin') {
 					setIsAuthenticated(true);
+					setLoading(false);
 					loadMetrics();
 				} else {
 					setIsAuthenticated(false);
 					setLoading(false);
 					// Initialize Google Sign-In after ensuring CSRF token is set
-					setTimeout(() => initializeGoogleSignIn(), 100);
+					setTimeout(() => {
+						initializeGoogleSignIn().catch(err => {
+							console.error('Failed to initialize Google Sign-In:', err);
+						});
+					}, 100);
 				}
 			})
 			.catch(() => {
 				setIsAuthenticated(false);
 				setLoading(false);
 				// Initialize Google Sign-In after ensuring CSRF token is set
-				setTimeout(() => initializeGoogleSignIn(), 100);
+				setTimeout(() => {
+					initializeGoogleSignIn().catch(err => {
+						console.error('Failed to initialize Google Sign-In:', err);
+					});
+				}, 100);
 			});
 	}, []);
 
@@ -43,38 +52,50 @@ export default function AdminPanel() {
 		const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 		
 		if (!clientId) {
-			if (process.env.NODE_ENV === 'development') {
-				console.error('VITE_GOOGLE_CLIENT_ID is missing');
-			}
+			console.error('VITE_GOOGLE_CLIENT_ID is missing');
 			return;
 		}
 
 		try {
 			// Load Google Sign-In script if not already loaded
 			if (!window.google || !window.google.accounts) {
-				const script = document.createElement('script');
-				script.src = 'https://accounts.google.com/gsi/client';
-				script.async = true;
-				script.defer = true;
-				
-				await new Promise((resolve, reject) => {
-					script.onload = () => {
-						if (process.env.NODE_ENV === 'development') {
+				// Check if script is already being loaded
+				if (document.querySelector('script[src="https://accounts.google.com/gsi/client"]')) {
+					// Wait for it to load
+					await new Promise((resolve) => {
+						const checkInterval = setInterval(() => {
+							if (window.google?.accounts) {
+								clearInterval(checkInterval);
+								resolve();
+							}
+						}, 100);
+						// Timeout after 5 seconds
+						setTimeout(() => {
+							clearInterval(checkInterval);
+							resolve();
+						}, 5000);
+					});
+				} else {
+					const script = document.createElement('script');
+					script.src = 'https://accounts.google.com/gsi/client';
+					script.async = true;
+					script.defer = true;
+					
+					await new Promise((resolve, reject) => {
+						script.onload = () => {
 							console.log('Google Sign-In script loaded');
-						}
-						resolve();
-					};
-					script.onerror = () => {
-						if (process.env.NODE_ENV === 'development') {
+							resolve();
+						};
+						script.onerror = () => {
 							console.error('Failed to load Google Sign-In script');
-						}
-						reject(new Error('Failed to load Google Sign-In script'));
-					};
-					document.head.appendChild(script);
-				});
-				
-				// Wait for script to fully initialize
-				await new Promise(resolve => setTimeout(resolve, 200));
+							reject(new Error('Failed to load Google Sign-In script'));
+						};
+						document.head.appendChild(script);
+					});
+					
+					// Wait for script to fully initialize
+					await new Promise(resolve => setTimeout(resolve, 300));
+				}
 			}
 
 			if (window.google?.accounts?.id) {
@@ -84,21 +105,24 @@ export default function AdminPanel() {
 					callback: handleCredentialResponse,
 				});
 
-				// Render the button
+				// Render the button - clear any existing content first
 				const buttonDiv = document.getElementById('google-signin-button');
-				if (buttonDiv && !buttonDiv.hasChildNodes()) {
+				if (buttonDiv) {
+					// Clear existing content
+					buttonDiv.innerHTML = '';
 					window.google.accounts.id.renderButton(buttonDiv, {
 						type: 'standard',
 						theme: 'outline',
 						size: 'large',
 						text: 'signin_with',
 					});
+					console.log('Google Sign-In button rendered');
 				}
+			} else {
+				console.error('Google Sign-In API not available');
 			}
 		} catch (err) {
-			if (process.env.NODE_ENV === 'development') {
-				console.error('Failed to initialize Google Sign-In:', err);
-			}
+			console.error('Failed to initialize Google Sign-In:', err);
 		}
 	};
 
@@ -109,6 +133,8 @@ export default function AdminPanel() {
 
 	const handleCredentialResponse = async (response) => {
 		try {
+			setLoading(true);
+			setError('');
 			const result = await api('/auth/admin/google', {
 				method: 'POST',
 				body: { idToken: response.credential }
@@ -116,16 +142,12 @@ export default function AdminPanel() {
 
 			// Token is now in httpOnly cookie, no need to store locally
 			setIsAuthenticated(true);
-			setLoading(false);
-			setError('');
 			await loadMetrics();
 		} catch (err) {
 			setIsAuthenticated(false);
 			setLoading(false);
 			setError(err.message || 'Login failed. Only authorized admin can access.');
-			if (process.env.NODE_ENV === 'development') {
-				console.error('Admin login error:', err);
-			}
+			console.error('Admin login error:', err);
 		}
 	};
 
@@ -136,10 +158,8 @@ export default function AdminPanel() {
 			setMetrics(data);
 			setError('');
 		} catch (err) {
-			if (process.env.NODE_ENV === 'development') {
-				console.error('Failed to load metrics:', err);
-			}
-			setError('Failed to load dashboard metrics');
+			console.error('Failed to load metrics:', err);
+			setError(err.message || 'Failed to load dashboard metrics. Please try refreshing the page.');
 		} finally {
 			setLoading(false);
 		}
@@ -227,10 +247,15 @@ export default function AdminPanel() {
 		);
 	}
 
-	if (!metrics) {
+	if (loading || !metrics) {
 		return (
-			<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+			<div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: '400px', gap: 12 }}>
 				<div>Loading metrics...</div>
+				{error && (
+					<div style={{ padding: 12, background: '#f8d7da', color: '#721c24', borderRadius: 4, maxWidth: 500 }}>
+						{error}
+					</div>
+				)}
 			</div>
 		);
 	}

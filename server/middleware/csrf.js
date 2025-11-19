@@ -9,7 +9,7 @@ export function csrfProtection() {
 			res.cookie('csrf-token', token, {
 				httpOnly: false, // Must be readable by JavaScript
 				secure: process.env.NODE_ENV === 'production',
-				sameSite: 'strict',
+				sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' required for cross-origin in production
 				maxAge: 24 * 60 * 60 * 1000 // 24 hours
 			});
 		}
@@ -42,7 +42,7 @@ export function generateCsrfToken(req, res) {
 	res.cookie('csrf-token', token, {
 		httpOnly: false, // Must be readable by JavaScript
 		secure: process.env.NODE_ENV === 'production',
-		sameSite: 'strict',
+		sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' required for cross-origin in production
 		maxAge: 24 * 60 * 60 * 1000 // 24 hours
 	});
 	res.json({ csrfToken: token });

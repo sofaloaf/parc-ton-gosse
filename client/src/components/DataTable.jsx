@@ -21,15 +21,58 @@ export default function DataTable({ activities, locale }) {
 	const sortedActivities = useMemo(() => {
 		if (!sortColumn) return activities;
 
-		const sorted = [...activities].sort((a, b) => {
-			let aVal = a[sortColumn];
-			let bVal = b[sortColumn];
-
-			// Handle nested objects (title, description)
-			if (sortColumn === 'title' || sortColumn === 'description') {
-				aVal = aVal?.[locale] || aVal?.en || aVal?.fr || '';
-				bVal = bVal?.[locale] || bVal?.en || bVal?.fr || '';
+		// Helper to get bilingual value for sorting
+		const getBilingualValueForSort = (obj, fieldName) => {
+			let value = obj[fieldName];
+			
+			// Check if it's an object with locale properties
+			if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+				if (value[locale] !== undefined) return value[locale];
+				if (value.en !== undefined) return value.en;
+				if (value.fr !== undefined) return value.fr;
 			}
+			
+			// Check for suffix format
+			const enField = `${fieldName}_en`;
+			const frField = `${fieldName}_fr`;
+			if (obj[enField] !== undefined || obj[frField] !== undefined) {
+				if (locale === 'en' && obj[enField]) return obj[enField];
+				if (locale === 'fr' && obj[frField]) return obj[frField];
+				if (obj[enField]) return obj[enField];
+				if (obj[frField]) return obj[frField];
+			}
+			
+			return value;
+		};
+
+		const sorted = [...activities].sort((a, b) => {
+		// Check if sort column is bilingual (either object format or has _en/_fr variants)
+		const isBilingualSortField = (obj, fieldName) => {
+			const value = obj[fieldName];
+			// Check if value is an object with en/fr properties
+			if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+				if (value.en !== undefined || value.fr !== undefined || value[locale] !== undefined) {
+					return true;
+				}
+			}
+			// Check if there are _en or _fr variants
+			const enField = `${fieldName}_en`;
+			const frField = `${fieldName}_fr`;
+			if (obj[enField] !== undefined || obj[frField] !== undefined) {
+				return true;
+			}
+			return false;
+		};
+		
+		let aVal, bVal;
+		
+		if (isBilingualSortField(a, sortColumn) || isBilingualSortField(b, sortColumn)) {
+			aVal = getBilingualValueForSort(a, sortColumn);
+			bVal = getBilingualValueForSort(b, sortColumn);
+		} else {
+			aVal = a[sortColumn];
+			bVal = b[sortColumn];
+		}
 
 			// Handle numbers
 			if (typeof aVal === 'number' && typeof bVal === 'number') {
@@ -93,6 +136,40 @@ export default function DataTable({ activities, locale }) {
 		const hiddenColumns = ['locationDetails', 'providerId', 'currency', 'schedule', 'images', 'createdAt', 'updatedAt'];
 		cols = cols.filter(key => !hiddenColumns.includes(key));
 		
+		// Filter out _en and _fr columns if base column exists (to avoid duplicates)
+		// Keep base columns and remove language-specific ones
+		const baseColumns = new Set();
+		const columnsToRemove = new Set();
+		
+		cols.forEach(col => {
+			if (col.endsWith('_en') || col.endsWith('_fr')) {
+				const baseCol = col.replace(/_en$|_fr$/, '');
+				if (cols.includes(baseCol)) {
+					// Base column exists, remove the _en/_fr version
+					columnsToRemove.add(col);
+				} else {
+					// No base column, keep this one but use base name for display
+					baseColumns.add(baseCol);
+				}
+			} else {
+				baseColumns.add(col);
+			}
+		});
+		
+		// Remove _en/_fr columns that have base equivalents
+		cols = cols.filter(col => !columnsToRemove.has(col));
+		
+		// Replace _en/_fr columns with their base names
+		cols = cols.map(col => {
+			if (col.endsWith('_en') || col.endsWith('_fr')) {
+				return col.replace(/_en$|_fr$/, '');
+			}
+			return col;
+		});
+		
+		// Remove duplicates
+		cols = [...new Set(cols)];
+		
 		// If 'addresse' exists but we also have 'addresses', hide addresse
 		// Otherwise, keep addresse but rename it to 'addresses' for display
 		if (sample.addresse && sample.addresses) {
@@ -111,7 +188,7 @@ export default function DataTable({ activities, locale }) {
 		}
 		
 		return cols;
-	}, [activities]);
+	}, [activities, locale]); // Add locale to dependencies so columns update when language changes
 
 	// Column labels (bilingual)
 	const columnLabels = {
@@ -322,9 +399,64 @@ export default function DataTable({ activities, locale }) {
 										value = activity.addresse;
 									}
 									
-									// Handle nested objects (title, description)
-									if ((col === 'title' || col === 'description') && typeof value === 'object') {
-										value = value?.[locale] || value?.en || value?.fr || '';
+									// Helper function to get bilingual value
+									const getBilingualValue = (fieldName, fieldValue) => {
+										// First, check if it's an object with locale properties
+										if (typeof fieldValue === 'object' && fieldValue !== null && !Array.isArray(fieldValue)) {
+											// Check for nested object format: { en: '...', fr: '...' }
+											if (fieldValue[locale] !== undefined) return fieldValue[locale];
+											if (fieldValue.en !== undefined) return fieldValue.en;
+											if (fieldValue.fr !== undefined) return fieldValue.fr;
+										}
+										
+										// Check for suffix format: fieldName_en or fieldName_fr
+										const enField = `${fieldName}_en`;
+										const frField = `${fieldName}_fr`;
+										if (activity[enField] !== undefined || activity[frField] !== undefined) {
+											if (locale === 'en' && activity[enField]) return activity[enField];
+											if (locale === 'fr' && activity[frField]) return activity[frField];
+											// Fallback to the other language if current locale not available
+											if (activity[enField]) return activity[enField];
+											if (activity[frField]) return activity[frField];
+										}
+										
+										// Return original value if not bilingual
+										return fieldValue;
+									};
+									
+									// Check if this field is bilingual (either object format or has _en/_fr variants)
+									const isBilingualField = () => {
+										// Check if value is an object with en/fr properties
+										if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+											if (value.en !== undefined || value.fr !== undefined || value[locale] !== undefined) {
+												return true;
+											}
+										}
+										// Check if there are _en or _fr variants of this field
+										const enField = `${col}_en`;
+										const frField = `${col}_fr`;
+										if (activity[enField] !== undefined || activity[frField] !== undefined) {
+											return true;
+										}
+										return false;
+									};
+									
+									// Handle bilingual fields dynamically
+									if (isBilingualField()) {
+										// Skip if this is already a _en or _fr field (we'll handle the base field)
+										if (!col.endsWith('_en') && !col.endsWith('_fr')) {
+											value = getBilingualValue(col, value);
+										} else {
+											// If this column is _en or _fr, check if we should show it based on locale
+											const baseField = col.replace(/_en$|_fr$/, '');
+											if (col.endsWith('_en') && locale === 'fr') {
+												// Show French version instead
+												value = activity[`${baseField}_fr`] || value;
+											} else if (col.endsWith('_fr') && locale === 'en') {
+												// Show English version instead
+												value = activity[`${baseField}_en`] || value;
+											}
+										}
 									}
 									
 									// Handle arrays (categories, images)

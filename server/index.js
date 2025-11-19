@@ -55,16 +55,18 @@ if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === 'true')
 }
 const PORT = process.env.PORT || 4000;
 
-// Log all incoming requests for debugging
-app.use((req, res, next) => {
-	const origin = req.headers.origin;
-	if (origin) {
-		console.log(`📥 ${req.method} ${req.path} from origin: ${origin}`);
-	} else {
-		console.log(`📥 ${req.method} ${req.path} (no origin)`);
-	}
-	next();
-});
+// Log all incoming requests for debugging (only in development)
+if (process.env.NODE_ENV === 'development') {
+	app.use((req, res, next) => {
+		const origin = req.headers.origin;
+		if (origin) {
+			console.log(`📥 ${req.method} ${req.path} from origin: ${origin}`);
+		} else {
+			console.log(`📥 ${req.method} ${req.path} (no origin)`);
+		}
+		next();
+	});
+}
 
 // Security headers with CSP
 app.use(helmet({
@@ -73,20 +75,31 @@ app.use(helmet({
 			defaultSrc: ["'self'"],
 			styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
 			fontSrc: ["'self'", "https://fonts.gstatic.com"],
-			scriptSrc: ["'self'", "https://accounts.google.com", "https://js.stripe.com"],
+			scriptSrc: ["'self'", "https://accounts.google.com", "https://js.stripe.com", "https://www.googletagmanager.com"],
 			imgSrc: ["'self'", "data:", "https:", "blob:"],
-			connectSrc: ["'self'", "https://api.stripe.com", "https://accounts.google.com"],
+			connectSrc: ["'self'", "https://api.stripe.com", "https://accounts.google.com", "https://www.google-analytics.com", "https://www.googletagmanager.com"],
 			frameSrc: ["'self'", "https://js.stripe.com", "https://hooks.stripe.com"],
+			objectSrc: ["'none'"],
+			baseUri: ["'self'"],
+			formAction: ["'self'"],
+			frameAncestors: ["'none'"],
+			upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null, // Only in production
 		},
 	},
 	hsts: {
-		maxAge: 31536000,
+		maxAge: 31536000, // 1 year
 		includeSubDomains: true,
 		preload: true
 	},
 	xContentTypeOptions: true,
 	xFrameOptions: { action: 'deny' },
-	referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
+	referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+	permissionsPolicy: {
+		geolocation: ["'self'"],
+		camera: ["'none'"],
+		microphone: ["'none'"],
+		payment: ["'self'"] // Allow payment APIs for future Stripe integration
+	}
 }));
 
 // CORS configuration - restrict in production
@@ -228,6 +241,27 @@ const authLimiter = rateLimit({
 	message: 'Too many authentication attempts, please try again later',
 	standardHeaders: true,
 	legacyHeaders: false,
+	trustProxy: process.env.NODE_ENV === 'production' ? true : false
+});
+
+// Rate limiting for preorder/commitment endpoints (prevent abuse)
+const preorderLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15 minutes
+	max: 10, // 10 attempts per window (allows multiple promo code checks)
+	message: 'Too many requests, please try again later',
+	standardHeaders: true,
+	legacyHeaders: false,
+	trustProxy: process.env.NODE_ENV === 'production' ? true : false
+});
+
+// Stricter rate limiting for commitment creation (critical endpoint)
+const commitmentLimiter = rateLimit({
+	windowMs: 60 * 60 * 1000, // 1 hour
+	max: 3, // Only 3 commitment attempts per hour
+	message: 'Too many commitment attempts, please try again later',
+	standardHeaders: true,
+	legacyHeaders: false,
+	trustProxy: process.env.NODE_ENV === 'production' ? true : false
 });
 
 // Data store binding on app with error handling
@@ -418,6 +452,10 @@ app.get('/api/health/datastore', async (req, res) => {
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/signup', authLimiter);
 app.use('/api/auth', authRouter);
+app.use('/api/preorders/validate-promo', preorderLimiter);
+app.use('/api/preorders/calculate-amount', preorderLimiter);
+app.use('/api/preorders/commit', commitmentLimiter);
+app.use('/api/preorders/track-page-view', preorderLimiter);
 app.use('/api/activities', activitiesRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/registrations', registrationsRouter);

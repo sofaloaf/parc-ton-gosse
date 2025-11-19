@@ -179,6 +179,10 @@ export default function AdminPanel() {
 		setCrawlerResults(null);
 
 		try {
+			// First ensure we have a CSRF token by making a GET request
+			await api('/me');
+			
+			// Then make the POST request
 			const result = await api('/crawler/validate', {
 				method: 'POST'
 			});

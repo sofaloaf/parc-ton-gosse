@@ -8,16 +8,16 @@ export const activitiesRouter = express.Router();
 // List with filters: category, ageRange, date, price, neighborhood, q
 // Allows anonymous access for 5 minutes, then requires authentication
 // Authenticated users get 20 minutes before requiring commitment
-activitiesRouter.get('/', async (req, res) => {
+activitiesRouter.get('/', async (req, res, next) => {
 	// Check if user is authenticated
 	if (req.user) {
 		// Authenticated user - check session limit (20 minutes)
-		await checkSessionLimit(req, res, () => {});
-		if (res.headersSent) return; // Response already sent by middleware
-	} else {
-		// Anonymous user - allow access (AccessGate handles 5-minute limit on frontend)
-		// No backend enforcement needed for anonymous browsing
+		return checkSessionLimit(req, res, next);
 	}
+	// Anonymous user - allow access (AccessGate handles 5-minute limit on frontend)
+	// No backend enforcement needed for anonymous browsing
+	next();
+}, async (req, res) => {
 	try {
 		const store = req.app.get('dataStore');
 		if (!store) {

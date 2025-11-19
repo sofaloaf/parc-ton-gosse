@@ -96,14 +96,27 @@ export async function api(path, { method = 'GET', body, headers } = {}) {
 	// Include credentials to send cookies (httpOnly cookies)
 	const csrfToken = getCsrfToken();
 	const baseUrl = resolveBaseUrl();
+	
+	// Debug CSRF token for POST requests
+	if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+		console.log('🔐 CSRF Token Debug:', {
+			token: csrfToken ? `${csrfToken.substring(0, 8)}...` : 'null',
+			hasToken: !!csrfToken,
+			cookies: document.cookie,
+			path
+		});
+	}
+	
+	const requestHeaders = {
+		'Content-Type': 'application/json',
+		...(csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method) ? { 'X-CSRF-Token': csrfToken } : {}),
+		...headers
+	};
+	
 	const res = await fetch(`${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`, {
 		method,
 		credentials: 'include', // Include cookies in request
-		headers: {
-			'Content-Type': 'application/json',
-			...(csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method) ? { 'X-CSRF-Token': csrfToken } : {}),
-			...headers
-		},
+		headers: requestHeaders,
 		body: body ? JSON.stringify(body) : undefined
 	});
 	if (!res.ok) throw new Error(await res.text());

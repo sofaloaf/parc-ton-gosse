@@ -180,7 +180,11 @@ export default function AdminPanel() {
 
 		try {
 			// First ensure we have a CSRF token by making a GET request
+			// This will set the CSRF token cookie if it doesn't exist
 			await api('/me');
+			
+			// Wait a bit to ensure cookie is set
+			await new Promise(resolve => setTimeout(resolve, 100));
 			
 			// Then make the POST request
 			const result = await api('/crawler/validate', {

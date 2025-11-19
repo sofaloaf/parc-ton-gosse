@@ -21,7 +21,19 @@ export function csrfProtection() {
 
 		// For state-changing requests, verify CSRF token
 		const cookieToken = req.cookies['csrf-token'];
-		const headerToken = req.headers['x-csrf-token'];
+		const headerToken = req.headers['x-csrf-token'] || req.headers['X-CSRF-Token'];
+
+		// Debug CSRF token for troubleshooting
+		if (process.env.NODE_ENV === 'development') {
+			console.log('🔐 CSRF Check:', {
+				path: req.path,
+				originalUrl: req.originalUrl,
+				hasCookieToken: !!cookieToken,
+				hasHeaderToken: !!headerToken,
+				cookieTokenPreview: cookieToken ? `${cookieToken.substring(0, 8)}...` : 'null',
+				headerTokenPreview: headerToken ? `${headerToken.substring(0, 8)}...` : 'null'
+			});
+		}
 
 		// For OAuth endpoints, be more lenient (they come from Google's redirect)
 		// Check both path (route-relative) and originalUrl (full path) to catch all variations
@@ -48,6 +60,13 @@ export function csrfProtection() {
 		}
 
 		if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+			console.error('❌ CSRF token mismatch:', {
+				path: req.path,
+				originalUrl: req.originalUrl,
+				hasCookieToken: !!cookieToken,
+				hasHeaderToken: !!headerToken,
+				tokensMatch: cookieToken === headerToken
+			});
 			return res.status(403).json({ error: 'CSRF token mismatch' });
 		}
 

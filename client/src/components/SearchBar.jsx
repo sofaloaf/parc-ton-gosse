@@ -39,9 +39,9 @@ export default function SearchBar({ onSearch, onSelect, initialValue = '' }) {
 	};
 
 	return (
-		<form onSubmit={handleSubmit} style={{ position: 'relative', width: '100%' }}>
-			<div style={{ display: 'flex', gap: 8 }}>
-				<div style={{ position: 'relative', flex: 1 }}>
+		<form onSubmit={handleSubmit} style={{ position: 'relative', width: '100%', zIndex: 1 }}>
+			<div style={{ display: 'flex', gap: 8, alignItems: 'stretch', width: '100%' }}>
+				<div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
 					<input
 						type="text"
 						style={{
@@ -49,7 +49,8 @@ export default function SearchBar({ onSearch, onSelect, initialValue = '' }) {
 							padding: '10px 40px 10px 16px',
 							border: '1px solid #cbd5e1',
 							borderRadius: 8,
-							fontSize: 14
+							fontSize: 14,
+							boxSizing: 'border-box'
 						}}
 						placeholder={t.searchPlaceholder || (locale === 'fr' ? 'Rechercher activités ou prestataires' : 'Search activities or providers')}
 						value={q}
@@ -75,7 +76,8 @@ export default function SearchBar({ onSearch, onSelect, initialValue = '' }) {
 								color: '#64748b',
 								display: 'flex',
 								alignItems: 'center',
-								justifyContent: 'center'
+								justifyContent: 'center',
+								zIndex: 2
 							}}
 							title={locale === 'fr' ? 'Effacer' : 'Clear'}
 						>
@@ -98,7 +100,9 @@ export default function SearchBar({ onSearch, onSelect, initialValue = '' }) {
 						fontWeight: 500,
 						whiteSpace: 'nowrap',
 						opacity: searching ? 0.7 : 1,
-						transition: 'all 0.2s ease'
+						transition: 'all 0.2s ease',
+						flexShrink: 0,
+						zIndex: 1
 					}}
 				>
 					{searching ? (locale === 'fr' ? 'Recherche...' : 'Searching...') : (locale === 'fr' ? 'Rechercher' : 'Search')}

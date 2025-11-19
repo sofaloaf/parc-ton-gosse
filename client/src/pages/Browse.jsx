@@ -152,7 +152,7 @@ export default function Browse() {
 						<LoadingSpinner message={locale === 'fr' ? 'Chargement des activités...' : 'Loading activities...'} />
 					) : (
 						<>
-					{/* Sticky Search and Filters - Left Half */}
+					{/* Sticky Search and Filters - Full Width */}
 					<div className="browse-search-filters" style={{ 
 						display: 'flex',
 						flexDirection: 'column',
@@ -168,8 +168,7 @@ export default function Browse() {
 						boxShadow: '0 8px 32px rgba(102, 126, 234, 0.15)',
 						marginBottom: 12,
 						width: '100%',
-						maxWidth: '50%',
-						alignSelf: 'flex-start'
+						maxWidth: '100%'
 					}}>
 						<SearchBar 
 							onSearch={handleSearch} 

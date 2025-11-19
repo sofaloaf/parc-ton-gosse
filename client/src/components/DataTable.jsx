@@ -188,47 +188,72 @@ export default function DataTable({ activities, locale }) {
 				</div>
 			</div>
 
-			{/* Table with horizontal scroll - Crunchbase style */}
+			{/* Table with responsive layout - Crunchbase style */}
 			<div style={{ 
 				border: '1px solid #e0e7f0', 
 				borderRadius: '8px', 
 				overflowX: 'auto',
 				overflowY: 'visible',
+				width: '100%',
 				maxWidth: '100%',
 				WebkitOverflowScrolling: 'touch',
 				background: 'white',
 				boxShadow: '0 1px 3px rgba(59, 130, 246, 0.08)'
 			}}>
-				<table style={{ minWidth: 'max-content', width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 14 }}>
+				<table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 14, tableLayout: 'auto' }}>
 					<thead>
 						<tr style={{ background: '#f8fafc' }}>
-							{columns.map(col => (
-								<th
-									key={col}
-									onClick={() => handleSort(col)}
-									style={{
-										padding: '16px 20px',
-										textAlign: 'left',
-										cursor: 'pointer',
-										userSelect: 'none',
-										borderBottom: '2px solid #e0e7f0',
-										position: 'relative',
-										fontWeight: 600,
-										fontSize: '13px',
-										color: '#475569',
-										textTransform: 'uppercase',
-										letterSpacing: '0.5px',
-										transition: 'background 0.2s ease'
-									}}
-									onMouseEnter={(e) => e.currentTarget.style.background = '#eff6ff'}
-									onMouseLeave={(e) => e.currentTarget.style.background = '#f8fafc'}
-								>
-									{columnLabels[col] || col}
-									<span style={{ marginLeft: 6, fontSize: 11, color: '#3b82f6' }}>
-										{renderSortArrow(col)}
-									</span>
-								</th>
-							))}
+							{columns.map(col => {
+								// Define column widths based on content type
+								const getColumnWidth = (columnName) => {
+									// Use flexible widths that fit content but prevent excessive expansion
+									if (columnName === 'title') return { minWidth: '120px', maxWidth: '180px' };
+									if (columnName === 'description') return { minWidth: '150px', maxWidth: '250px' };
+									if (columnName === 'categories') return { minWidth: '100px', maxWidth: '150px' };
+									if (columnName === 'activityType') return { minWidth: '100px', maxWidth: '150px' };
+									if (columnName === 'addresses') return { minWidth: '150px', maxWidth: '200px' };
+									if (columnName === 'price') return { minWidth: '80px', maxWidth: '100px' };
+									if (columnName === 'ageMin' || columnName === 'ageMax') return { minWidth: '60px', maxWidth: '80px' };
+									if (columnName === 'websiteLink' || columnName === 'registrationLink') return { minWidth: '120px', maxWidth: '150px' };
+									if (columnName === 'contactEmail' || columnName === 'contactPhone') return { minWidth: '120px', maxWidth: '150px' };
+									return { minWidth: '100px', maxWidth: '120px' }; // Default width
+								};
+								
+								const colWidth = getColumnWidth(col);
+								
+								return (
+									<th
+										key={col}
+										onClick={() => handleSort(col)}
+										style={{
+											padding: '12px 16px',
+											textAlign: 'left',
+											cursor: 'pointer',
+											userSelect: 'none',
+											borderBottom: '2px solid #e0e7f0',
+											position: 'relative',
+											fontWeight: 600,
+											fontSize: '12px',
+											color: '#475569',
+											textTransform: 'uppercase',
+											letterSpacing: '0.5px',
+											transition: 'background 0.2s ease',
+											minWidth: colWidth.minWidth,
+											maxWidth: colWidth.maxWidth,
+											whiteSpace: 'nowrap',
+											overflow: 'hidden',
+											textOverflow: 'ellipsis'
+										}}
+										onMouseEnter={(e) => e.currentTarget.style.background = '#eff6ff'}
+										onMouseLeave={(e) => e.currentTarget.style.background = '#f8fafc'}
+									>
+										{columnLabels[col] || col}
+										<span style={{ marginLeft: 6, fontSize: 11, color: '#3b82f6' }}>
+											{renderSortArrow(col)}
+										</span>
+									</th>
+								);
+							})}
 							<th style={{ 
 								padding: '16px 20px', 
 								borderBottom: '2px solid #e0e7f0',
@@ -376,7 +401,13 @@ export default function DataTable({ activities, locale }) {
 									
 									// Truncate long text (but not for addresses, bullet lists, or yes/no)
 									if (typeof value === 'string' && !isBulletList && !isAddressList && !isYesNo) {
-										const maxLen = col === 'description' ? 50 : 50;
+										let maxLen = 50;
+										if (col === 'description') maxLen = 80;
+										else if (col === 'categories' || col === 'activityType') maxLen = 40;
+										else if (col === 'title') maxLen = 30;
+										else if (col === 'websiteLink' || col === 'registrationLink') maxLen = 25;
+										else if (col === 'contactEmail' || col === 'contactPhone') maxLen = 25;
+										
 										if (value.length > maxLen) {
 											value = value.substring(0, maxLen - 3) + '...';
 										}
@@ -386,16 +417,49 @@ export default function DataTable({ activities, locale }) {
 									const isEmpty = value === '' || value === null || value === undefined || (value === false && !isYesNo);
 									const displayValue = isEmpty ? (t.na || 'N/A') : value;
 									
-									return (
-										<td key={col} style={{ 
-											padding: '16px 20px', 
-											borderBottom: '1px solid #f1f5f9', 
-											maxWidth: col === 'addresses' ? 300 : 'none', 
-											whiteSpace: col === 'addresses' ? 'normal' : 'nowrap',
+									// Define cell styles based on column (matching header widths)
+									const getCellStyle = (columnName) => {
+										const baseStyle = {
+											padding: '12px 16px',
+											borderBottom: '1px solid #f1f5f9',
 											color: '#334155',
-											fontSize: '14px',
-											lineHeight: '1.5'
-										}}>
+											fontSize: '13px',
+											lineHeight: '1.5',
+											verticalAlign: 'top'
+										};
+										
+										if (columnName === 'title') {
+											return { ...baseStyle, minWidth: '120px', maxWidth: '180px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+										}
+										if (columnName === 'description') {
+											return { ...baseStyle, minWidth: '150px', maxWidth: '250px', whiteSpace: 'normal', wordWrap: 'break-word' };
+										}
+										if (columnName === 'categories') {
+											return { ...baseStyle, minWidth: '100px', maxWidth: '150px', whiteSpace: 'normal', wordWrap: 'break-word', fontSize: '12px' };
+										}
+										if (columnName === 'activityType') {
+											return { ...baseStyle, minWidth: '100px', maxWidth: '150px', whiteSpace: 'normal', wordWrap: 'break-word', fontSize: '12px' };
+										}
+										if (columnName === 'addresses') {
+											return { ...baseStyle, minWidth: '150px', maxWidth: '200px', whiteSpace: 'normal', wordWrap: 'break-word', fontSize: '12px' };
+										}
+										if (columnName === 'price') {
+											return { ...baseStyle, minWidth: '80px', maxWidth: '100px', whiteSpace: 'nowrap', textAlign: 'right' };
+										}
+										if (columnName === 'ageMin' || columnName === 'ageMax') {
+											return { ...baseStyle, minWidth: '60px', maxWidth: '80px', whiteSpace: 'nowrap', textAlign: 'center' };
+										}
+										if (columnName === 'websiteLink' || columnName === 'registrationLink') {
+											return { ...baseStyle, minWidth: '120px', maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+										}
+										if (columnName === 'contactEmail' || columnName === 'contactPhone') {
+											return { ...baseStyle, minWidth: '120px', maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+										}
+										return { ...baseStyle, minWidth: '100px', maxWidth: '120px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+									};
+									
+									return (
+										<td key={col} style={getCellStyle(col)}>
 											{isLink ? (
 												<a href={linkUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'none', fontWeight: 500, transition: 'color 0.2s' }}
 												onMouseEnter={(e) => e.currentTarget.style.color = '#2563eb'}

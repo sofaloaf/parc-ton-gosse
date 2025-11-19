@@ -1,11 +1,13 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { requireAuth } from '../middleware/auth.js';
+import { checkSessionLimit } from '../middleware/sessionLimit.js';
 
 export const activitiesRouter = express.Router();
 
 // List with filters: category, ageRange, date, price, neighborhood, q
-activitiesRouter.get('/', async (req, res) => {
+// Requires authentication and enforces 5-minute free browsing limit
+activitiesRouter.get('/', requireAuth(), checkSessionLimit, async (req, res) => {
 	try {
 		const store = req.app.get('dataStore');
 		if (!store) {
@@ -81,7 +83,7 @@ activitiesRouter.get('/', async (req, res) => {
 	}
 });
 
-activitiesRouter.get('/:id', async (req, res) => {
+activitiesRouter.get('/:id', requireAuth(), checkSessionLimit, async (req, res) => {
 	const store = req.app.get('dataStore');
 	const act = await store.activities.get(req.params.id);
 	if (!act) return res.status(404).json({ error: 'Not found' });

@@ -15,6 +15,8 @@ import ForgotPassword from './pages/ForgotPassword.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import LanguageToggle from './components/LanguageToggle.jsx';
 import FeedbackWidget from './components/FeedbackWidget.jsx';
+import AccessGate from './components/AccessGate.jsx';
+import SessionTimer from './components/SessionTimer.jsx';
 import { api } from './shared/api.js';
 import { auth } from './shared/api.js';
 import { trackPageView } from './utils/analytics.js';
@@ -52,69 +54,73 @@ export default function App() {
 	};
 
 	return (
-		<div style={{ fontFamily: 'system-ui, sans-serif', padding: 16 }}>
-			<header style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between' }}>
-				<Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>{t.appName}</Link>
-				<nav style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-					<Link to="/profile" style={{ textDecoration: 'none', color: 'inherit' }}>{locale === 'fr' ? 'Connexion' : 'Sign In'}</Link>
-					<Link to="/provider" style={{ textDecoration: 'none', color: 'inherit' }}>{t.provider || 'Provider'}</Link>
-					{user && (
-						<div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', background: '#f0f0f0', borderRadius: 4 }}>
-							<span style={{ fontSize: 14 }}>
-								{locale === 'fr' ? 'Bienvenue' : 'Welcome'}, <strong>{user.email}</strong>
-							</span>
-							<button 
-								onClick={handleLogout} 
-								style={{ 
-									padding: '4px 8px', 
-									fontSize: 12, 
-									border: '1px solid #ccc', 
-									borderRadius: 4, 
-									background: 'white', 
-									cursor: 'pointer' 
-								}}
-							>
-								{locale === 'fr' ? 'Déconnexion' : 'Logout'}
-							</button>
-						</div>
-					)}
-					<LanguageToggle />
-				</nav>
-			</header>
-			
-			{/* Admin link in bottom left */}
-			<Link 
-				to="/admin" 
-				style={{ 
-					position: 'fixed',
-					bottom: 20,
-					left: 20,
-					padding: '8px 16px',
-					background: '#6c757d',
-					color: 'white',
-					textDecoration: 'none',
-					borderRadius: 4,
-					fontSize: 14,
-					zIndex: 999
-				}}
-			>
-				Admin
-			</Link>
-			<Routes>
-				<Route path="/" element={<Browse />} />
-				<Route path="/activity/:id" element={<ActivityDetail />} />
-				<Route path="/register/:activityId" element={<RegistrationFlow />} />
-				<Route path="/profile" element={<Profile />} />
-				<Route path="/provider" element={<ProviderDashboard />} />
-				<Route path="/admin" element={<AdminPanel />} />
-				<Route path="/preorder" element={<Preorder />} />
-				<Route path="/preorder/confirmation" element={<PreorderConfirmation />} />
-				<Route path="/verify-email" element={<VerifyEmail />} />
-				<Route path="/reset-password" element={<ResetPassword />} />
-				<Route path="/forgot-password" element={<ForgotPassword />} />
-				<Route path="/onboarding" element={<Onboarding />} />
-			</Routes>
-			<FeedbackWidget />
-		</div>
+		<AccessGate>
+			<SessionTimer>
+				<div style={{ fontFamily: 'system-ui, sans-serif', padding: 16 }}>
+					<header style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between' }}>
+						<Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>{t.appName}</Link>
+						<nav style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+							<Link to="/profile" style={{ textDecoration: 'none', color: 'inherit' }}>{locale === 'fr' ? 'Connexion' : 'Sign In'}</Link>
+							<Link to="/provider" style={{ textDecoration: 'none', color: 'inherit' }}>{t.provider || 'Provider'}</Link>
+							{user && (
+								<div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', background: '#f0f0f0', borderRadius: 4 }}>
+									<span style={{ fontSize: 14 }}>
+										{locale === 'fr' ? 'Bienvenue' : 'Welcome'}, <strong>{user.email}</strong>
+									</span>
+									<button 
+										onClick={handleLogout} 
+										style={{ 
+											padding: '4px 8px', 
+											fontSize: 12, 
+											border: '1px solid #ccc', 
+											borderRadius: 4, 
+											background: 'white', 
+											cursor: 'pointer' 
+										}}
+									>
+										{locale === 'fr' ? 'Déconnexion' : 'Logout'}
+									</button>
+								</div>
+							)}
+							<LanguageToggle />
+						</nav>
+					</header>
+					
+					{/* Admin link in bottom left */}
+					<Link 
+						to="/admin" 
+						style={{ 
+							position: 'fixed',
+							bottom: 20,
+							left: 20,
+							padding: '8px 16px',
+							background: '#6c757d',
+							color: 'white',
+							textDecoration: 'none',
+							borderRadius: 4,
+							fontSize: 14,
+							zIndex: 999
+						}}
+					>
+						Admin
+					</Link>
+					<Routes>
+						<Route path="/" element={<Browse />} />
+						<Route path="/activity/:id" element={<ActivityDetail />} />
+						<Route path="/register/:activityId" element={<RegistrationFlow />} />
+						<Route path="/profile" element={<Profile />} />
+						<Route path="/provider" element={<ProviderDashboard />} />
+						<Route path="/admin" element={<AdminPanel />} />
+						<Route path="/preorder" element={<Preorder />} />
+						<Route path="/preorder/confirmation" element={<PreorderConfirmation />} />
+						<Route path="/verify-email" element={<VerifyEmail />} />
+						<Route path="/reset-password" element={<ResetPassword />} />
+						<Route path="/forgot-password" element={<ForgotPassword />} />
+						<Route path="/onboarding" element={<Onboarding />} />
+					</Routes>
+					<FeedbackWidget />
+				</div>
+			</SessionTimer>
+		</AccessGate>
 	);
 }

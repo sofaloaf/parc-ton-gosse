@@ -26,7 +26,8 @@ export function csrfProtection() {
 		const cookieToken = req.cookies['csrf-token'];
 		const headerToken = req.headers['x-csrf-token'] || req.headers['X-CSRF-Token'];
 
-		// Debug CSRF token for troubleshooting
+		// Debug CSRF token for troubleshooting (only in development)
+		// Never log full tokens or sensitive data
 		if (process.env.NODE_ENV === 'development') {
 			console.log('🔐 CSRF Check:', {
 				path: req.path,
@@ -91,14 +92,18 @@ export function csrfProtection() {
 		}
 
 		if (!cookieToken || !headerToken || cookieToken !== headerToken) {
-			console.error('❌ CSRF token mismatch:', {
-				path: req.path,
-				originalUrl: req.originalUrl,
-				hasCookieToken: !!cookieToken,
-				hasHeaderToken: !!headerToken,
-				tokensMatch: cookieToken === headerToken
-			});
-			return res.status(403).json({ error: 'CSRF token mismatch' });
+			// Log CSRF failures (but not token values) for security monitoring
+			if (process.env.NODE_ENV === 'development') {
+				console.error('❌ CSRF token mismatch:', {
+					path: req.path,
+					originalUrl: req.originalUrl,
+					hasCookieToken: !!cookieToken,
+					hasHeaderToken: !!headerToken,
+					tokensMatch: cookieToken === headerToken
+				});
+			}
+			// Generic error message - don't reveal why it failed
+			return res.status(403).json({ error: 'Request validation failed' });
 		}
 
 		next();

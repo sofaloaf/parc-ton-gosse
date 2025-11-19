@@ -11,7 +11,9 @@ function resolveBaseUrl() {
 
 	if (!isBrowser) {
 		cachedBaseUrl = LOCAL_API_URL;
-		console.log('🔍 API URL resolved (server-side):', cachedBaseUrl);
+		if (process.env.NODE_ENV === 'development') {
+			console.log('🔍 API URL resolved (server-side):', cachedBaseUrl);
+		}
 		return cachedBaseUrl;
 	}
 
@@ -29,26 +31,32 @@ function resolveBaseUrl() {
 		// Only use PRODUCTION_API_URL if this is NOT the backend service itself
 		if (!hostname.includes('backend')) {
 			cachedBaseUrl = PRODUCTION_API_URL;
-			console.log('✅ API URL resolved (Railway domain detected):', cachedBaseUrl);
-			console.log('   Frontend hostname:', hostname);
-			console.log('   Frontend origin:', origin);
-			console.log('   PRODUCTION_API_URL constant:', PRODUCTION_API_URL);
+			if (process.env.NODE_ENV === 'development') {
+				console.log('✅ API URL resolved (Railway domain detected):', cachedBaseUrl);
+				console.log('   Frontend hostname:', hostname);
+				console.log('   Frontend origin:', origin);
+				console.log('   PRODUCTION_API_URL constant:', PRODUCTION_API_URL);
+			}
 			return cachedBaseUrl;
 		}
 	}
 	
-	// Debug logging
-	console.log('🔍 API URL Resolution Debug:');
-	console.log('   hostname:', hostname);
-	console.log('   origin:', origin);
-	console.log('   window.__PTG_API_URL__:', window.__PTG_API_URL__);
-	console.log('   import.meta.env.VITE_API_URL:', import.meta.env.VITE_API_URL);
+	// Debug logging (only in development)
+	if (process.env.NODE_ENV === 'development') {
+		console.log('🔍 API URL Resolution Debug:');
+		console.log('   hostname:', hostname);
+		console.log('   origin:', origin);
+		console.log('   window.__PTG_API_URL__:', window.__PTG_API_URL__);
+		console.log('   import.meta.env.VITE_API_URL:', import.meta.env.VITE_API_URL);
+	}
 	
 	// Check for runtime override (works even if VITE_API_URL wasn't set)
 	const globalOverride = typeof window.__PTG_API_URL__ === 'string' ? window.__PTG_API_URL__.trim() : '';
 	if (globalOverride) {
 		cachedBaseUrl = globalOverride;
-		console.log('✅ API URL resolved from runtime override:', cachedBaseUrl);
+		if (process.env.NODE_ENV === 'development') {
+			console.log('✅ API URL resolved from runtime override:', cachedBaseUrl);
+		}
 		return cachedBaseUrl;
 	}
 
@@ -56,23 +64,29 @@ function resolveBaseUrl() {
 	const envApiUrl = import.meta.env.VITE_API_URL;
 	if (envApiUrl && typeof envApiUrl === 'string' && envApiUrl.trim()) {
 		cachedBaseUrl = envApiUrl.trim().replace(/\/$/, '') + (envApiUrl.endsWith('/api') ? '' : '/api');
-		console.log('✅ API URL resolved from VITE_API_URL:', cachedBaseUrl);
+		if (process.env.NODE_ENV === 'development') {
+			console.log('✅ API URL resolved from VITE_API_URL:', cachedBaseUrl);
+		}
 		return cachedBaseUrl;
 	}
 
 	// Localhost detection
 	if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
 		cachedBaseUrl = LOCAL_API_URL;
-		console.log('🔍 API URL resolved (localhost):', cachedBaseUrl);
+		if (process.env.NODE_ENV === 'development') {
+			console.log('🔍 API URL resolved (localhost):', cachedBaseUrl);
+		}
 		return cachedBaseUrl;
 	}
 
 	// Final fallback: assume API is at /api on same origin (only for non-Railway domains)
-	console.warn('⚠️  Falling back to same-origin API - this may not work!');
-	console.warn(`   Frontend origin: ${origin}`);
-	console.warn(`   Consider setting VITE_API_URL environment variable`);
+	if (process.env.NODE_ENV === 'development') {
+		console.warn('⚠️  Falling back to same-origin API - this may not work!');
+		console.warn(`   Frontend origin: ${origin}`);
+		console.warn(`   Consider setting VITE_API_URL environment variable`);
+		console.log('🔍 API URL resolved (fallback):', cachedBaseUrl);
+	}
 	cachedBaseUrl = `${origin.replace(/\/$/, '')}/api`;
-	console.log('🔍 API URL resolved (fallback):', cachedBaseUrl);
 	return cachedBaseUrl;
 }
 
@@ -97,12 +111,11 @@ export async function api(path, { method = 'GET', body, headers } = {}) {
 	const csrfToken = getCsrfToken();
 	const baseUrl = resolveBaseUrl();
 	
-	// Debug CSRF token for POST requests
-	if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+	// Debug CSRF token for POST requests (only in development)
+	if (process.env.NODE_ENV === 'development' && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
 		console.log('🔐 CSRF Token Debug:', {
 			token: csrfToken ? `${csrfToken.substring(0, 8)}...` : 'null',
 			hasToken: !!csrfToken,
-			cookies: document.cookie,
 			path
 		});
 	}

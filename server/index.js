@@ -40,6 +40,7 @@ import { metricsRouter } from './routes/metrics.js';
 import { referralsRouter } from './routes/referrals.js';
 import { preordersRouter } from './routes/preorders.js';
 import { crawlerRouter } from './routes/crawler.js';
+import { sessionsRouter } from './routes/sessions.js';
 import { requireAuth } from './middleware/auth.js';
 import { csrfProtection } from './middleware/csrf.js';
 
@@ -469,6 +470,7 @@ app.use('/api/metrics', metricsRouter);
 app.use('/api/referrals', referralsRouter);
 app.use('/api/preorders', preordersRouter);
 app.use('/api/crawler', crawlerRouter);
+app.use('/api/sessions', sessionsRouter);
 
 // Get current user with trial status
 app.get('/api/me', requireAuth(), async (req, res) => {

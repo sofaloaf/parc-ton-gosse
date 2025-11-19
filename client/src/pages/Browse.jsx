@@ -7,7 +7,6 @@ import Filters from '../components/Filters.jsx';
 import ActivityCard from '../components/ActivityCard.jsx';
 import DataTable from '../components/DataTable.jsx';
 import MapViewSimple from '../components/MapViewSimple.jsx';
-import TrialGate from '../components/TrialGate.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 
 export default function Browse() {
@@ -106,7 +105,7 @@ export default function Browse() {
 	}, [viewMode]);
 
 	return (
-		<TrialGate requireAuth={false}>
+		<>
 			<div style={{ 
 				minHeight: '100vh',
 				background: 'linear-gradient(135deg, #667eea 0%, #764ba2 15%, #f093fb 30%, #f5576c 45%, #4facfe 60%, #00f2fe 100%)',
@@ -408,6 +407,6 @@ export default function Browse() {
 					</div>
 				</div>
 			</div>
-		</TrialGate>
+		</>
 	);
 }

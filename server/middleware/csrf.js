@@ -1,4 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
+import jwt from 'jsonwebtoken';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 
 // CSRF protection middleware (double-submit cookie pattern)
 export function csrfProtection() {
@@ -56,18 +59,30 @@ export function csrfProtection() {
 
 		// For admin-only endpoints that require authentication, we can be more lenient
 		// The crawler endpoint is protected by requireAuth middleware which checks for admin role
+		// Since CSRF runs before requireAuth, we need to check the JWT token directly
 		const isAdminOnlyEndpoint = path.includes('/crawler') || 
 		                           originalUrl.includes('/crawler') ||
 		                           path.includes('/metrics') ||
 		                           originalUrl.includes('/metrics');
 		
-		if (isAdminOnlyEndpoint && req.user && req.user.role === 'admin') {
-			// Admin-only endpoints are already protected by requireAuth middleware
-			// If user is authenticated as admin, allow the request
-			if (process.env.NODE_ENV === 'development') {
-				console.log('🔓 Allowing admin-only endpoint (dev):', path, originalUrl);
+		if (isAdminOnlyEndpoint) {
+			// Check if user has a valid admin token
+			const authToken = req.cookies?.token || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
+			if (authToken) {
+				try {
+					const decoded = jwt.verify(authToken, JWT_SECRET);
+					if (decoded.role === 'admin') {
+						// Admin-only endpoints are already protected by requireAuth middleware
+						// If user has a valid admin token, allow the request (CSRF is less critical for authenticated admin requests)
+						if (process.env.NODE_ENV === 'development') {
+							console.log('🔓 Allowing admin-only endpoint (dev):', path, originalUrl);
+						}
+						return next();
+					}
+				} catch (e) {
+					// Invalid token, continue with CSRF check
+				}
 			}
-			return next();
 		}
 
 		// Allow requests without CSRF token in development (for easier testing)

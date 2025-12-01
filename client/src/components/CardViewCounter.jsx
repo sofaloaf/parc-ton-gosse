@@ -23,18 +23,19 @@ export default function CardViewCounter({ children }) {
 	useEffect(() => {
 		const initializeCounter = async () => {
 			try {
-				// Check if user is authenticated
+				// CRITICAL: Always allow page to load first, never block on initialization
+				setLoading(false); // Set loading to false immediately to allow page render
+				
+				// Check if user is authenticated (non-blocking)
 				const userData = await api('/me').catch(() => null);
 				
 				// Admin and provider have unlimited access
 				if (userData?.user?.role === 'admin' || userData?.user?.role === 'provider') {
-					setLoading(false);
 					return;
 				}
 
 				// Users who have subscribed have unlimited access
 				if (userData?.user?.hasPreordered || userData?.user?.subscriptionActive) {
-					setLoading(false);
 					return;
 				}
 
@@ -62,13 +63,12 @@ export default function CardViewCounter({ children }) {
 					// CRITICAL: Never show paywall on initial page load, even if count >= 10
 					// The paywall will only appear when handleCardView is called and count >= 10
 					// This ensures users can always see the page and browse normally
+					console.log('CardViewCounter initialized:', { count, willShowPaywall: false });
 				}
 			} catch (error) {
 				console.error('Failed to initialize card view counter:', error);
 				// On error, allow access - start with 0
 				setCardViews(0);
-			} finally {
-				setLoading(false);
 			}
 		};
 

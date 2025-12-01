@@ -96,6 +96,7 @@ async function searchMairieActivities(arrondissement, postalCode) {
 			'a[href*="/activite/"]',
 			'a[href*="/activites"]',
 			'a[href*="activites"]',
+			'a[href*="activite"]',
 			'.activity-link',
 			'.activite-link',
 			'article a',
@@ -104,8 +105,32 @@ async function searchMairieActivities(arrondissement, postalCode) {
 			'.search-result a',
 			'[class*="result"] a',
 			'[class*="activity"] a',
-			'[class*="activite"] a'
+			'[class*="activite"] a',
+			'[data-type="activite"] a',
+			'[data-type="activites"] a',
+			'.card a',
+			'.item a',
+			'li a[href*="activite"]'
 		];
+		
+		// Also look for JSON-LD structured data that might contain activity URLs
+		const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+		for (const script of jsonLdScripts) {
+			try {
+				const jsonLd = JSON.parse(script.textContent);
+				if (Array.isArray(jsonLd)) {
+					for (const item of jsonLd) {
+						if (item.url && item.url.includes('activite')) {
+							activityLinks.add(item.url);
+						}
+					}
+				} else if (jsonLd.url && jsonLd.url.includes('activite')) {
+					activityLinks.add(jsonLd.url);
+				}
+			} catch (e) {
+				// Invalid JSON-LD, skip
+			}
+		}
 
 		const activityLinks = new Set();
 		const baseUrl = `https://mairie${arrondissement.replace('er', '').replace('e', '')}.paris.fr`;
@@ -150,7 +175,9 @@ async function searchMairieActivities(arrondissement, postalCode) {
 		console.log(`📋 Found ${activityLinks.size} activity links on mairie page`);
 
 		// Visit each activity page to extract organization info
-		for (const activityUrl of Array.from(activityLinks).slice(0, 20)) { // Limit to 20 per arrondissement
+		// Process up to 200 activities per arrondissement (can be increased if needed)
+		const maxActivitiesPerArrondissement = 200;
+		for (const activityUrl of Array.from(activityLinks).slice(0, maxActivitiesPerArrondissement)) {
 			try {
 				const orgInfo = await extractOrganizationFromMairiePage(activityUrl, arrondissement);
 				if (orgInfo && orgInfo.website) {
@@ -601,13 +628,23 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 
 				// Also save to main Activities sheet with approvalStatus = 'pending'
 				// This allows the admin to see them in the approval interface
+				let savedCount = 0;
+				let errorCount = 0;
 				for (const activity of pendingActivities) {
 					try {
-						await store.activities.create(activity);
+						// Ensure approvalStatus is explicitly set
+						const activityToSave = {
+							...activity,
+							approvalStatus: 'pending' // Explicitly set to ensure it's saved
+						};
+						await store.activities.create(activityToSave);
+						savedCount++;
 					} catch (e) {
 						console.error(`Failed to save activity ${activity.id}:`, e);
+						errorCount++;
 					}
 				}
+				console.log(`✅ Saved ${savedCount} activities to datastore (${errorCount} errors)`);
 
 				res.json({
 					success: true,
@@ -657,7 +694,34 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 	
 	try {
 		const allActivities = await store.activities.list();
-		const pending = allActivities.filter(a => a.approvalStatus === 'pending');
+		console.log(`📊 Total activities in datastore: ${allActivities.length}`);
+		
+		// Filter for pending activities - check both explicit 'pending' and undefined/null (for backward compatibility)
+		const pending = allActivities.filter(a => {
+			const status = a.approvalStatus;
+			// Include activities with 'pending' status or no status (newly crawled activities)
+			return status === 'pending' || status === undefined || status === null;
+		});
+		
+		console.log(`📋 Found ${pending.length} pending activities (out of ${allActivities.length} total)`);
+		
+		// Log some examples for debugging
+		if (pending.length > 0) {
+			console.log(`📝 Sample pending activity:`, {
+				id: pending[0].id,
+				title: pending[0].title,
+				approvalStatus: pending[0].approvalStatus,
+				neighborhood: pending[0].neighborhood
+			});
+		} else {
+			// Log some activities to see what statuses exist
+			const statusCounts = {};
+			allActivities.forEach(a => {
+				const status = a.approvalStatus || 'undefined';
+				statusCounts[status] = (statusCounts[status] || 0) + 1;
+			});
+			console.log(`📊 Activity status breakdown:`, statusCounts);
+		}
 		
 		res.json({
 			total: pending.length,

@@ -36,6 +36,59 @@ const ARRONDISSEMENT_TO_POSTAL = {
 	'19e': '75019'
 };
 
+// Helper function to fetch with timeout and retries
+async function fetchWithRetry(url, options = {}, maxRetries = 3) {
+	const timeout = options.timeout || 20000;
+	
+	for (let attempt = 1; attempt <= maxRetries; attempt++) {
+		try {
+			// Create timeout promise
+			const timeoutPromise = new Promise((_, reject) => {
+				setTimeout(() => reject(new Error('Request timeout')), timeout);
+			});
+
+			// Create fetch promise
+			const fetchPromise = fetch(url, {
+				...options,
+				headers: {
+					'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+					'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+					'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+					'Accept-Encoding': 'gzip, deflate, br',
+					'Connection': 'keep-alive',
+					'Upgrade-Insecure-Requests': '1',
+					...options.headers
+				}
+			});
+
+			const response = await Promise.race([fetchPromise, timeoutPromise]);
+			
+			if (!response.ok && response.status >= 500 && attempt < maxRetries) {
+				// Retry on server errors
+				const delay = Math.random() * 2000 + 1000 * attempt; // Exponential backoff with jitter
+				console.log(`⚠️ Retry ${attempt}/${maxRetries} for ${url} after ${delay}ms`);
+				await new Promise(resolve => setTimeout(resolve, delay));
+				continue;
+			}
+
+			return response;
+		} catch (error) {
+			if (attempt === maxRetries) {
+				throw error;
+			}
+			const delay = Math.random() * 2000 + 1000 * attempt;
+			console.log(`⚠️ Retry ${attempt}/${maxRetries} for ${url} after ${delay}ms: ${error.message}`);
+			await new Promise(resolve => setTimeout(resolve, delay));
+		}
+	}
+}
+
+// Random delay to mimic human behavior
+function randomDelay(min = 1000, max = 3000) {
+	const delay = Math.random() * (max - min) + min;
+	return new Promise(resolve => setTimeout(resolve, delay));
+}
+
 // Helper to get Google Sheets client
 function getSheetsClient() {
 	const serviceAccount = process.env.GS_SERVICE_ACCOUNT;
@@ -68,20 +121,14 @@ async function searchMairieActivities(arrondissement, postalCode) {
 	
 	try {
 		// Build mairie activities URL
-		const mairieUrl = `https://mairie${arrondissement.replace('er', '').replace('e', '')}.paris.fr/recherche/activites?arrondissements=${postalCode}`;
-		console.log(`🔍 Searching mairie activities: ${mairieUrl}`);
+		const arrNum = arrondissement.replace('er', '').replace('e', '');
+		const mairieUrl = `https://mairie${arrNum}.paris.fr/recherche/activites?arrondissements=${postalCode}`;
+		console.log(`🔍 [${arrondissement}] Searching mairie: ${mairieUrl}`);
 		
-		const response = await fetch(mairieUrl, {
-			headers: {
-				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-				'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-				'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
-			},
-			timeout: 15000
-		});
+		const response = await fetchWithRetry(mairieUrl, { timeout: 20000 });
 
 		if (!response.ok) {
-			console.warn(`Mairie search failed for ${arrondissement}: HTTP ${response.status}`);
+			console.warn(`⚠️ [${arrondissement}] Mairie search failed: HTTP ${response.status}`);
 			return activities;
 		}
 
@@ -89,16 +136,15 @@ async function searchMairieActivities(arrondissement, postalCode) {
 		const dom = new JSDOM(html);
 		const document = dom.window.document;
 
-		// Find activity links - try multiple selectors for mairie pages
-		// Paris mairie pages typically have links in various formats
+		const activityLinks = new Set();
+		const baseUrl = `https://mairie${arrNum}.paris.fr`;
+
+		// Find activity links - try multiple selectors
 		const activitySelectors = [
 			'a[href*="/activites/"]',
 			'a[href*="/activite/"]',
-			'a[href*="/activites"]',
 			'a[href*="activites"]',
 			'a[href*="activite"]',
-			'.activity-link',
-			'.activite-link',
 			'article a',
 			'.result-item a',
 			'.activity-item a',
@@ -106,92 +152,94 @@ async function searchMairieActivities(arrondissement, postalCode) {
 			'[class*="result"] a',
 			'[class*="activity"] a',
 			'[class*="activite"] a',
-			'[data-type="activite"] a',
-			'[data-type="activites"] a',
 			'.card a',
 			'.item a',
 			'li a[href*="activite"]'
 		];
 		
-		// Also look for JSON-LD structured data that might contain activity URLs
+		for (const selector of activitySelectors) {
+			try {
+				const links = document.querySelectorAll(selector);
+				for (const link of links) {
+					const href = link.getAttribute('href');
+					if (!href) continue;
+					
+					const isActivityLink = href.includes('activite') || 
+					                     href.includes('activites') ||
+					                     link.textContent?.toLowerCase().includes('activité') ||
+					                     link.textContent?.toLowerCase().includes('activite');
+					
+					if (isActivityLink) {
+						let fullUrl = href;
+						if (href.startsWith('/')) {
+							fullUrl = `${baseUrl}${href}`;
+						} else if (!href.startsWith('http')) {
+							fullUrl = `${baseUrl}/${href}`;
+						}
+						if (fullUrl.startsWith('http') && !activityLinks.has(fullUrl)) {
+							activityLinks.add(fullUrl);
+						}
+					}
+				}
+			} catch (e) {
+				// Skip selector errors
+			}
+		}
+
+		// Also search for URLs in page text
+		const activityUrlPattern = /https?:\/\/mairie\d+\.paris\.fr\/[^"'\s<>]*activit[^"'\s<>]*/gi;
+		const urlMatches = html.match(activityUrlPattern);
+		if (urlMatches) {
+			urlMatches.forEach(url => activityLinks.add(url));
+		}
+
+		// Parse JSON-LD structured data
 		const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
 		for (const script of jsonLdScripts) {
 			try {
 				const jsonLd = JSON.parse(script.textContent);
-				if (Array.isArray(jsonLd)) {
-					for (const item of jsonLd) {
-						if (item.url && item.url.includes('activite')) {
-							activityLinks.add(item.url);
+				const extractUrls = (obj) => {
+					if (typeof obj !== 'object' || obj === null) return;
+					if (Array.isArray(obj)) {
+						obj.forEach(extractUrls);
+					} else {
+						for (const [key, value] of Object.entries(obj)) {
+							if (key === 'url' && typeof value === 'string' && value.includes('activite')) {
+								activityLinks.add(value);
+							} else if (typeof value === 'object') {
+								extractUrls(value);
+							}
 						}
 					}
-				} else if (jsonLd.url && jsonLd.url.includes('activite')) {
-					activityLinks.add(jsonLd.url);
-				}
+				};
+				extractUrls(jsonLd);
 			} catch (e) {
 				// Invalid JSON-LD, skip
 			}
 		}
 
-		const activityLinks = new Set();
-		const baseUrl = `https://mairie${arrondissement.replace('er', '').replace('e', '')}.paris.fr`;
-		
-		for (const selector of activitySelectors) {
-			const links = document.querySelectorAll(selector);
-			for (const link of links) {
-				const href = link.getAttribute('href');
-				if (!href) continue;
-				
-				// Check if it's an activity-related link
-				const isActivityLink = href.includes('activite') || 
-				                     href.includes('activites') ||
-				                     link.textContent?.toLowerCase().includes('activité') ||
-				                     link.textContent?.toLowerCase().includes('activite');
-				
-				if (isActivityLink) {
-					// Make absolute URL if relative
-					let fullUrl = href;
-					if (href.startsWith('/')) {
-						fullUrl = `${baseUrl}${href}`;
-					} else if (!href.startsWith('http')) {
-						fullUrl = `${baseUrl}/${href}`;
-					}
-					// Only add if it's a valid URL and not already in set
-					if (fullUrl.startsWith('http') && !activityLinks.has(fullUrl)) {
-						activityLinks.add(fullUrl);
-					}
-				}
-			}
-		}
-
-		// Also search for activity links in the page text/HTML directly
-		const activityUrlPattern = /https?:\/\/mairie\d+\.paris\.fr\/[^"'\s]*activit[^"'\s]*/gi;
-		const urlMatches = html.match(activityUrlPattern);
-		if (urlMatches) {
-			for (const url of urlMatches) {
-				activityLinks.add(url);
-			}
-		}
-
-		console.log(`📋 Found ${activityLinks.size} activity links on mairie page`);
+		console.log(`📋 [${arrondissement}] Found ${activityLinks.size} activity links on mairie page`);
 
 		// Visit each activity page to extract organization info
-		// Process up to 200 activities per arrondissement (can be increased if needed)
 		const maxActivitiesPerArrondissement = 200;
-		for (const activityUrl of Array.from(activityLinks).slice(0, maxActivitiesPerArrondissement)) {
+		const activityArray = Array.from(activityLinks).slice(0, maxActivitiesPerArrondissement);
+		
+		for (let i = 0; i < activityArray.length; i++) {
+			const activityUrl = activityArray[i];
 			try {
+				await randomDelay(1500, 3000); // Random delay between requests
 				const orgInfo = await extractOrganizationFromMairiePage(activityUrl, arrondissement);
 				if (orgInfo && orgInfo.website) {
 					activities.push(orgInfo);
+					console.log(`✅ [${arrondissement}] Found organization: ${orgInfo.name} (${i + 1}/${activityArray.length})`);
 				}
-				// Add delay to avoid rate limiting
-				await new Promise(resolve => setTimeout(resolve, 2000));
 			} catch (error) {
-				console.error(`Error extracting from ${activityUrl}:`, error.message);
+				console.error(`❌ [${arrondissement}] Error extracting from ${activityUrl}:`, error.message);
 				continue;
 			}
 		}
 	} catch (error) {
-		console.error(`Error searching mairie for ${arrondissement}:`, error);
+		console.error(`❌ [${arrondissement}] Error searching mairie:`, error.message);
 	}
 	
 	return activities;
@@ -200,14 +248,7 @@ async function searchMairieActivities(arrondissement, postalCode) {
 // Extract organization information from mairie activity page
 async function extractOrganizationFromMairiePage(activityUrl, arrondissement) {
 	try {
-		const response = await fetch(activityUrl, {
-			headers: {
-				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-				'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-				'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
-			},
-			timeout: 10000
-		});
+		const response = await fetchWithRetry(activityUrl, { timeout: 15000 });
 
 		if (!response.ok) {
 			return null;
@@ -223,18 +264,19 @@ async function extractOrganizationFromMairiePage(activityUrl, arrondissement) {
 		             document.querySelector('title')?.textContent?.trim() ||
 		             '';
 
-		// Extract organization website - look for common patterns
+		// Extract organization website
 		let orgWebsite = null;
 		let orgName = title;
 
-		// Look for website links in various formats
+		// Look for website links
 		const websiteSelectors = [
-			'a[href*="http"]:not([href*="mairie"]):not([href*="paris.fr"])',
-			'a[href^="http"]',
+			'a[href^="http"]:not([href*="mairie"]):not([href*="paris.fr"])',
+			'a[href^="https://"]',
 			'.website',
 			'.site-web',
 			'[class*="website"]',
-			'[class*="site"]'
+			'[class*="site"]',
+			'a[href*="www."]'
 		];
 
 		for (const selector of websiteSelectors) {
@@ -245,9 +287,10 @@ async function extractOrganizationFromMairiePage(activityUrl, arrondissement) {
 				    !href.includes('mairie') && 
 				    !href.includes('paris.fr') &&
 				    !href.includes('facebook.com') &&
-				    !href.includes('instagram.com')) {
+				    !href.includes('instagram.com') &&
+				    !href.includes('twitter.com') &&
+				    !href.includes('youtube.com')) {
 					orgWebsite = href;
-					// Try to get organization name from link text
 					const linkText = link.textContent?.trim();
 					if (linkText && linkText.length > 3 && linkText.length < 50) {
 						orgName = linkText;
@@ -258,36 +301,36 @@ async function extractOrganizationFromMairiePage(activityUrl, arrondissement) {
 			if (orgWebsite) break;
 		}
 
-		// Also search in text content for URLs
+		// Search in text content for URLs
 		if (!orgWebsite) {
-			const urlPattern = /https?:\/\/[^\s<>"']+/g;
+			const urlPattern = /https?:\/\/[^\s<>"']+[^.,;!?]/g;
 			const matches = html.match(urlPattern);
 			if (matches) {
 				for (const url of matches) {
-					if (!url.includes('mairie') && 
-					    !url.includes('paris.fr') &&
-					    !url.includes('facebook.com') &&
-					    !url.includes('instagram.com') &&
-					    !url.includes('twitter.com') &&
-					    !url.includes('youtube.com')) {
-						orgWebsite = url.replace(/[.,;!?]+$/, ''); // Remove trailing punctuation
+					const cleanUrl = url.replace(/[.,;!?]+$/, '');
+					if (!cleanUrl.includes('mairie') && 
+					    !cleanUrl.includes('paris.fr') &&
+					    !cleanUrl.includes('facebook.com') &&
+					    !cleanUrl.includes('instagram.com') &&
+					    !cleanUrl.includes('twitter.com') &&
+					    !cleanUrl.includes('youtube.com') &&
+					    cleanUrl.includes('.')) {
+						orgWebsite = cleanUrl;
 						break;
 					}
 				}
 			}
 		}
 
-		// Extract contact email if available
+		// Extract contact info
 		const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 		const emailMatch = html.match(emailPattern);
-		const email = emailMatch ? emailMatch.find(e => !e.includes('mairie') && !e.includes('paris.fr')) : null;
+		const email = emailMatch ? emailMatch.find(e => !e.includes('mairie') && !e.includes('paris.fr') && !e.includes('noreply')) : null;
 
-		// Extract phone number
 		const phonePattern = /(?:\+33|0)[1-9](?:[.\s]?\d{2}){4}/g;
 		const phoneMatch = html.match(phonePattern);
 		const phone = phoneMatch ? phoneMatch[0].trim() : null;
 
-		// Extract address
 		const addressPatterns = [
 			/\d+\s+[A-Za-z\s]+(?:rue|avenue|boulevard|place|allée)[A-Za-z\s,]+(?:Paris|Île-de-France)/gi,
 			/\d{5}\s+Paris/gi
@@ -302,14 +345,13 @@ async function extractOrganizationFromMairiePage(activityUrl, arrondissement) {
 		}
 
 		if (!orgWebsite && !email) {
-			// No way to contact organization, skip
 			return null;
 		}
 
 		// If we have email but no website, try to construct website from email domain
 		if (!orgWebsite && email) {
 			const domain = email.split('@')[1];
-			if (domain && !domain.includes('gmail.com') && !domain.includes('yahoo.com') && !domain.includes('hotmail.com')) {
+			if (domain && !domain.includes('gmail.com') && !domain.includes('yahoo.com') && !domain.includes('hotmail.com') && !domain.includes('outlook.com')) {
 				orgWebsite = `https://${domain}`;
 			}
 		}
@@ -330,18 +372,122 @@ async function extractOrganizationFromMairiePage(activityUrl, arrondissement) {
 	}
 }
 
+// Additional search using web search for associations
+async function searchAssociationsWeb(arrondissement, templateActivity) {
+	const results = [];
+	const postalCode = ARRONDISSEMENT_TO_POSTAL[arrondissement];
+	
+	// Search terms based on template and arrondissement
+	const categories = templateActivity?.categories || [];
+	const searchTerms = [
+		`association enfants ${arrondissement} Paris`,
+		`club enfants ${arrondissement} Paris`,
+		`activités enfants ${arrondissement} Paris`,
+		`loisirs enfants ${arrondissement} Paris`,
+		`ateliers enfants ${arrondissement} Paris`
+	];
+
+	// Add category-specific searches
+	if (categories.length > 0) {
+		categories.forEach(cat => {
+			searchTerms.push(`${cat} enfants ${arrondissement} Paris`);
+		});
+	}
+
+	// Limit to 3 search terms to avoid rate limiting
+	for (const searchTerm of searchTerms.slice(0, 3)) {
+		try {
+			await randomDelay(2000, 4000);
+			const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchTerm)}`;
+			console.log(`🔍 [${arrondissement}] Web search: ${searchTerm}`);
+			
+			const response = await fetchWithRetry(searchUrl, { timeout: 20000 });
+
+			if (!response.ok) {
+				continue;
+			}
+
+			const html = await response.text();
+			const dom = new JSDOM(html);
+			const document = dom.window.document;
+
+			const resultLinks = document.querySelectorAll('.result__a, .web-result__a, a.result-link, .result a');
+			
+			for (const link of Array.from(resultLinks).slice(0, 5)) {
+				let href = link.getAttribute('href');
+				const title = link.textContent?.trim();
+				
+				if (!href || !title) continue;
+				
+				// Handle DuckDuckGo redirect URLs
+				if (href.startsWith('/l/?kh=') || href.includes('duckduckgo.com')) {
+					const onclick = link.getAttribute('onclick');
+					if (onclick) {
+						const match = onclick.match(/href='([^']+)'/);
+						if (match) href = match[1];
+					}
+				}
+				
+				if (results.some(r => r.website === href)) continue;
+				
+				const lowerTitle = title.toLowerCase();
+				const lowerHref = href.toLowerCase();
+				const relevantKeywords = ['enfant', 'kid', 'child', 'loisir', 'activite', 'atelier', 'sport', 'musique', 'danse', 'art', 'culture', 'association', 'club'];
+				const hasRelevantKeyword = relevantKeywords.some(keyword => 
+					lowerTitle.includes(keyword) || lowerHref.includes(keyword)
+				);
+				
+				if (!hasRelevantKeyword) continue;
+				
+				const skipDomains = ['wikipedia.org', 'facebook.com', 'instagram.com', 'youtube.com', 
+				                     'twitter.com', 'linkedin.com', 'pinterest.com', 'tiktok.com',
+				                     'google.com', 'bing.com', 'duckduckgo.com', 'mairie', 'paris.fr'];
+				if (skipDomains.some(domain => lowerHref.includes(domain))) {
+					continue;
+				}
+
+				let orgName = title;
+				try {
+					const url = new URL(href);
+					if (orgName.length < 10 || orgName.toLowerCase().includes('paris') || orgName.toLowerCase().includes('result')) {
+						orgName = url.hostname.replace('www.', '').split('.')[0];
+						orgName = orgName.charAt(0).toUpperCase() + orgName.slice(1);
+					}
+				} catch (e) {
+					continue;
+				}
+
+				results.push({
+					name: orgName,
+					website: href,
+					arrondissement: arrondissement,
+					categories: categories.length > 0 ? categories : ['sport'],
+					status: 'pending'
+				});
+			}
+		} catch (error) {
+			console.error(`❌ [${arrondissement}] Web search error for "${searchTerm}":`, error.message);
+			continue;
+		}
+	}
+	
+	return results;
+}
+
 // Search for organizations in a specific arrondissement
 async function searchOrganizations(arrondissement, templateActivity) {
 	const results = [];
 	const postalCode = ARRONDISSEMENT_TO_POSTAL[arrondissement];
 	
 	if (!postalCode) {
-		console.error(`No postal code mapping for ${arrondissement}`);
+		console.error(`❌ No postal code mapping for ${arrondissement}`);
 		return results;
 	}
 
-	// First, search mairie activities
-	console.log(`🔍 Searching mairie activities for ${arrondissement} (${postalCode})...`);
+	console.log(`\n🏘️  Starting search for ${arrondissement} (${postalCode})...`);
+
+	// Strategy 1: Search mairie activities
+	console.log(`📍 [${arrondissement}] Strategy 1: Searching mairie activities...`);
 	const mairieActivities = await searchMairieActivities(arrondissement, postalCode);
 	
 	for (const activity of mairieActivities) {
@@ -359,7 +505,23 @@ async function searchOrganizations(arrondissement, templateActivity) {
 		}
 	}
 
-	console.log(`✅ Found ${results.length} organizations from mairie for ${arrondissement}`);
+	console.log(`✅ [${arrondissement}] Found ${results.length} organizations from mairie`);
+
+	// Strategy 2: Additional web search for associations
+	if (results.length < 50) { // Only if we didn't find many from mairie
+		console.log(`📍 [${arrondissement}] Strategy 2: Web search for associations...`);
+		const webResults = await searchAssociationsWeb(arrondissement, templateActivity);
+		
+		for (const org of webResults) {
+			if (!results.some(r => r.website === org.website)) {
+				results.push(org);
+			}
+		}
+		
+		console.log(`✅ [${arrondissement}] Found ${webResults.length} additional organizations from web search`);
+	}
+
+	console.log(`🎯 [${arrondissement}] Total: ${results.length} organizations found\n`);
 	
 	return results;
 }
@@ -367,12 +529,7 @@ async function searchOrganizations(arrondissement, templateActivity) {
 // Extract data from organization website
 async function extractOrganizationData(url, templateActivity) {
 	try {
-		const response = await fetch(url, {
-			headers: {
-				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-			},
-			timeout: 10000
-		});
+		const response = await fetchWithRetry(url, { timeout: 15000 });
 
 		if (!response.ok) {
 			return { error: `HTTP ${response.status}` };
@@ -382,7 +539,6 @@ async function extractOrganizationData(url, templateActivity) {
 		const dom = new JSDOM(html);
 		const document = dom.window.document;
 
-		// Extract data using template as reference
 		const data = {
 			title: null,
 			description: null,
@@ -392,7 +548,7 @@ async function extractOrganizationData(url, templateActivity) {
 			phone: null,
 			email: null,
 			images: [],
-			categories: templateActivity.categories || [],
+			categories: templateActivity?.categories || [],
 			schedule: null,
 			websiteLink: url
 		};
@@ -407,7 +563,7 @@ async function extractOrganizationData(url, templateActivity) {
 			document.querySelector('meta[name="description"]')?.content ||
 			document.querySelector('p')?.textContent?.trim();
 
-		// Extract price (similar to existing crawler)
+		// Extract price
 		const pricePatterns = [/\b(\d+)\s*€/gi, /\b(\d+)\s*EUR/gi];
 		for (const pattern of pricePatterns) {
 			const match = html.match(pattern);
@@ -495,7 +651,6 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 		let templateActivity = null;
 		if (useTemplate) {
 			const activities = await store.activities.list();
-			// Find an activity from 20e as template
 			templateActivity = activities.find(a => a.neighborhood === '20e') || activities[0];
 		}
 
@@ -507,9 +662,11 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 		const results = [];
 		const pendingActivities = [];
 
-		// Search each arrondissement
+		// Search each arrondissement sequentially
 		for (const arrondissement of arrondissementsToSearch) {
-			console.log(`🔍 Searching ${arrondissement}...`);
+			console.log(`\n${'='.repeat(60)}`);
+			console.log(`🏘️  Processing ${arrondissement} arrondissement`);
+			console.log('='.repeat(60));
 			
 			// Search for organizations
 			const organizations = await searchOrganizations(arrondissement, templateActivity || {});
@@ -517,66 +674,76 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 			for (const org of organizations) {
 				// Extract data from website
 				if (org.website && org.website.startsWith('http')) {
-					const extracted = await extractOrganizationData(org.website, templateActivity || {});
-					
-					if (extracted.error) {
+					try {
+						await randomDelay(2000, 4000); // Random delay between website crawls
+						const extracted = await extractOrganizationData(org.website, templateActivity || {});
+						
+						if (extracted.error) {
+							results.push({
+								arrondissement,
+								organization: org.name,
+								website: org.website,
+								status: 'error',
+								error: extracted.error
+							});
+							continue;
+						}
+
+						// Create activity object with pending status
+						const activity = {
+							id: uuidv4(),
+							title: {
+								en: extracted.title || org.name,
+								fr: extracted.title || org.name
+							},
+							description: {
+								en: extracted.description || '',
+								fr: extracted.description || ''
+							},
+							categories: extracted.categories || org.categories || [],
+							ageMin: extracted.ageRange ? parseInt(extracted.ageRange.split('-')[0]) : (templateActivity?.ageMin || 0),
+							ageMax: extracted.ageRange ? parseInt(extracted.ageRange.split('-')[1]) : (templateActivity?.ageMax || 99),
+							price: extracted.price ? { amount: extracted.price, currency: 'EUR' } : (templateActivity?.price || { amount: 0, currency: 'EUR' }),
+							addresses: extracted.address || org.address || '',
+							contactEmail: extracted.email || org.email || '',
+							contactPhone: extracted.phone || org.phone || '',
+							images: extracted.images || [],
+							neighborhood: arrondissement,
+							websiteLink: org.website,
+							approvalStatus: 'pending',
+							crawledAt: new Date().toISOString(),
+							createdAt: new Date().toISOString(),
+							updatedAt: new Date().toISOString()
+						};
+
+						pendingActivities.push(activity);
+						results.push({
+							arrondissement,
+							organization: org.name,
+							website: org.website,
+							status: 'success',
+							activityId: activity.id
+						});
+					} catch (error) {
+						console.error(`❌ Error processing ${org.website}:`, error.message);
 						results.push({
 							arrondissement,
 							organization: org.name,
 							website: org.website,
 							status: 'error',
-							error: extracted.error
+							error: error.message
 						});
-						continue;
 					}
-
-					// Create activity object with pending status
-					const activity = {
-						id: uuidv4(),
-						title: {
-							en: extracted.title || org.name,
-							fr: extracted.title || org.name
-						},
-						description: {
-							en: extracted.description || '',
-							fr: extracted.description || ''
-						},
-						categories: extracted.categories || org.categories || [],
-						ageMin: extracted.ageRange ? parseInt(extracted.ageRange.split('-')[0]) : (templateActivity?.ageMin || 0),
-						ageMax: extracted.ageRange ? parseInt(extracted.ageRange.split('-')[1]) : (templateActivity?.ageMax || 99),
-						price: extracted.price ? { amount: extracted.price, currency: 'EUR' } : (templateActivity?.price || { amount: 0, currency: 'EUR' }),
-						addresses: extracted.address || '',
-						contactEmail: extracted.email || '',
-						contactPhone: extracted.phone || '',
-						images: extracted.images || [],
-						neighborhood: arrondissement,
-						websiteLink: org.website,
-						approvalStatus: 'pending', // Requires admin approval
-						crawledAt: new Date().toISOString(),
-						createdAt: new Date().toISOString(),
-						updatedAt: new Date().toISOString()
-					};
-
-					pendingActivities.push(activity);
-					results.push({
-						arrondissement,
-						organization: org.name,
-						website: org.website,
-						status: 'success',
-						activityId: activity.id
-					});
-
-					// Add delay to avoid rate limiting
-					await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
 				}
 			}
+			
+			// Add delay between arrondissements
+			await randomDelay(3000, 5000);
 		}
 
-		// Save pending activities to Google Sheets (in a pending sheet or with approvalStatus field)
+		// Save pending activities
 		if (pendingActivities.length > 0) {
 			try {
-				// Save to Activities sheet with approvalStatus = 'pending'
-				// The datastore should handle this, but we'll also create a separate pending sheet for review
 				const pendingSheetName = `Pending_${new Date().toISOString().split('T')[0]}`;
 				
 				// Create pending sheet
@@ -626,16 +793,14 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 					}
 				});
 
-				// Also save to main Activities sheet with approvalStatus = 'pending'
-				// This allows the admin to see them in the approval interface
+				// Save to datastore
 				let savedCount = 0;
 				let errorCount = 0;
 				for (const activity of pendingActivities) {
 					try {
-						// Ensure approvalStatus is explicitly set
 						const activityToSave = {
 							...activity,
-							approvalStatus: 'pending' // Explicitly set to ensure it's saved
+							approvalStatus: 'pending'
 						};
 						await store.activities.create(activityToSave);
 						savedCount++;
@@ -644,7 +809,7 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 						errorCount++;
 					}
 				}
-				console.log(`✅ Saved ${savedCount} activities to datastore (${errorCount} errors)`);
+				console.log(`\n✅ Saved ${savedCount} activities to datastore (${errorCount} errors)`);
 
 				res.json({
 					success: true,
@@ -655,7 +820,7 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 						errors: results.filter(r => r.status === 'error').length,
 						pendingActivities: pendingActivities.length
 					},
-					results: results.slice(0, 20), // Return first 20 results
+					results: results.slice(0, 50),
 					message: `Found ${pendingActivities.length} organizations. Review and approve in admin panel.`
 				});
 
@@ -696,16 +861,13 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 		const allActivities = await store.activities.list();
 		console.log(`📊 Total activities in datastore: ${allActivities.length}`);
 		
-		// Filter for pending activities - check both explicit 'pending' and undefined/null (for backward compatibility)
 		const pending = allActivities.filter(a => {
 			const status = a.approvalStatus;
-			// Include activities with 'pending' status or no status (newly crawled activities)
 			return status === 'pending' || status === undefined || status === null;
 		});
 		
 		console.log(`📋 Found ${pending.length} pending activities (out of ${allActivities.length} total)`);
 		
-		// Log some examples for debugging
 		if (pending.length > 0) {
 			console.log(`📝 Sample pending activity:`, {
 				id: pending[0].id,
@@ -714,7 +876,6 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 				neighborhood: pending[0].neighborhood
 			});
 		} else {
-			// Log some activities to see what statuses exist
 			const statusCounts = {};
 			allActivities.forEach(a => {
 				const status = a.approvalStatus || 'undefined';
@@ -739,7 +900,7 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 // Approve or reject activity
 arrondissementCrawlerRouter.post('/approve', requireAuth('admin'), async (req, res) => {
 	const store = req.app.get('dataStore');
-	const { activityId, action } = req.body; // action: 'approve' or 'reject'
+	const { activityId, action } = req.body;
 	
 	if (!activityId || !action) {
 		return res.status(400).json({ error: 'activityId and action required' });
@@ -822,4 +983,3 @@ arrondissementCrawlerRouter.post('/batch-approve', requireAuth('admin'), async (
 		});
 	}
 });
-

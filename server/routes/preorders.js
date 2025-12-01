@@ -78,7 +78,7 @@ preordersRouter.post('/commit', requireAuth(), validateCommitment, async (req, r
 	}
 
 	const store = req.app.get('dataStore');
-	const { promoCode, agreedToTerms } = req.body;
+	const { promoCode, agreedToTerms, plan, amount: requestedAmount } = req.body;
 	
 	// Check if user already preordered
 	const user = await store.users.get(req.user.id);
@@ -93,9 +93,15 @@ preordersRouter.post('/commit', requireAuth(), validateCommitment, async (req, r
 	// Sanitize and validate promo code
 	const sanitizedPromoCode = promoCode ? String(promoCode).trim().toUpperCase().substring(0, 50) : null;
 	
-	// Calculate amount (apply promo code if valid)
-	let amount = PREORDER_AMOUNT;
-	if (sanitizedPromoCode) {
+	// Calculate amount - use requested amount if provided (from selected plan), otherwise use default
+	let amount = requestedAmount ? parseFloat(requestedAmount) : PREORDER_AMOUNT;
+	
+	// Validate plan
+	const validPlans = ['monthly', '6months', 'yearly'];
+	const selectedPlan = plan && validPlans.includes(plan) ? plan : 'monthly';
+	
+	// Apply promo code discount if valid (only if using default amount)
+	if (!requestedAmount && sanitizedPromoCode) {
 		const validPromoCodes = {
 			'LAUNCH20': 0.8, // 20% off
 			'FOUNDER': 0.5,  // 50% off
@@ -104,6 +110,11 @@ preordersRouter.post('/commit', requireAuth(), validateCommitment, async (req, r
 		if (validPromoCodes[sanitizedPromoCode]) {
 			amount = PREORDER_AMOUNT * validPromoCodes[sanitizedPromoCode];
 		}
+	}
+	
+	// Ensure amount is valid
+	if (isNaN(amount) || amount <= 0) {
+		amount = PREORDER_AMOUNT; // Fallback to default
 	}
 	
 	try {
@@ -116,29 +127,42 @@ preordersRouter.post('/commit', requireAuth(), validateCommitment, async (req, r
 			preorderDate: now,
 			preorderId: commitmentId,
 			preorderAmount: Math.round(amount * 100) / 100,
+			preorderPlan: selectedPlan, // Save selected plan
 			preorderStatus: 'committed', // Status: committed (not yet paid)
 			preorderPromoCode: sanitizedPromoCode || '',
+			subscriptionActive: true, // Mark subscription as active
 			sessionStartTime: null // Clear session timer - unlimited access granted
 		});
 		
-		// Create commitment record for tracking
+		// Create commitment record for tracking in Google Sheets
 		try {
-			await store.preorders.create({
+			const preorderRecord = {
 				id: commitmentId,
 				userId: req.user.id,
 				userEmail: req.user.email,
-				paymentIntentId: null, // No payment intent for commitments
+				userName: user.profile?.name || user.email,
+				plan: selectedPlan,
 				amount: Math.round(amount * 100) / 100,
+				currency: 'EUR',
 				promoCode: sanitizedPromoCode || '',
+				paymentIntentId: null, // No payment intent for commitments
 				status: 'committed', // Status: committed (will be 'paid' when processed)
 				createdAt: now,
 				updatedAt: now
-			});
+			};
+			
+			console.log('Creating preorder record:', preorderRecord);
+			await store.preorders.create(preorderRecord);
+			console.log('✅ Preorder record created successfully');
 		} catch (e) {
 			// Log error but don't fail the commitment if tracking fails
-			if (process.env.NODE_ENV === 'development') {
-				console.error('Failed to create commitment record:', e);
-			}
+			console.error('❌ Failed to create commitment record in Google Sheets:', e);
+			console.error('Error details:', {
+				message: e.message,
+				stack: e.stack,
+				commitmentId,
+				userId: req.user.id
+			});
 		}
 		
 		// Track conversion event: commitment_made

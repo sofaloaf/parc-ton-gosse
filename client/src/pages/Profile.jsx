@@ -137,7 +137,19 @@ export default function Profile() {
 				navigate('/onboarding');
 			}, 1500);
 		} catch (e) {
-			const errorMsg = e.message || (locale === 'fr' ? 'Échec de l\'inscription' : 'Signup failed');
+			// Try to parse error message from response
+			let errorMsg = e.message || (locale === 'fr' ? 'Échec de l\'inscription' : 'Signup failed');
+			try {
+				const errorJson = JSON.parse(e.message);
+				if (errorJson.error) {
+					errorMsg = errorJson.error;
+					if (errorJson.details && Array.isArray(errorJson.details)) {
+						errorMsg += ': ' + errorJson.details.join(', ');
+					}
+				}
+			} catch (parseError) {
+				// Not JSON, use message as is
+			}
 			setMessage(errorMsg);
 		} finally {
 			setLoading(false);

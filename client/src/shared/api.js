@@ -132,7 +132,17 @@ export async function api(path, { method = 'GET', body, headers } = {}) {
 		headers: requestHeaders,
 		body: body ? JSON.stringify(body) : undefined
 	});
-	if (!res.ok) throw new Error(await res.text());
+	if (!res.ok) {
+		const errorText = await res.text();
+		// Try to parse as JSON to get better error message
+		try {
+			const errorJson = JSON.parse(errorText);
+			throw new Error(JSON.stringify(errorJson));
+		} catch (parseError) {
+			// Not JSON, throw as text
+			throw new Error(errorText);
+		}
+	}
 	return res.json();
 }
 

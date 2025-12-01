@@ -44,7 +44,15 @@ const validateLogin = [
 authRouter.post('/signup', validateSignup, async (req, res) => {
 	const errors = validationResult(req);
 	if (!errors.isEmpty()) {
-		return res.status(400).json({ error: errors.array()[0].msg });
+		const errorMessages = errors.array().map(err => err.msg);
+		console.error('Signup validation failed:', {
+			errors: errorMessages,
+			body: { email: req.body?.email, hasPassword: !!req.body?.password, passwordLength: req.body?.password?.length }
+		});
+		return res.status(400).json({ 
+			error: errorMessages[0] || 'Request validation failed',
+			details: errorMessages
+		});
 	}
 
 	const store = req.app.get('dataStore');

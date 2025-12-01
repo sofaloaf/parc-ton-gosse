@@ -15,6 +15,11 @@ export default function AdminPanel() {
 	const [crawlerLoading, setCrawlerLoading] = useState(false);
 	const [crawlerResults, setCrawlerResults] = useState(null);
 	const [crawlerError, setCrawlerError] = useState('');
+	const [arrondissementCrawlerLoading, setArrondissementCrawlerLoading] = useState(false);
+	const [arrondissementCrawlerResults, setArrondissementCrawlerResults] = useState(null);
+	const [arrondissementCrawlerError, setArrondissementCrawlerError] = useState('');
+	const [pendingActivities, setPendingActivities] = useState([]);
+	const [pendingLoading, setPendingLoading] = useState(false);
 
 	useEffect(() => {
 		// First, ensure we have a CSRF token by making a GET request
@@ -201,6 +206,82 @@ export default function AdminPanel() {
 			setCrawlerLoading(false);
 		}
 	};
+
+	const runArrondissementCrawler = async () => {
+		setArrondissementCrawlerLoading(true);
+		setArrondissementCrawlerError('');
+		setArrondissementCrawlerResults(null);
+
+		try {
+			await api('/me');
+			await new Promise(resolve => setTimeout(resolve, 100));
+			
+			const result = await api('/arrondissement-crawler/search', {
+				method: 'POST',
+				body: {
+					useTemplate: true
+				}
+			});
+
+			setArrondissementCrawlerResults(result);
+			setArrondissementCrawlerError('');
+			// Refresh pending activities
+			loadPendingActivities();
+		} catch (err) {
+			setArrondissementCrawlerError(err.message || 'Failed to run arrondissement crawler');
+			setArrondissementCrawlerResults(null);
+			console.error('Arrondissement crawler error:', err);
+		} finally {
+			setArrondissementCrawlerLoading(false);
+		}
+	};
+
+	const loadPendingActivities = async () => {
+		setPendingLoading(true);
+		try {
+			const result = await api('/arrondissement-crawler/pending');
+			setPendingActivities(result.activities || []);
+		} catch (err) {
+			console.error('Failed to load pending activities:', err);
+		} finally {
+			setPendingLoading(false);
+		}
+	};
+
+	const approveActivity = async (activityId, action) => {
+		try {
+			await api('/arrondissement-crawler/approve', {
+				method: 'POST',
+				body: { activityId, action }
+			});
+			// Refresh pending activities
+			loadPendingActivities();
+		} catch (err) {
+			console.error('Failed to approve/reject activity:', err);
+			alert(err.message || 'Failed to update activity');
+		}
+	};
+
+	const batchApprove = async (activityIds, action) => {
+		try {
+			await api('/arrondissement-crawler/batch-approve', {
+				method: 'POST',
+				body: { activityIds, action }
+			});
+			// Refresh pending activities
+			loadPendingActivities();
+		} catch (err) {
+			console.error('Failed to batch approve/reject:', err);
+			alert(err.message || 'Failed to update activities');
+		}
+	};
+
+	// Load pending activities on mount
+	useEffect(() => {
+		if (isAuthenticated) {
+			loadPendingActivities();
+		}
+	}, [isAuthenticated]);
 
 	if (loading) {
 		return (
@@ -593,6 +674,236 @@ export default function AdminPanel() {
 						</div>
 					)}
 				</div>
+				</ChartCard>
+
+				{/* Arrondissement Crawler Section */}
+				<ChartCard title="Arrondissement Crawler">
+					<div style={{ marginBottom: 20 }}>
+						<p style={{ color: '#666', marginBottom: 16 }}>
+							Search for activities in all Paris arrondissements (excluding 20e which already has data). 
+							This will:
+						</p>
+						<ul style={{ color: '#666', marginLeft: 20, marginBottom: 16 }}>
+							<li>Search for organizations in all 19 arrondissements</li>
+							<li>Use existing 20e data as a template</li>
+							<li>Extract data from organization websites</li>
+							<li>Save activities with pending status (requires approval)</li>
+						</ul>
+						<button
+							onClick={runArrondissementCrawler}
+							disabled={arrondissementCrawlerLoading}
+							style={{
+								padding: '12px 24px',
+								background: arrondissementCrawlerLoading ? '#6c757d' : '#17a2b8',
+								color: 'white',
+								border: 'none',
+								borderRadius: 4,
+								cursor: arrondissementCrawlerLoading ? 'not-allowed' : 'pointer',
+								fontSize: 16,
+								fontWeight: 'bold',
+								display: 'flex',
+								alignItems: 'center',
+								gap: 8
+							}}
+						>
+							{arrondissementCrawlerLoading ? (
+								<>
+									<span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #fff', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
+									Searching Arrondissements...
+								</>
+							) : (
+								<>
+									🔍 Search All Arrondissements
+								</>
+							)}
+						</button>
+						{arrondissementCrawlerError && (
+							<div style={{
+								marginTop: 16,
+								padding: 12,
+								background: '#f8d7da',
+								color: '#721c24',
+								borderRadius: 4,
+								border: '1px solid #f5c6cb'
+							}}>
+								<strong>Error:</strong> {arrondissementCrawlerError}
+							</div>
+						)}
+						{arrondissementCrawlerResults && (
+							<div style={{
+								marginTop: 16,
+								padding: 16,
+								background: '#d4edda',
+								borderRadius: 4,
+								border: '1px solid #c3e6cb'
+							}}>
+								<h4 style={{ marginTop: 0, color: '#155724' }}>✅ Crawler Completed!</h4>
+								<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
+									<div>
+										<strong style={{ color: '#155724' }}>Total Searched:</strong> {arrondissementCrawlerResults.summary?.total || 0}
+									</div>
+									<div>
+										<strong style={{ color: '#155724' }}>Found:</strong> {arrondissementCrawlerResults.summary?.successful || 0}
+									</div>
+									<div>
+										<strong style={{ color: '#856404' }}>Errors:</strong> {arrondissementCrawlerResults.summary?.errors || 0}
+									</div>
+									<div>
+										<strong style={{ color: '#155724' }}>Pending:</strong> {arrondissementCrawlerResults.summary?.pendingActivities || 0}
+									</div>
+								</div>
+								<div style={{ marginTop: 12, fontSize: 14, color: '#155724' }}>
+									✅ {arrondissementCrawlerResults.summary?.pendingActivities || 0} activities are pending approval. Review them below.
+								</div>
+							</div>
+						)}
+					</div>
+				</ChartCard>
+
+				{/* Pending Activities Approval Section */}
+				<ChartCard title="Pending Activities Approval">
+					<div style={{ marginBottom: 20 }}>
+						<p style={{ color: '#666', marginBottom: 16 }}>
+							Review and approve activities found by the crawler. Only approved activities will be visible to users.
+						</p>
+						<button
+							onClick={loadPendingActivities}
+							disabled={pendingLoading}
+							style={{
+								padding: '8px 16px',
+								background: '#6c757d',
+								color: 'white',
+								border: 'none',
+								borderRadius: 4,
+								cursor: pendingLoading ? 'not-allowed' : 'pointer',
+								fontSize: 14,
+								marginBottom: 16
+							}}
+						>
+							{pendingLoading ? 'Loading...' : '🔄 Refresh Pending Activities'}
+						</button>
+						
+						{pendingActivities.length === 0 ? (
+							<div style={{
+								padding: 20,
+								background: '#f8f9fa',
+								borderRadius: 4,
+								textAlign: 'center',
+								color: '#666'
+							}}>
+								No pending activities. Run the arrondissement crawler to find new activities.
+							</div>
+						) : (
+							<>
+								<div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+									<strong style={{ color: '#333' }}>{pendingActivities.length} pending activities</strong>
+									<div style={{ display: 'flex', gap: 8 }}>
+										<button
+											onClick={() => {
+												const allIds = pendingActivities.map(a => a.id);
+												batchApprove(allIds, 'approve');
+											}}
+											style={{
+												padding: '6px 12px',
+												background: '#28a745',
+												color: 'white',
+												border: 'none',
+												borderRadius: 4,
+												cursor: 'pointer',
+												fontSize: 12
+											}}
+										>
+											✅ Approve All
+										</button>
+										<button
+											onClick={() => {
+												const allIds = pendingActivities.map(a => a.id);
+												batchApprove(allIds, 'reject');
+											}}
+											style={{
+												padding: '6px 12px',
+												background: '#dc3545',
+												color: 'white',
+												border: 'none',
+												borderRadius: 4,
+												cursor: 'pointer',
+												fontSize: 12
+											}}
+										>
+											❌ Reject All
+										</button>
+									</div>
+								</div>
+								<div style={{ maxHeight: 600, overflowY: 'auto', border: '1px solid #e0e0e0', borderRadius: 4 }}>
+									{pendingActivities.map((activity, idx) => (
+										<div key={activity.id} style={{
+											padding: 16,
+											borderBottom: idx < pendingActivities.length - 1 ? '1px solid #e0e0e0' : 'none',
+											background: idx % 2 === 0 ? '#fff' : '#f8f9fa'
+										}}>
+											<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 12 }}>
+												<div style={{ flex: 1 }}>
+													<h4 style={{ margin: '0 0 8px 0', color: '#333' }}>
+														{activity.title?.en || activity.title?.fr || activity.title || 'Untitled Activity'}
+													</h4>
+													<div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+														<strong>Arrondissement:</strong> {activity.neighborhood || 'N/A'} | 
+														<strong> Categories:</strong> {Array.isArray(activity.categories) ? activity.categories.join(', ') : activity.categories || 'N/A'} |
+														<strong> Age:</strong> {activity.ageMin || 'N/A'}-{activity.ageMax || 'N/A'} ans
+													</div>
+													{activity.description && (
+														<p style={{ fontSize: 13, color: '#555', margin: '8px 0', maxHeight: 60, overflow: 'hidden' }}>
+															{activity.description?.en || activity.description?.fr || activity.description || ''}
+														</p>
+													)}
+													{activity.websiteLink && (
+														<a 
+															href={activity.websiteLink} 
+															target="_blank" 
+															rel="noopener noreferrer"
+															style={{ fontSize: 12, color: '#007bff', textDecoration: 'none' }}
+														>
+															🔗 {activity.websiteLink}
+														</a>
+													)}
+												</div>
+												<div style={{ display: 'flex', gap: 8, marginLeft: 16 }}>
+													<button
+														onClick={() => approveActivity(activity.id, 'approve')}
+														style={{
+															padding: '6px 12px',
+															background: '#28a745',
+															color: 'white',
+															border: 'none',
+															borderRadius: 4,
+															cursor: 'pointer',
+															fontSize: 12
+														}}
+													>
+														✅ Approve
+													</button>
+													<button
+														onClick={() => approveActivity(activity.id, 'reject')}
+														style={{
+															padding: '6px 12px',
+															background: '#dc3545',
+															color: 'white',
+															border: 'none',
+															borderRadius: 4,
+															cursor: 'pointer',
+															fontSize: 12
+														}}
+													>
+														❌ Reject
+													</button>
+												</div>
+											</div>
+										</div>
+									))}
+								</div>
+							</>
+						)}
+					</div>
 				</ChartCard>
 			</div>
 

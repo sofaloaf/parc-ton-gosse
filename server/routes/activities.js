@@ -30,7 +30,16 @@ activitiesRouter.get('/', async (req, res) => {
 		const dataPromise = store.activities.list();
 		const all = await Promise.race([dataPromise, timeoutPromise]);
 		console.log(`✅ Retrieved ${all.length} activities from data store`);
-	const results = all.filter((a) => {
+	
+	// Filter out pending activities (only show approved ones to regular users)
+	// Admin users can see all activities
+	// Activities without approvalStatus are treated as approved (backward compatibility)
+	const isAdmin = req.user?.role === 'admin';
+	const approvedActivities = isAdmin 
+		? all 
+		: all.filter(a => !a.approvalStatus || (a.approvalStatus !== 'pending' && a.approvalStatus !== 'rejected'));
+	
+	const results = approvedActivities.filter((a) => {
 		let ok = true;
 		if (category) ok = ok && a.categories?.includes(category);
 		// Age filtering: activity age range overlaps with user's desired age range

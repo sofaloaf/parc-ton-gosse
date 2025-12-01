@@ -160,7 +160,8 @@ authRouter.post('/signup', validateSignup, async (req, res) => {
 		});
 	} catch (emailError) {
 		console.error('Failed to send welcome email:', emailError);
-		// Don't fail signup if email fails
+		// Don't fail signup if email fails - email is optional
+		// If SendGrid is not configured, emails will be stubbed (logged but not sent)
 	}
 	
 	const token = signToken({ id: user.id, email: user.email, role: user.role });

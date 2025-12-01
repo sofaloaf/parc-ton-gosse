@@ -553,10 +553,25 @@ async function extractOrganizationData(url, templateActivity) {
 			websiteLink: url
 		};
 
-		// Extract title
-		data.title = document.querySelector('meta[property="og:title"]')?.content ||
+		// Extract title - try multiple sources
+		data.title = document.querySelector('meta[property="og:title"]')?.content?.trim() ||
+			document.querySelector('meta[name="twitter:title"]')?.content?.trim() ||
 			document.querySelector('title')?.textContent?.trim() ||
-			document.querySelector('h1')?.textContent?.trim();
+			document.querySelector('h1')?.textContent?.trim() ||
+			document.querySelector('h2')?.textContent?.trim() ||
+			null;
+		
+		// Clean up title if found
+		if (data.title) {
+			data.title = data.title
+				.replace(/^Home\s*-\s*/i, '')
+				.replace(/^Accueil\s*-\s*/i, '')
+				.replace(/\s*-\s*Paris.*$/i, '')
+				.replace(/\s*-\s*Site.*$/i, '')
+				.replace(/\s*-\s*Accueil.*$/i, '')
+				.trim()
+				.substring(0, 100);
+		}
 
 		// Extract description
 		data.description = document.querySelector('meta[property="og:description"]')?.content ||
@@ -689,12 +704,35 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 							continue;
 						}
 
+						// Extract and ensure we have a good title
+						let activityTitle = extracted.title || org.name;
+						
+						// If title is still empty or too generic, derive from website
+						if (!activityTitle || activityTitle.trim().length < 3 || activityTitle.toLowerCase().includes('untitled')) {
+							try {
+								const url = new URL(org.website);
+								const domain = url.hostname.replace('www.', '').split('.')[0];
+								activityTitle = domain.charAt(0).toUpperCase() + domain.slice(1);
+							} catch (e) {
+								// Fallback to a generic name with arrondissement
+								activityTitle = `Activity ${arrondissement}`;
+							}
+						}
+						
+						// Clean up title (remove common unwanted prefixes/suffixes)
+						activityTitle = activityTitle.trim()
+							.replace(/^Home\s*-\s*/i, '')
+							.replace(/^Accueil\s*-\s*/i, '')
+							.replace(/\s*-\s*Paris.*$/i, '')
+							.replace(/\s*-\s*Site.*$/i, '')
+							.substring(0, 100); // Limit length
+						
 						// Create activity object with pending status
 						const activity = {
 							id: uuidv4(),
 							title: {
-								en: extracted.title || org.name,
-								fr: extracted.title || org.name
+								en: activityTitle,
+								fr: activityTitle
 							},
 							description: {
 								en: extracted.description || '',
@@ -744,21 +782,46 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 		// Save pending activities
 		if (pendingActivities.length > 0) {
 			try {
-				const pendingSheetName = `Pending_${new Date().toISOString().split('T')[0]}`;
+				// Create unique sheet name with timestamp to avoid duplicates
+				const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('.')[0];
+				const pendingSheetName = `Pending_${timestamp}`;
 				
-				// Create pending sheet
-				await sheets.spreadsheets.batchUpdate({
-					spreadsheetId: sheetId,
-					requestBody: {
-						requests: [{
-							addSheet: {
-								properties: {
-									title: pendingSheetName
+				// Check if sheet already exists and create with unique name if needed
+				let finalSheetName = pendingSheetName;
+				try {
+					await sheets.spreadsheets.batchUpdate({
+						spreadsheetId: sheetId,
+						requestBody: {
+							requests: [{
+								addSheet: {
+									properties: {
+										title: finalSheetName
+									}
 								}
+							}]
+						}
+					});
+				} catch (sheetError) {
+					// If sheet exists, add a random suffix
+					if (sheetError.message && sheetError.message.includes('already exists')) {
+						const randomSuffix = Math.random().toString(36).substring(2, 8);
+						finalSheetName = `Pending_${timestamp}_${randomSuffix}`;
+						await sheets.spreadsheets.batchUpdate({
+							spreadsheetId: sheetId,
+							requestBody: {
+								requests: [{
+									addSheet: {
+										properties: {
+											title: finalSheetName
+										}
+									}
+								}]
 							}
-						}]
+						});
+					} else {
+						throw sheetError;
 					}
-				});
+				}
 
 				// Get headers from existing activities
 				const activitiesResponse = await sheets.spreadsheets.values.get({
@@ -786,7 +849,7 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 				// Write to pending sheet
 				await sheets.spreadsheets.values.update({
 					spreadsheetId: sheetId,
-					range: `${pendingSheetName}!A1`,
+					range: `${finalSheetName}!A1`,
 					valueInputOption: 'RAW',
 					requestBody: {
 						values: rows
@@ -813,7 +876,7 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 
 				res.json({
 					success: true,
-					pendingSheet: pendingSheetName,
+					pendingSheet: finalSheetName,
 					summary: {
 						total: results.length,
 						successful: results.filter(r => r.status === 'success').length,

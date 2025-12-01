@@ -126,6 +126,16 @@ export async function api(path, { method = 'GET', body, headers } = {}) {
 		...headers
 	};
 	
+	// Debug CSRF token for signup/login (only in development)
+	if (process.env.NODE_ENV === 'development' && path.includes('/auth/signup')) {
+		console.log('🔐 Signup CSRF Debug:', {
+			hasToken: !!csrfToken,
+			tokenPreview: csrfToken ? `${csrfToken.substring(0, 8)}...` : 'null',
+			method,
+			path
+		});
+	}
+	
 	const res = await fetch(`${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`, {
 		method,
 		credentials: 'include', // Include cookies in request

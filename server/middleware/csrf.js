@@ -93,17 +93,20 @@ export function csrfProtection() {
 
 		if (!cookieToken || !headerToken || cookieToken !== headerToken) {
 			// Log CSRF failures (but not token values) for security monitoring
-			if (process.env.NODE_ENV === 'development') {
-				console.error('❌ CSRF token mismatch:', {
-					path: req.path,
-					originalUrl: req.originalUrl,
-					hasCookieToken: !!cookieToken,
-					hasHeaderToken: !!headerToken,
-					tokensMatch: cookieToken === headerToken
-				});
-			}
-			// Generic error message - don't reveal why it failed
-			return res.status(403).json({ error: 'Request validation failed' });
+			console.error('❌ CSRF token mismatch:', {
+				path: req.path,
+				originalUrl: req.originalUrl,
+				hasCookieToken: !!cookieToken,
+				hasHeaderToken: !!headerToken,
+				tokensMatch: cookieToken === headerToken,
+				method: req.method,
+				headers: Object.keys(req.headers)
+			});
+			// More helpful error message for debugging
+			const errorMsg = process.env.NODE_ENV === 'development' 
+				? `CSRF validation failed: ${!cookieToken ? 'Missing cookie token' : !headerToken ? 'Missing header token' : 'Tokens do not match'}`
+				: 'Request validation failed';
+			return res.status(403).json({ error: errorMsg });
 		}
 
 		next();

@@ -189,7 +189,8 @@ preordersRouter.post('/commit', requireAuth(), validateCommitment, async (req, r
 			success: true,
 			commitmentId: commitmentId,
 			preorderDate: now,
-			amount: Math.round(amount * 100) / 100
+			amount: Math.round(amount * 100) / 100,
+			plan: selectedPlan
 		});
 	} catch (error) {
 		// Don't leak error details in production

@@ -1,7 +1,57 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 
-export default function ActivityCard({ activity, locale }) {
+export default function ActivityCard({ activity, locale, onView }) {
+	const cardRef = useRef(null);
+	const hasTracked = useRef(false);
+	const observerRef = useRef(null);
+	const mountTime = useRef(Date.now());
+
+	// Track card view when it becomes visible (only if user scrolls to it)
+	useEffect(() => {
+		if (!onView || hasTracked.current) return;
+
+		// Check if card is already visible on mount
+		let wasVisibleOnMount = false;
+		if (cardRef.current) {
+			const rect = cardRef.current.getBoundingClientRect();
+			wasVisibleOnMount = rect.top < window.innerHeight && rect.bottom > 0;
+		}
+
+		observerRef.current = new IntersectionObserver(
+			(entries) => {
+				entries.forEach((entry) => {
+					if (entry.isIntersecting && !hasTracked.current) {
+						// Only track if:
+						// 1. Card was NOT visible on mount (user scrolled to it), OR
+						// 2. Card was visible on mount but user has been on page for at least 2 seconds (they actually viewed it)
+						const timeSinceMount = Date.now() - mountTime.current;
+						const shouldTrack = !wasVisibleOnMount || timeSinceMount > 2000;
+
+						if (shouldTrack) {
+							hasTracked.current = true;
+							onView();
+							// Stop observing once tracked
+							if (observerRef.current && cardRef.current) {
+								observerRef.current.unobserve(cardRef.current);
+							}
+						}
+					}
+				});
+			},
+			{ threshold: 0.5 } // Track when 50% of card is visible
+		);
+
+		if (cardRef.current) {
+			observerRef.current.observe(cardRef.current);
+		}
+
+		return () => {
+			if (observerRef.current && cardRef.current) {
+				observerRef.current.unobserve(cardRef.current);
+			}
+		};
+	}, [onView]);
 	const title = activity.title?.[locale] || activity.title?.en || activity.title?.fr;
 	const desc = activity.description?.[locale] || activity.description?.en || activity.description?.fr;
 	const addressStr = activity.addresses || activity.addresse || '';
@@ -37,7 +87,7 @@ export default function ActivityCard({ activity, locale }) {
 				display: 'block'
 			}}
 		>
-			<div style={{ 
+			<div ref={cardRef} style={{ 
 				background: 'white',
 				borderRadius: '12px',
 				border: '1px solid #e0e7f0',

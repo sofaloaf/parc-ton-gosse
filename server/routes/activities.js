@@ -1,23 +1,12 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { requireAuth } from '../middleware/auth.js';
-import { checkSessionLimit } from '../middleware/sessionLimit.js';
 
 export const activitiesRouter = express.Router();
 
 // List with filters: category, ageRange, date, price, neighborhood, q
-// Allows anonymous access for 5 minutes, then requires authentication
-// Authenticated users get 20 minutes before requiring commitment
-activitiesRouter.get('/', async (req, res, next) => {
-	// Check if user is authenticated
-	if (req.user) {
-		// Authenticated user - check session limit (20 minutes)
-		return checkSessionLimit(req, res, next);
-	}
-	// Anonymous user - allow access (AccessGate handles 5-minute limit on frontend)
-	// No backend enforcement needed for anonymous browsing
-	next();
-}, async (req, res) => {
+// No time limits - card view counter handles paywall (10 free cards)
+activitiesRouter.get('/', async (req, res) => {
 	try {
 		const store = req.app.get('dataStore');
 		if (!store) {
@@ -93,15 +82,7 @@ activitiesRouter.get('/', async (req, res, next) => {
 	}
 });
 
-activitiesRouter.get('/:id', async (req, res, next) => {
-	// Check if user is authenticated
-	if (req.user) {
-		// Authenticated user - check session limit (20 minutes)
-		return checkSessionLimit(req, res, next);
-	}
-	// Anonymous users can also view individual activities (AccessGate handles limit)
-	next();
-}, async (req, res) => {
+activitiesRouter.get('/:id', async (req, res) => {
 	const store = req.app.get('dataStore');
 	const act = await store.activities.get(req.params.id);
 	if (!act) return res.status(404).json({ error: 'Not found' });

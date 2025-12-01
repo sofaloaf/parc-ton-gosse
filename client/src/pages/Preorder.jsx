@@ -11,6 +11,7 @@ export default function Preorder() {
 	const [promoCode, setPromoCode] = useState('');
 	const [promoValid, setPromoValid] = useState(null);
 	const [promoDiscount, setPromoDiscount] = useState(0);
+	const [selectedPlan, setSelectedPlan] = useState('monthly'); // 'monthly', '6months', 'yearly'
 	const [amount, setAmount] = useState(4.99);
 	const [originalAmount, setOriginalAmount] = useState(4.99);
 	const [discountApplied, setDiscountApplied] = useState(false);
@@ -18,6 +19,20 @@ export default function Preorder() {
 	const [processing, setProcessing] = useState(false);
 	const [error, setError] = useState('');
 	const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+	// Pricing plans
+	const plans = React.useMemo(() => ({
+		monthly: { price: 4.99, period: 'month', label: locale === 'fr' ? 'Mensuel' : 'Monthly', savings: null },
+		'6months': { price: 24.99, period: '6months', label: locale === 'fr' ? '6 Mois' : '6 Months', savings: '17%' },
+		yearly: { price: 39.99, period: 'year', label: locale === 'fr' ? 'Annuel' : 'Yearly', savings: '33%' }
+	}), [locale]);
+
+	// Update amount when plan changes
+	useEffect(() => {
+		const plan = plans[selectedPlan];
+		setAmount(plan.price);
+		setOriginalAmount(plan.price);
+	}, [selectedPlan, plans]);
 
 	useEffect(() => {
 		// Check if user is logged in
@@ -98,12 +113,14 @@ export default function Preorder() {
 		setError('');
 
 		try {
-			// Create commitment
+			// Create commitment with selected plan
 			const result = await api('/preorders/commit', {
 				method: 'POST',
 				body: { 
 					promoCode: promoCode || undefined,
-					agreedToTerms: true
+					agreedToTerms: true,
+					plan: selectedPlan,
+					amount: amount
 				}
 			});
 
@@ -218,6 +235,81 @@ export default function Preorder() {
 					boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
 				}}>
 					<form onSubmit={handleSubmit} style={{ display: 'grid', gap: 16 }}>
+						{/* Subscription Plan Selection */}
+						<div>
+							<label style={{ display: 'block', marginBottom: 12, fontWeight: 600, fontSize: 16 }}>
+								{locale === 'fr' ? 'Choisissez votre plan' : 'Choose Your Plan'}
+							</label>
+							<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+								{Object.entries(plans).map(([key, plan]) => (
+									<button
+										key={key}
+										type="button"
+										onClick={() => setSelectedPlan(key)}
+										style={{
+											padding: '16px 12px',
+											background: selectedPlan === key 
+												? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' 
+												: '#f8fafc',
+											color: selectedPlan === key ? 'white' : '#1e293b',
+											border: selectedPlan === key 
+												? '2px solid #3b82f6' 
+												: '2px solid #e0e7f0',
+											borderRadius: 8,
+											cursor: 'pointer',
+											fontSize: 14,
+											fontWeight: selectedPlan === key ? 600 : 500,
+											transition: 'all 0.2s ease',
+											position: 'relative'
+										}}
+										onMouseEnter={(e) => {
+											if (selectedPlan !== key) {
+												e.currentTarget.style.background = '#eff6ff';
+												e.currentTarget.style.borderColor = '#3b82f6';
+											}
+										}}
+										onMouseLeave={(e) => {
+											if (selectedPlan !== key) {
+												e.currentTarget.style.background = '#f8fafc';
+												e.currentTarget.style.borderColor = '#e0e7f0';
+											}
+										}}
+									>
+										{plan.savings && selectedPlan === key && (
+											<div style={{
+												position: 'absolute',
+												top: -8,
+												right: 8,
+												background: '#10b981',
+												color: 'white',
+												padding: '2px 6px',
+												borderRadius: 4,
+												fontSize: 10,
+												fontWeight: 600
+											}}>
+												{locale === 'fr' ? 'ÉCONOMIE' : 'SAVE'}
+											</div>
+										)}
+										<div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>
+											€{plan.price.toFixed(2)}
+										</div>
+										<div style={{ fontSize: 12, opacity: selectedPlan === key ? 0.9 : 0.7 }}>
+											{plan.label}
+										</div>
+										{plan.savings && (
+											<div style={{ 
+												fontSize: 11, 
+												marginTop: 4,
+												opacity: selectedPlan === key ? 0.9 : 0.6
+											}}>
+												{locale === 'fr' ? `Économisez ${plan.savings}` : `Save ${plan.savings}`}
+											</div>
+										)}
+									</button>
+								))}
+							</div>
+						</div>
+
 						{/* Promo Code */}
 						<div>
 							<label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>

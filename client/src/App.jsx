@@ -15,8 +15,6 @@ import ForgotPassword from './pages/ForgotPassword.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import LanguageToggle from './components/LanguageToggle.jsx';
 import FeedbackWidget from './components/FeedbackWidget.jsx';
-import AccessGate from './components/AccessGate.jsx';
-import SessionTimer from './components/SessionTimer.jsx';
 import { api } from './shared/api.js';
 import { auth } from './shared/api.js';
 import { trackPageView } from './utils/analytics.js';
@@ -54,9 +52,7 @@ export default function App() {
 	};
 
 	return (
-		<AccessGate>
-			<SessionTimer>
-				<div style={{ fontFamily: 'system-ui, sans-serif', padding: 16 }}>
+		<div style={{ fontFamily: 'system-ui, sans-serif', padding: 16 }}>
 					<header style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between' }}>
 						<Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>{t.appName}</Link>
 						<nav style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -120,7 +116,5 @@ export default function App() {
 					</Routes>
 					<FeedbackWidget />
 				</div>
-			</SessionTimer>
-		</AccessGate>
 	);
 }

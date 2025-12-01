@@ -41,6 +41,7 @@ import { referralsRouter } from './routes/referrals.js';
 import { preordersRouter } from './routes/preorders.js';
 import { crawlerRouter } from './routes/crawler.js';
 import { sessionsRouter } from './routes/sessions.js';
+import { cardViewsRouter } from './routes/cardViews.js';
 import { requireAuth } from './middleware/auth.js';
 import { csrfProtection } from './middleware/csrf.js';
 
@@ -467,6 +468,7 @@ app.use('/api/import', importRouter);
 app.use('/api/geocode', geocodeRouter);
 app.use('/api/feedback', feedbackRouter);
 app.use('/api/metrics', metricsRouter);
+app.use('/api/card-views', cardViewsRouter);
 app.use('/api/referrals', referralsRouter);
 app.use('/api/preorders', preordersRouter);
 app.use('/api/crawler', crawlerRouter);

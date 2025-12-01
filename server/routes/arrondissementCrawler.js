@@ -962,9 +962,20 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 		const allActivities = await store.activities.list();
 		console.log(`📊 Total activities in datastore: ${allActivities.length}`);
 		
+		// Filter for pending activities - be more explicit
 		const pending = allActivities.filter(a => {
+			if (!a) return false;
 			const status = a.approvalStatus;
-			return status === 'pending' || status === undefined || status === null;
+			// Include activities with 'pending' status
+			// Also include activities without approvalStatus if they were recently crawled (have crawledAt)
+			if (status === 'pending') {
+				return true;
+			}
+			// If no status but has crawledAt timestamp, it's likely a newly crawled activity
+			if ((status === undefined || status === null || status === '') && a.crawledAt) {
+				return true;
+			}
+			return false;
 		});
 		
 		console.log(`📋 Found ${pending.length} pending activities (out of ${allActivities.length} total)`);
@@ -974,16 +985,24 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 				id: pending[0].id,
 				title: pending[0].title,
 				approvalStatus: pending[0].approvalStatus,
-				neighborhood: pending[0].neighborhood
+				neighborhood: pending[0].neighborhood,
+				crawledAt: pending[0].crawledAt
 			});
 		} else {
 			const statusCounts = {};
 			allActivities.forEach(a => {
-				const status = a.approvalStatus || 'undefined';
+				const status = a.approvalStatus || (a.crawledAt ? 'crawled_no_status' : 'undefined');
 				statusCounts[status] = (statusCounts[status] || 0) + 1;
 			});
 			console.log(`📊 Activity status breakdown:`, statusCounts);
 		}
+		
+		// Sort by crawledAt (newest first) or createdAt
+		pending.sort((a, b) => {
+			const aTime = a.crawledAt || a.createdAt || '';
+			const bTime = b.crawledAt || b.createdAt || '';
+			return bTime.localeCompare(aTime);
+		});
 		
 		res.json({
 			total: pending.length,

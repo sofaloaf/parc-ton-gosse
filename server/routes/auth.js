@@ -41,38 +41,31 @@ const validateLogin = [
 	body('password').notEmpty().withMessage('Password required')
 ];
 
-authRouter.post('/signup', validateSignup, async (req, res, next) => {
-	try {
-		const errors = validationResult(req);
-		if (!errors.isEmpty()) {
-			const errorMessages = errors.array().map(err => ({
-				field: err.path || err.param,
-				msg: err.msg,
-				value: err.value
-			}));
-			console.error('Signup validation failed:', {
-				errors: errorMessages,
-				body: { 
-					email: req.body?.email, 
-					hasPassword: !!req.body?.password, 
-					passwordLength: req.body?.password?.length,
-					role: req.body?.role
-				}
-			});
-			return res.status(400).json({ 
-				error: errorMessages[0]?.msg || 'Request validation failed',
-				details: errorMessages.map(e => e.msg)
-			});
-		}
-		next();
-	} catch (error) {
-		console.error('Validation middleware error:', error);
+authRouter.post('/signup', validateSignup, async (req, res) => {
+	// Check validation results
+	const errors = validationResult(req);
+	if (!errors.isEmpty()) {
+		const errorMessages = errors.array().map(err => ({
+			field: err.path || err.param,
+			msg: err.msg,
+			value: err.value
+		}));
+		console.error('Signup validation failed:', {
+			errors: errorMessages,
+			body: { 
+				email: req.body?.email, 
+				hasPassword: !!req.body?.password, 
+				passwordLength: req.body?.password?.length,
+				role: req.body?.role,
+				hasProfile: !!req.body?.profile,
+				hasReferralCode: !!req.body?.referralCode
+			}
+		});
 		return res.status(400).json({ 
-			error: 'Request validation failed',
-			details: [error.message]
+			error: errorMessages[0]?.msg || 'Request validation failed',
+			details: errorMessages.map(e => e.msg)
 		});
 	}
-}, async (req, res) => {
 
 	const store = req.app.get('dataStore');
 	const { email, password, role = 'parent', profile = {}, name, referralCode } = req.body;

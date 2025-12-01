@@ -13,6 +13,29 @@ const ARRONDISSEMENTS = [
 	'11e', '12e', '13e', '14e', '15e', '16e', '17e', '18e', '19e'
 ];
 
+// Map arrondissement names to postal codes for mairie URLs
+const ARRONDISSEMENT_TO_POSTAL = {
+	'1er': '75001',
+	'2e': '75002',
+	'3e': '75003',
+	'4e': '75004',
+	'5e': '75005',
+	'6e': '75006',
+	'7e': '75007',
+	'8e': '75008',
+	'9e': '75009',
+	'10e': '75010',
+	'11e': '75011',
+	'12e': '75012',
+	'13e': '75013',
+	'14e': '75014',
+	'15e': '75015',
+	'16e': '75016',
+	'17e': '75017',
+	'18e': '75018',
+	'19e': '75019'
+};
+
 // Helper to get Google Sheets client
 function getSheetsClient() {
 	const serviceAccount = process.env.GS_SERVICE_ACCOUNT;
@@ -39,116 +62,277 @@ function getSheetsClient() {
 	return google.sheets({ version: 'v4', auth });
 }
 
-// Search for organizations in a specific arrondissement
-async function searchOrganizations(arrondissement, templateActivity) {
-	const results = [];
-	
-	// Search terms based on template activity categories
-	const categories = templateActivity.categories || [];
-	const searchTerms = categories.length > 0 
-		? categories.map(cat => `${cat} enfants Paris ${arrondissement}`)
-		: [`activités enfants Paris ${arrondissement}`, `loisirs enfants Paris ${arrondissement}`, `ateliers enfants Paris ${arrondissement}`];
+// Search for activities on Paris mairie websites
+async function searchMairieActivities(arrondissement, postalCode) {
+	const activities = [];
 	
 	try {
-		// Use DuckDuckGo HTML search (no API key needed)
-		for (const searchTerm of searchTerms.slice(0, 3)) { // Limit to 3 search terms per arrondissement
-			try {
-				const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchTerm)}`;
-				const response = await fetch(searchUrl, {
-					headers: {
-						'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-						'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-						'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
-					},
-					timeout: 15000
-				});
+		// Build mairie activities URL
+		const mairieUrl = `https://mairie${arrondissement.replace('er', '').replace('e', '')}.paris.fr/recherche/activites?arrondissements=${postalCode}`;
+		console.log(`🔍 Searching mairie activities: ${mairieUrl}`);
+		
+		const response = await fetch(mairieUrl, {
+			headers: {
+				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+				'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+				'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
+			},
+			timeout: 15000
+		});
 
-				if (!response.ok) {
-					console.warn(`Search failed for "${searchTerm}": HTTP ${response.status}`);
-					continue;
-				}
+		if (!response.ok) {
+			console.warn(`Mairie search failed for ${arrondissement}: HTTP ${response.status}`);
+			return activities;
+		}
 
-				const html = await response.text();
-				const dom = new JSDOM(html);
-				const document = dom.window.document;
+		const html = await response.text();
+		const dom = new JSDOM(html);
+		const document = dom.window.document;
 
-				// Extract search results - try multiple selectors for DuckDuckGo
-				const resultLinks = document.querySelectorAll('.result__a, .web-result__a, a.result-link, .result a, .links_main a');
+		// Find activity links - try multiple selectors for mairie pages
+		// Paris mairie pages typically have links in various formats
+		const activitySelectors = [
+			'a[href*="/activites/"]',
+			'a[href*="/activite/"]',
+			'a[href*="/activites"]',
+			'a[href*="activites"]',
+			'.activity-link',
+			'.activite-link',
+			'article a',
+			'.result-item a',
+			'.activity-item a',
+			'.search-result a',
+			'[class*="result"] a',
+			'[class*="activity"] a',
+			'[class*="activite"] a'
+		];
+
+		const activityLinks = new Set();
+		const baseUrl = `https://mairie${arrondissement.replace('er', '').replace('e', '')}.paris.fr`;
+		
+		for (const selector of activitySelectors) {
+			const links = document.querySelectorAll(selector);
+			for (const link of links) {
+				const href = link.getAttribute('href');
+				if (!href) continue;
 				
-				let foundCount = 0;
-				for (const link of Array.from(resultLinks)) {
-					if (foundCount >= 5) break; // Limit to 5 results per search term
-					
-					let href = link.getAttribute('href');
-					const title = link.textContent?.trim();
-					
-					if (!href || !title) continue;
-					
-					// Handle DuckDuckGo redirect URLs
-					if (href.startsWith('/l/?kh=') || href.includes('duckduckgo.com')) {
-						const onclick = link.getAttribute('onclick');
-						if (onclick) {
-							const match = onclick.match(/href='([^']+)'/);
-							if (match) href = match[1];
-						}
+				// Check if it's an activity-related link
+				const isActivityLink = href.includes('activite') || 
+				                     href.includes('activites') ||
+				                     link.textContent?.toLowerCase().includes('activité') ||
+				                     link.textContent?.toLowerCase().includes('activite');
+				
+				if (isActivityLink) {
+					// Make absolute URL if relative
+					let fullUrl = href;
+					if (href.startsWith('/')) {
+						fullUrl = `${baseUrl}${href}`;
+					} else if (!href.startsWith('http')) {
+						fullUrl = `${baseUrl}/${href}`;
 					}
-					
-					// Skip if it's already in results
-					if (results.some(r => r.website === href)) continue;
-					
-					// Filter out non-relevant results
-					const lowerTitle = title.toLowerCase();
-					const lowerHref = href.toLowerCase();
-					
-					// Must be related to children activities (more lenient check)
-					const relevantKeywords = ['enfant', 'kid', 'child', 'loisir', 'activite', 'atelier', 'sport', 'musique', 'danse', 'art', 'culture'];
-					const hasRelevantKeyword = relevantKeywords.some(keyword => 
-						lowerTitle.includes(keyword) || lowerHref.includes(keyword)
-					);
-					
-					if (!hasRelevantKeyword) continue;
-					
-					// Skip social media, Wikipedia, etc.
-					const skipDomains = ['wikipedia.org', 'facebook.com', 'instagram.com', 'youtube.com', 
-					                     'twitter.com', 'linkedin.com', 'pinterest.com', 'tiktok.com',
-					                     'google.com', 'bing.com', 'duckduckgo.com'];
-					if (skipDomains.some(domain => lowerHref.includes(domain))) {
-						continue;
+					// Only add if it's a valid URL and not already in set
+					if (fullUrl.startsWith('http') && !activityLinks.has(fullUrl)) {
+						activityLinks.add(fullUrl);
 					}
-
-					// Extract domain name for organization name if title is too generic
-					let orgName = title;
-					try {
-						const url = new URL(href);
-						if (orgName.length < 10 || orgName.toLowerCase().includes('paris') || orgName.toLowerCase().includes('result')) {
-							orgName = url.hostname.replace('www.', '').split('.')[0];
-							orgName = orgName.charAt(0).toUpperCase() + orgName.slice(1);
-						}
-					} catch (e) {
-						// Invalid URL, skip
-						continue;
-					}
-
-					results.push({
-						name: orgName,
-						website: href,
-						arrondissement: arrondissement,
-						categories: categories.length > 0 ? categories : ['sport'],
-						status: 'pending'
-					});
-					foundCount++;
 				}
+			}
+		}
 
-				// Add delay between search terms to avoid rate limiting
-				await new Promise(resolve => setTimeout(resolve, 3000));
+		// Also search for activity links in the page text/HTML directly
+		const activityUrlPattern = /https?:\/\/mairie\d+\.paris\.fr\/[^"'\s]*activit[^"'\s]*/gi;
+		const urlMatches = html.match(activityUrlPattern);
+		if (urlMatches) {
+			for (const url of urlMatches) {
+				activityLinks.add(url);
+			}
+		}
+
+		console.log(`📋 Found ${activityLinks.size} activity links on mairie page`);
+
+		// Visit each activity page to extract organization info
+		for (const activityUrl of Array.from(activityLinks).slice(0, 20)) { // Limit to 20 per arrondissement
+			try {
+				const orgInfo = await extractOrganizationFromMairiePage(activityUrl, arrondissement);
+				if (orgInfo && orgInfo.website) {
+					activities.push(orgInfo);
+				}
+				// Add delay to avoid rate limiting
+				await new Promise(resolve => setTimeout(resolve, 2000));
 			} catch (error) {
-				console.error(`Error searching "${searchTerm}" in ${arrondissement}:`, error.message);
+				console.error(`Error extracting from ${activityUrl}:`, error.message);
 				continue;
 			}
 		}
 	} catch (error) {
-		console.error(`Error searching ${arrondissement}:`, error);
+		console.error(`Error searching mairie for ${arrondissement}:`, error);
 	}
+	
+	return activities;
+}
+
+// Extract organization information from mairie activity page
+async function extractOrganizationFromMairiePage(activityUrl, arrondissement) {
+	try {
+		const response = await fetch(activityUrl, {
+			headers: {
+				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+				'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+				'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
+			},
+			timeout: 10000
+		});
+
+		if (!response.ok) {
+			return null;
+		}
+
+		const html = await response.text();
+		const dom = new JSDOM(html);
+		const document = dom.window.document;
+
+		// Extract activity title
+		const title = document.querySelector('h1')?.textContent?.trim() ||
+		             document.querySelector('.title')?.textContent?.trim() ||
+		             document.querySelector('title')?.textContent?.trim() ||
+		             '';
+
+		// Extract organization website - look for common patterns
+		let orgWebsite = null;
+		let orgName = title;
+
+		// Look for website links in various formats
+		const websiteSelectors = [
+			'a[href*="http"]:not([href*="mairie"]):not([href*="paris.fr"])',
+			'a[href^="http"]',
+			'.website',
+			'.site-web',
+			'[class*="website"]',
+			'[class*="site"]'
+		];
+
+		for (const selector of websiteSelectors) {
+			const links = document.querySelectorAll(selector);
+			for (const link of links) {
+				const href = link.getAttribute('href');
+				if (href && href.startsWith('http') && 
+				    !href.includes('mairie') && 
+				    !href.includes('paris.fr') &&
+				    !href.includes('facebook.com') &&
+				    !href.includes('instagram.com')) {
+					orgWebsite = href;
+					// Try to get organization name from link text
+					const linkText = link.textContent?.trim();
+					if (linkText && linkText.length > 3 && linkText.length < 50) {
+						orgName = linkText;
+					}
+					break;
+				}
+			}
+			if (orgWebsite) break;
+		}
+
+		// Also search in text content for URLs
+		if (!orgWebsite) {
+			const urlPattern = /https?:\/\/[^\s<>"']+/g;
+			const matches = html.match(urlPattern);
+			if (matches) {
+				for (const url of matches) {
+					if (!url.includes('mairie') && 
+					    !url.includes('paris.fr') &&
+					    !url.includes('facebook.com') &&
+					    !url.includes('instagram.com') &&
+					    !url.includes('twitter.com') &&
+					    !url.includes('youtube.com')) {
+						orgWebsite = url.replace(/[.,;!?]+$/, ''); // Remove trailing punctuation
+						break;
+					}
+				}
+			}
+		}
+
+		// Extract contact email if available
+		const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+		const emailMatch = html.match(emailPattern);
+		const email = emailMatch ? emailMatch.find(e => !e.includes('mairie') && !e.includes('paris.fr')) : null;
+
+		// Extract phone number
+		const phonePattern = /(?:\+33|0)[1-9](?:[.\s]?\d{2}){4}/g;
+		const phoneMatch = html.match(phonePattern);
+		const phone = phoneMatch ? phoneMatch[0].trim() : null;
+
+		// Extract address
+		const addressPatterns = [
+			/\d+\s+[A-Za-z\s]+(?:rue|avenue|boulevard|place|allée)[A-Za-z\s,]+(?:Paris|Île-de-France)/gi,
+			/\d{5}\s+Paris/gi
+		];
+		let address = null;
+		for (const pattern of addressPatterns) {
+			const match = html.match(pattern);
+			if (match) {
+				address = match[0].trim();
+				break;
+			}
+		}
+
+		if (!orgWebsite && !email) {
+			// No way to contact organization, skip
+			return null;
+		}
+
+		// If we have email but no website, try to construct website from email domain
+		if (!orgWebsite && email) {
+			const domain = email.split('@')[1];
+			if (domain && !domain.includes('gmail.com') && !domain.includes('yahoo.com') && !domain.includes('hotmail.com')) {
+				orgWebsite = `https://${domain}`;
+			}
+		}
+
+		return {
+			name: orgName || 'Organization',
+			website: orgWebsite,
+			email: email,
+			phone: phone,
+			address: address,
+			arrondissement: arrondissement,
+			sourceUrl: activityUrl,
+			status: 'pending'
+		};
+	} catch (error) {
+		console.error(`Error extracting from mairie page ${activityUrl}:`, error.message);
+		return null;
+	}
+}
+
+// Search for organizations in a specific arrondissement
+async function searchOrganizations(arrondissement, templateActivity) {
+	const results = [];
+	const postalCode = ARRONDISSEMENT_TO_POSTAL[arrondissement];
+	
+	if (!postalCode) {
+		console.error(`No postal code mapping for ${arrondissement}`);
+		return results;
+	}
+
+	// First, search mairie activities
+	console.log(`🔍 Searching mairie activities for ${arrondissement} (${postalCode})...`);
+	const mairieActivities = await searchMairieActivities(arrondissement, postalCode);
+	
+	for (const activity of mairieActivities) {
+		if (activity.website) {
+			results.push({
+				name: activity.name,
+				website: activity.website,
+				arrondissement: arrondissement,
+				categories: templateActivity?.categories || ['sport'],
+				email: activity.email,
+				phone: activity.phone,
+				address: activity.address,
+				status: 'pending'
+			});
+		}
+	}
+
+	console.log(`✅ Found ${results.length} organizations from mairie for ${arrondissement}`);
 	
 	return results;
 }

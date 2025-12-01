@@ -224,14 +224,26 @@ async function searchMairieActivities(arrondissement, postalCode) {
 		const maxActivitiesPerArrondissement = 200;
 		const activityArray = Array.from(activityLinks).slice(0, maxActivitiesPerArrondissement);
 		
+		console.log(`📋 [${arrondissement}] Processing ${activityArray.length} activity links...`);
+		
 		for (let i = 0; i < activityArray.length; i++) {
 			const activityUrl = activityArray[i];
 			try {
-				await randomDelay(1500, 3000); // Random delay between requests
+				await randomDelay(1500, 3000);
 				const orgInfo = await extractOrganizationFromMairiePage(activityUrl, arrondissement);
-				if (orgInfo && orgInfo.website) {
+				
+				// Accept organizations even if they don't have a website (we can use email or other contact info)
+				if (orgInfo && (orgInfo.website || orgInfo.email || orgInfo.phone)) {
 					activities.push(orgInfo);
-					console.log(`✅ [${arrondissement}] Found organization: ${orgInfo.name} (${i + 1}/${activityArray.length})`);
+					console.log(`✅ [${arrondissement}] Found: ${orgInfo.name} (${i + 1}/${activityArray.length})${orgInfo.website ? '' : ' (no website)'}`);
+				} else if (orgInfo) {
+					// Even without contact info, save the activity from mairie page
+					activities.push({
+						...orgInfo,
+						name: orgInfo.name || `Activity from ${arrondissement}`,
+						website: null
+					});
+					console.log(`⚠️ [${arrondissement}] Found activity without contact: ${orgInfo.name} (${i + 1}/${activityArray.length})`);
 				}
 			} catch (error) {
 				console.error(`❌ [${arrondissement}] Error extracting from ${activityUrl}:`, error.message);
@@ -490,11 +502,11 @@ async function searchOrganizations(arrondissement, templateActivity) {
 	console.log(`📍 [${arrondissement}] Strategy 1: Searching mairie activities...`);
 	const mairieActivities = await searchMairieActivities(arrondissement, postalCode);
 	
-	for (const activity of mairieActivities) {
-		if (activity.website) {
+		// Add all mairie activities, even without websites
+		for (const activity of mairieActivities) {
 			results.push({
 				name: activity.name,
-				website: activity.website,
+				website: activity.website || null,
 				arrondissement: arrondissement,
 				categories: templateActivity?.categories || ['sport'],
 				email: activity.email,
@@ -503,7 +515,6 @@ async function searchOrganizations(arrondissement, templateActivity) {
 				status: 'pending'
 			});
 		}
-	}
 
 	console.log(`✅ [${arrondissement}] Found ${results.length} organizations from mairie`);
 
@@ -687,91 +698,95 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 			const organizations = await searchOrganizations(arrondissement, templateActivity || {});
 			
 			for (const org of organizations) {
-				// Extract data from website
-				if (org.website && org.website.startsWith('http')) {
-					try {
-						await randomDelay(2000, 4000); // Random delay between website crawls
-						const extracted = await extractOrganizationData(org.website, templateActivity || {});
-						
-						if (extracted.error) {
-							results.push({
-								arrondissement,
-								organization: org.name,
-								website: org.website,
-								status: 'error',
-								error: extracted.error
-							});
-							continue;
+				try {
+					let extracted = { error: null };
+					
+					// Try to extract data from website if available
+					if (org.website && org.website.startsWith('http') && org.website.includes('.')) {
+						try {
+							await randomDelay(2000, 4000);
+							extracted = await extractOrganizationData(org.website, templateActivity || {});
+						} catch (error) {
+							console.warn(`⚠️ [${arrondissement}] Website extraction failed for ${org.website}: ${error.message}`);
+							// Continue with org data from mairie page
+							extracted = { error: error.message };
 						}
+					}
 
-						// Extract and ensure we have a good title
-						let activityTitle = extracted.title || org.name;
-						
-						// If title is still empty or too generic, derive from website
-						if (!activityTitle || activityTitle.trim().length < 3 || activityTitle.toLowerCase().includes('untitled')) {
+					// Extract and ensure we have a good title
+					let activityTitle = extracted.title || org.name;
+					
+					// If title is still empty or too generic, derive from website
+					if (!activityTitle || activityTitle.trim().length < 3 || activityTitle.toLowerCase().includes('untitled')) {
+						if (org.website) {
 							try {
 								const url = new URL(org.website);
 								const domain = url.hostname.replace('www.', '').split('.')[0];
 								activityTitle = domain.charAt(0).toUpperCase() + domain.slice(1);
 							} catch (e) {
-								// Fallback to a generic name with arrondissement
-								activityTitle = `Activity ${arrondissement}`;
+								// Fallback
+								activityTitle = org.name || `Activity ${arrondissement}`;
 							}
+						} else {
+							activityTitle = org.name || `Activity ${arrondissement}`;
 						}
-						
-						// Clean up title (remove common unwanted prefixes/suffixes)
-						activityTitle = activityTitle.trim()
-							.replace(/^Home\s*-\s*/i, '')
-							.replace(/^Accueil\s*-\s*/i, '')
-							.replace(/\s*-\s*Paris.*$/i, '')
-							.replace(/\s*-\s*Site.*$/i, '')
-							.substring(0, 100); // Limit length
-						
-						// Create activity object with pending status
-						const activity = {
-							id: uuidv4(),
-							title: {
-								en: activityTitle,
-								fr: activityTitle
-							},
-							description: {
-								en: extracted.description || '',
-								fr: extracted.description || ''
-							},
-							categories: extracted.categories || org.categories || [],
-							ageMin: extracted.ageRange ? parseInt(extracted.ageRange.split('-')[0]) : (templateActivity?.ageMin || 0),
-							ageMax: extracted.ageRange ? parseInt(extracted.ageRange.split('-')[1]) : (templateActivity?.ageMax || 99),
-							price: extracted.price ? { amount: extracted.price, currency: 'EUR' } : (templateActivity?.price || { amount: 0, currency: 'EUR' }),
-							addresses: extracted.address || org.address || '',
-							contactEmail: extracted.email || org.email || '',
-							contactPhone: extracted.phone || org.phone || '',
-							images: extracted.images || [],
-							neighborhood: arrondissement,
-							websiteLink: org.website,
-							approvalStatus: 'pending',
-							crawledAt: new Date().toISOString(),
-							createdAt: new Date().toISOString(),
-							updatedAt: new Date().toISOString()
-						};
-
-						pendingActivities.push(activity);
-						results.push({
-							arrondissement,
-							organization: org.name,
-							website: org.website,
-							status: 'success',
-							activityId: activity.id
-						});
-					} catch (error) {
-						console.error(`❌ Error processing ${org.website}:`, error.message);
-						results.push({
-							arrondissement,
-							organization: org.name,
-							website: org.website,
-							status: 'error',
-							error: error.message
-						});
 					}
+					
+					// Clean up title
+					activityTitle = activityTitle.trim()
+						.replace(/^Home\s*-\s*/i, '')
+						.replace(/^Accueil\s*-\s*/i, '')
+						.replace(/\s*-\s*Paris.*$/i, '')
+						.replace(/\s*-\s*Site.*$/i, '')
+						.substring(0, 100);
+					
+					// Create activity object - save even if website extraction failed
+					const activity = {
+						id: uuidv4(),
+						title: {
+							en: activityTitle,
+							fr: activityTitle
+						},
+						description: {
+							en: extracted.description || '',
+							fr: extracted.description || ''
+						},
+						categories: extracted.categories || org.categories || templateActivity?.categories || [],
+						ageMin: extracted.ageRange ? parseInt(extracted.ageRange.split('-')[0]) : (templateActivity?.ageMin || 3),
+						ageMax: extracted.ageRange ? parseInt(extracted.ageRange.split('-')[1]) : (templateActivity?.ageMax || 99),
+						price: extracted.price ? { amount: extracted.price, currency: 'EUR' } : (templateActivity?.price || { amount: 0, currency: 'EUR' }),
+						addresses: extracted.address || org.address || '',
+						contactEmail: extracted.email || org.email || '',
+						contactPhone: extracted.phone || org.phone || '',
+						images: extracted.images || [],
+						neighborhood: arrondissement,
+						websiteLink: org.website || '',
+						approvalStatus: 'pending',
+						crawledAt: new Date().toISOString(),
+						createdAt: new Date().toISOString(),
+						updatedAt: new Date().toISOString()
+					};
+
+					pendingActivities.push(activity);
+					results.push({
+						arrondissement,
+						organization: org.name,
+						website: org.website || 'N/A',
+						status: extracted.error ? 'partial' : 'success',
+						activityId: activity.id,
+						note: extracted.error ? 'Saved with mairie data only' : 'Full extraction successful'
+					});
+					
+					console.log(`✅ [${arrondissement}] Saved: ${activityTitle} (${extracted.error ? 'mairie data only' : 'full extraction'})`);
+				} catch (error) {
+					console.error(`❌ [${arrondissement}] Error processing ${org.name}:`, error.message);
+					results.push({
+						arrondissement,
+						organization: org.name,
+						website: org.website || 'N/A',
+						status: 'error',
+						error: error.message
+					});
 				}
 			}
 			
@@ -856,23 +871,44 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 					}
 				});
 
-				// Save to datastore
+				// Save to datastore - ensure approvalStatus is explicitly set
 				let savedCount = 0;
 				let errorCount = 0;
+				const saveErrors = [];
+				
 				for (const activity of pendingActivities) {
 					try {
+						// Explicitly set approvalStatus to ensure it's saved
 						const activityToSave = {
 							...activity,
-							approvalStatus: 'pending'
+							approvalStatus: 'pending',
+							// Ensure all required fields are present
+							title: activity.title || { en: 'Untitled', fr: 'Sans titre' },
+							description: activity.description || { en: '', fr: '' },
+							categories: activity.categories || [],
+							neighborhood: activity.neighborhood || 'unknown'
 						};
-						await store.activities.create(activityToSave);
-						savedCount++;
+						
+						const saved = await store.activities.create(activityToSave);
+						
+						// Verify it was saved with pending status
+						if (saved && saved.approvalStatus === 'pending') {
+							savedCount++;
+						} else {
+							console.warn(`⚠️ Activity ${activity.id} saved but approvalStatus may not be set correctly`);
+							savedCount++; // Still count as saved
+						}
 					} catch (e) {
-						console.error(`Failed to save activity ${activity.id}:`, e);
+						console.error(`❌ Failed to save activity ${activity.id} (${activity.title?.en || 'untitled'}):`, e.message);
+						saveErrors.push({ id: activity.id, error: e.message });
 						errorCount++;
 					}
 				}
+				
 				console.log(`\n✅ Saved ${savedCount} activities to datastore (${errorCount} errors)`);
+				if (saveErrors.length > 0) {
+					console.log(`❌ Save errors:`, saveErrors.slice(0, 5));
+				}
 
 				res.json({
 					success: true,
@@ -880,8 +916,10 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 					summary: {
 						total: results.length,
 						successful: results.filter(r => r.status === 'success').length,
+						partial: results.filter(r => r.status === 'partial').length,
 						errors: results.filter(r => r.status === 'error').length,
-						pendingActivities: pendingActivities.length
+						pendingActivities: pendingActivities.length,
+						savedToDatastore: savedCount
 					},
 					results: results.slice(0, 50),
 					message: `Found ${pendingActivities.length} organizations. Review and approve in admin panel.`

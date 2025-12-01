@@ -63,6 +63,8 @@ export function csrfProtection() {
 		// Since CSRF runs before requireAuth, we need to check the JWT token directly
 		const isAdminOnlyEndpoint = path.includes('/crawler') || 
 		                           originalUrl.includes('/crawler') ||
+		                           path.includes('/arrondissement-crawler') ||
+		                           originalUrl.includes('/arrondissement-crawler') ||
 		                           path.includes('/metrics') ||
 		                           originalUrl.includes('/metrics');
 		

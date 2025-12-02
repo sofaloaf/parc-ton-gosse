@@ -79,85 +79,118 @@ export default function ActivityCard({ activity, locale, onView }) {
 	const categories = translateCategories(activity.categories || [], locale);
 	const price = activity.price?.amount || activity.price;
 	
-	// ProductHunt-inspired design with blue color scheme
+	// Modern card design inspired by Withlocals/GetYourGuide
+	const firstImage = images && images.length > 0 ? images[0] : null;
+	
 	return (
 		<Link 
 			to={`/activity/${activity.id}`} 
 			style={{ 
 				textDecoration: 'none', 
 				color: 'inherit',
-				display: 'block'
+				display: 'block',
+				height: '100%'
 			}}
 		>
 			<div ref={cardRef} style={{ 
 				background: 'white',
-				borderRadius: '12px',
-				border: '1px solid #e0e7f0',
-				padding: '20px',
-				display: 'flex',
-				flexDirection: 'column',
-				gap: '12px',
-				transition: 'all 0.2s ease',
-				boxShadow: '0 1px 3px rgba(59, 130, 246, 0.1)',
+				borderRadius: '16px',
+				border: '1px solid #e2e8f0',
+				overflow: 'hidden',
+				transition: 'all 0.3s ease',
+				boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
 				cursor: 'pointer',
-				height: '100%'
+				height: '100%',
+				display: 'flex',
+				flexDirection: 'column'
 			}}
 			onMouseEnter={(e) => {
-				e.currentTarget.style.transform = 'translateY(-4px)';
-				e.currentTarget.style.boxShadow = '0 8px 16px rgba(59, 130, 246, 0.15)';
+				e.currentTarget.style.transform = 'translateY(-8px)';
+				e.currentTarget.style.boxShadow = '0 12px 24px rgba(59, 130, 246, 0.2)';
 				e.currentTarget.style.borderColor = '#3b82f6';
 			}}
 			onMouseLeave={(e) => {
 				e.currentTarget.style.transform = 'translateY(0)';
-				e.currentTarget.style.boxShadow = '0 1px 3px rgba(59, 130, 246, 0.1)';
-				e.currentTarget.style.borderColor = '#e0e7f0';
+				e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.08)';
+				e.currentTarget.style.borderColor = '#e2e8f0';
 			}}
 			>
-				{/* Header with upvote-style element */}
-				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-					<div style={{ flex: 1 }}>
-						<h3 style={{ 
-							margin: 0, 
-							fontSize: '18px',
-							fontWeight: 600,
-							color: '#1e293b',
-							lineHeight: '1.4',
-							marginBottom: '8px'
-						}}>
-							{title}
-						</h3>
-						{desc && (
-							<p style={{ 
-								color: '#64748b', 
-								margin: 0, 
-								fontSize: '14px',
-								lineHeight: '1.5',
-								display: '-webkit-box',
-								WebkitLineClamp: 3,
-								WebkitBoxOrient: 'vertical',
-								overflow: 'hidden'
-							}}>
-								{String(desc)}
-							</p>
-						)}
-					</div>
-					{/* Upvote-style indicator */}
+				{/* Image Section */}
+				{firstImage ? (
 					<div style={{
+						width: '100%',
+						height: '200px',
 						background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-						color: 'white',
-						borderRadius: '8px',
-						width: '40px',
-						height: '40px',
+						position: 'relative',
+						overflow: 'hidden'
+					}}>
+						<img 
+							src={firstImage} 
+							alt={title}
+							style={{
+								width: '100%',
+								height: '100%',
+								objectFit: 'cover'
+							}}
+							onError={(e) => {
+								e.target.style.display = 'none';
+							}}
+						/>
+					</div>
+				) : (
+					<div style={{
+						width: '100%',
+						height: '200px',
+						background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
 						display: 'flex',
 						alignItems: 'center',
 						justifyContent: 'center',
-						fontSize: '18px',
-						fontWeight: 600,
-						flexShrink: 0
+						color: 'white',
+						fontSize: '48px'
 					}}>
-						↑
+						🎨
 					</div>
-				</div>
+				)}
+				
+				{/* Content Section */}
+				<div style={{ 
+					padding: '20px',
+					display: 'flex',
+					flexDirection: 'column',
+					gap: '12px',
+					flex: 1
+				}}>
+					{/* Title */}
+					<h3 style={{ 
+						margin: 0, 
+						fontSize: '20px',
+						fontWeight: 700,
+						color: '#1e293b',
+						lineHeight: '1.3',
+						display: '-webkit-box',
+						WebkitLineClamp: 2,
+						WebkitBoxOrient: 'vertical',
+						overflow: 'hidden'
+					}}>
+						{title}
+					</h3>
+					
+					{/* Description */}
+					{desc && (
+						<p style={{ 
+							color: '#64748b', 
+							margin: 0, 
+							fontSize: '14px',
+							lineHeight: '1.6',
+							display: '-webkit-box',
+							WebkitLineClamp: 2,
+							WebkitBoxOrient: 'vertical',
+							overflow: 'hidden',
+							flex: 1
+						}}>
+							{String(desc)}
+						</p>
+					)}
 
 				{/* Categories/Tags */}
 				{categories.length > 0 && (

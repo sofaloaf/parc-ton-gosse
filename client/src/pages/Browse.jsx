@@ -101,170 +101,212 @@ export default function Browse() {
 	return (
 		<CardViewCounter>
 			{({ onCardView }) => (
-					<>
-						<div style={{ 
-				minHeight: '100vh',
-				background: 'linear-gradient(135deg, #667eea 0%, #764ba2 15%, #f093fb 30%, #f5576c 45%, #4facfe 60%, #00f2fe 100%)',
-				backgroundSize: '400% 400%',
-				animation: 'gradientShift 15s ease infinite',
-				position: 'relative'
-			}}>
-				{/* Add keyframes for animated gradient */}
-				<style>{`
-					@keyframes gradientShift {
-						0% { background-position: 0% 50%; }
-						50% { background-position: 100% 50%; }
-						100% { background-position: 0% 50%; }
-					}
-					@media (max-width: 768px) {
-						.browse-search-filters {
-							width: 100% !important;
-							max-width: 100% !important;
-						}
-					}
-				`}</style>
 				<div style={{ 
-					background: 'rgba(255, 255, 255, 0.95)',
-					backdropFilter: 'blur(10px)',
 					minHeight: '100vh',
-					padding: '20px',
-					position: 'relative',
-					zIndex: 1
+					background: '#ffffff'
 				}}>
-					<div style={{ display: 'grid', gap: 20 }}>
 					{error && (
 						<div style={{
 							padding: 16,
 							background: '#fee2e2',
 							color: '#991b1b',
 							borderRadius: 8,
-							border: '1px solid #fca5a5'
+							border: '1px solid #fca5a5',
+							margin: '20px',
+							maxWidth: '1200px',
+							marginLeft: 'auto',
+							marginRight: 'auto'
 						}}>
 							<strong>{locale === 'fr' ? 'Erreur:' : 'Error:'}</strong> {error}
 						</div>
 					)}
+					
 					{loading && activities.length === 0 ? (
-						<LoadingSpinner message={locale === 'fr' ? 'Chargement des activités...' : 'Loading activities...'} />
+						<div style={{ padding: '80px 20px', textAlign: 'center' }}>
+							<LoadingSpinner message={locale === 'fr' ? 'Chargement des activités...' : 'Loading activities...'} />
+						</div>
 					) : (
 						<>
-					{/* Sticky Search and Filters - Full Width */}
-					<div className="browse-search-filters" style={{ 
-						display: 'flex',
-						flexDirection: 'column',
-						gap: 12,
-						position: 'sticky',
-						top: 0,
-						background: 'rgba(255, 255, 255, 0.98)',
-						backdropFilter: 'blur(20px)',
-						padding: '20px',
-						zIndex: 100,
-						borderRadius: '16px',
-						border: '1px solid rgba(255, 255, 255, 0.3)',
-						boxShadow: '0 8px 32px rgba(102, 126, 234, 0.15)',
-						marginBottom: 12,
-						width: '100%',
-						maxWidth: '100%'
-					}}>
-						<SearchBar 
-							onSearch={handleSearch} 
-							onSelect={(a) => navigate(`/activity/${a.id}`)}
-							initialValue={params.q || ''}
-						/>
-						<Filters onApply={setParams} params={params} />
-					</div>
+							{/* Hero Section with Search - Inspired by Withlocals/GetYourGuide */}
+							<div style={{
+								background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+								padding: '60px 20px 80px',
+								position: 'relative',
+								overflow: 'hidden'
+							}}>
+								{/* Decorative background elements */}
+								<div style={{
+									position: 'absolute',
+									top: -50,
+									right: -50,
+									width: 300,
+									height: 300,
+									borderRadius: '50%',
+									background: 'rgba(255, 255, 255, 0.1)',
+									opacity: 0.5
+								}} />
+								<div style={{
+									position: 'absolute',
+									bottom: -100,
+									left: -100,
+									width: 400,
+									height: 400,
+									borderRadius: '50%',
+									background: 'rgba(255, 255, 255, 0.1)',
+									opacity: 0.3
+								}} />
+								
+								<div style={{
+									maxWidth: '1200px',
+									margin: '0 auto',
+									position: 'relative',
+									zIndex: 1
+								}}>
+									<h1 style={{
+										fontSize: '48px',
+										fontWeight: 700,
+										color: 'white',
+										margin: '0 0 16px 0',
+										lineHeight: 1.2,
+										textAlign: 'center'
+									}}>
+										{locale === 'fr' 
+											? 'Découvrez les meilleures activités pour enfants à Paris'
+											: 'Discover the best activities for kids in Paris'}
+									</h1>
+									<p style={{
+										fontSize: '20px',
+										color: 'rgba(255, 255, 255, 0.9)',
+										margin: '0 0 40px 0',
+										textAlign: 'center',
+										fontWeight: 400
+									}}>
+										{locale === 'fr'
+											? 'Trouvez des expériences uniques et mémorables pour toute la famille'
+											: 'Find unique and memorable experiences for the whole family'}
+									</p>
+									
+									{/* Search Bar - Prominent */}
+									<div style={{
+										background: 'white',
+										borderRadius: '12px',
+										padding: '8px',
+										boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
+										maxWidth: '700px',
+										margin: '0 auto 24px'
+									}}>
+										<SearchBar 
+											onSearch={handleSearch} 
+											onSelect={(a) => navigate(`/activity/${a.id}`)}
+											initialValue={params.q || ''}
+										/>
+									</div>
+									
+									{/* Filters - Compact */}
+									<div style={{
+										background: 'rgba(255, 255, 255, 0.95)',
+										borderRadius: '12px',
+										padding: '16px',
+										boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+										maxWidth: '900px',
+										margin: '0 auto'
+									}}>
+										<Filters onApply={setParams} params={params} />
+									</div>
+								</div>
+							</div>
 
-					{/* Activity Count */}
-					<div style={{ 
-						display: 'flex', 
-						justifyContent: 'flex-start', 
-						alignItems: 'center',
-						gap: 16,
-						position: 'sticky',
-						top: 0,
-						background: 'rgba(255, 255, 255, 0.98)',
-						backdropFilter: 'blur(20px)',
-						padding: '16px 20px',
-						zIndex: 99,
-						borderRadius: '12px',
-						border: '1px solid rgba(255, 255, 255, 0.3)',
-						boxShadow: '0 4px 24px rgba(102, 126, 234, 0.1)',
-						width: '100%',
-						marginTop: '12px',
-						marginBottom: '20px'
-					}}>
-						<h2 style={{ margin: 0 }}>
-							{activities.length} {activities.length === 1 ? 'Activity' : 'Activities'}
-						</h2>
-					</div>
+							{/* Main Content */}
+							<div style={{
+								maxWidth: '1200px',
+								margin: '0 auto',
+								padding: '40px 20px'
+							}}>
+								{/* Results Header */}
+								<div style={{
+									display: 'flex',
+									justifyContent: 'space-between',
+									alignItems: 'center',
+									marginBottom: '32px',
+									flexWrap: 'wrap',
+									gap: '16px'
+								}}>
+									<h2 style={{
+										margin: 0,
+										fontSize: '28px',
+										fontWeight: 700,
+										color: '#1e293b'
+									}}>
+										{activities.length} {activities.length === 1 
+											? (locale === 'fr' ? 'activité' : 'activity')
+											: (locale === 'fr' ? 'activités' : 'activities')}
+									</h2>
+								</div>
 
-			{/* Cards View - ProductHunt style grid */}
-			{viewMode === 'cards' && (
-				<>
-					{activities.length === 0 ? (
-						<div style={{
-							textAlign: 'center',
-							padding: '60px 20px',
-							background: '#f8fafc',
-							borderRadius: 12,
-							border: '1px solid #e0e7f0',
-							maxWidth: '600px',
-							margin: '0 auto'
-						}}>
-							<div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
-							<h3 style={{ margin: '0 0 8px 0', color: '#1e293b', fontSize: 20, fontWeight: 600 }}>
-								{locale === 'fr' ? 'Aucune activité trouvée' : 'No activities found'}
-							</h3>
-							<p style={{ margin: '0 0 24px 0', color: '#475569', fontSize: 14, lineHeight: 1.6 }}>
-								{locale === 'fr' 
-									? 'Essayez d\'ajuster vos filtres ou votre recherche pour trouver plus de résultats.'
-									: 'Try adjusting your filters or search to find more results.'}
-							</p>
-							<button
-								onClick={() => {
-									setParams({});
-									handleSearch('');
-								}}
-								style={{
-									padding: '10px 20px',
-									background: '#3b82f6',
-									color: 'white',
-									border: 'none',
-									borderRadius: 8,
-									cursor: 'pointer',
-									fontSize: 14,
-									fontWeight: 500
-								}}
-							>
-								{locale === 'fr' ? 'Réinitialiser les filtres' : 'Clear Filters'}
-							</button>
-						</div>
-					) : (
-						<div style={{ 
-							display: 'grid', 
-							gap: '20px', 
-							gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))',
-							padding: '8px 0'
-						}}>
-							{activities.map(a => (
-								<ActivityCard 
-									key={a.id} 
-									activity={a} 
-									locale={locale}
-									onView={() => onCardView && onCardView(a.id)}
-								/>
-							))}
-						</div>
+								{/* Cards Grid - Modern Layout */}
+								{viewMode === 'cards' && (
+									<>
+										{activities.length === 0 ? (
+											<div style={{
+												textAlign: 'center',
+												padding: '80px 20px',
+												background: '#f8fafc',
+												borderRadius: 16,
+												border: '1px solid #e2e8f0'
+											}}>
+												<div style={{ fontSize: 64, marginBottom: 24 }}>🔍</div>
+												<h3 style={{ margin: '0 0 12px 0', color: '#1e293b', fontSize: 24, fontWeight: 600 }}>
+													{locale === 'fr' ? 'Aucune activité trouvée' : 'No activities found'}
+												</h3>
+												<p style={{ margin: '0 0 32px 0', color: '#64748b', fontSize: 16, lineHeight: 1.6 }}>
+													{locale === 'fr' 
+														? 'Essayez d\'ajuster vos filtres ou votre recherche pour trouver plus de résultats.'
+														: 'Try adjusting your filters or search to find more results.'}
+												</p>
+												<button
+													onClick={() => {
+														setParams({});
+														handleSearch('');
+													}}
+													style={{
+														padding: '12px 24px',
+														background: '#3b82f6',
+														color: 'white',
+														border: 'none',
+														borderRadius: 8,
+														cursor: 'pointer',
+														fontSize: 16,
+														fontWeight: 600,
+														transition: 'all 0.2s ease'
+													}}
+													onMouseEnter={(e) => e.currentTarget.style.background = '#2563eb'}
+													onMouseLeave={(e) => e.currentTarget.style.background = '#3b82f6'}
+												>
+													{locale === 'fr' ? 'Réinitialiser les filtres' : 'Clear Filters'}
+												</button>
+											</div>
+										) : (
+											<div style={{ 
+												display: 'grid', 
+												gap: '24px', 
+												gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))'
+											}}>
+												{activities.map(a => (
+													<ActivityCard 
+														key={a.id} 
+														activity={a} 
+														locale={locale}
+														onView={() => onCardView && onCardView(a.id)}
+													/>
+												))}
+											</div>
+										)}
+									</>
+								)}
+							</div>
+						</>
 					)}
-				</>
-			)}
-
-
-					</>
-					)}
-					</div>
 				</div>
-			</div>
-			</>
 			)}
 		</CardViewCounter>
 	);

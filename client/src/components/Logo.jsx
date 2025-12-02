@@ -18,11 +18,12 @@ export default function Logo() {
 				width: 40,
 				height: 40,
 				borderRadius: '50%',
-				background: '#a8e063', // Light green color
+				background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
 				display: 'flex',
 				alignItems: 'center',
 				justifyContent: 'center',
-				flexShrink: 0
+				flexShrink: 0,
+				boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)'
 			}}>
 				{/* You can replace this with an actual logo image */}
 				{/* <img src="/logo.png" alt="Parc ton gosse" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> */}
@@ -31,8 +32,8 @@ export default function Logo() {
 			{/* Logo Text */}
 			<span style={{
 				fontSize: 20,
-				fontWeight: 600,
-				color: '#a8e063', // Light green color matching the circle
+				fontWeight: 700,
+				color: '#3b82f6',
 				letterSpacing: '-0.5px'
 			}}>
 				Parctongosse

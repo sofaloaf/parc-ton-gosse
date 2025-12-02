@@ -884,7 +884,7 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 					rows.push(row);
 				});
 
-				// Write to pending sheet
+				// Write to pending sheet ONLY - do NOT write to main Activities sheet
 				await sheets.spreadsheets.values.update({
 					spreadsheetId: sheetId,
 					range: `${finalSheetName}!A1`,
@@ -894,44 +894,11 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 					}
 				});
 
-				// Save to datastore - ensure approvalStatus is explicitly set
-				let savedCount = 0;
-				let errorCount = 0;
-				const saveErrors = [];
-				
-				for (const activity of pendingActivities) {
-					try {
-						// Explicitly set approvalStatus to ensure it's saved
-						const activityToSave = {
-							...activity,
-							approvalStatus: 'pending',
-							// Ensure all required fields are present
-							title: activity.title || { en: 'Untitled', fr: 'Sans titre' },
-							description: activity.description || { en: '', fr: '' },
-							categories: activity.categories || [],
-							neighborhood: activity.neighborhood || 'unknown'
-						};
-						
-						const saved = await store.activities.create(activityToSave);
-						
-						// Verify it was saved with pending status
-						if (saved && saved.approvalStatus === 'pending') {
-							savedCount++;
-						} else {
-							console.warn(`⚠️ Activity ${activity.id} saved but approvalStatus may not be set correctly`);
-							savedCount++; // Still count as saved
-						}
-					} catch (e) {
-						console.error(`❌ Failed to save activity ${activity.id} (${activity.title?.en || 'untitled'}):`, e.message);
-						saveErrors.push({ id: activity.id, error: e.message });
-						errorCount++;
-					}
-				}
-				
-				console.log(`\n✅ Saved ${savedCount} activities to datastore (${errorCount} errors)`);
-				if (saveErrors.length > 0) {
-					console.log(`❌ Save errors:`, saveErrors.slice(0, 5));
-				}
+				// IMPORTANT: Do NOT save to main Activities sheet via datastore
+				// Pending activities should ONLY be in the pending sheet until approved
+				// The main Activities sheet should remain untouched
+				console.log(`\n✅ Saved ${pendingActivities.length} activities to pending sheet "${finalSheetName}"`);
+				console.log(`📋 These activities are NOT in the main Activities sheet - they will only appear after approval`);
 
 				res.json({
 					success: true,
@@ -977,59 +944,126 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 	}
 });
 
-// Get pending activities for approval
+// Get pending activities for approval - read from pending sheets, NOT main Activities sheet
 arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, res) => {
-	const store = req.app.get('dataStore');
+	const sheetId = process.env.GS_SHEET_ID;
+	
+	if (!sheetId) {
+		return res.status(400).json({ error: 'GS_SHEET_ID not configured' });
+	}
 	
 	try {
-		const allActivities = await store.activities.list();
-		console.log(`📊 Total activities in datastore: ${allActivities.length}`);
+		const sheets = getSheetsClient();
 		
-		// Filter for pending activities - be more explicit
-		const pending = allActivities.filter(a => {
-			if (!a) return false;
-			const status = a.approvalStatus;
-			// Include activities with 'pending' status
-			// Also include activities without approvalStatus if they were recently crawled (have crawledAt)
-			if (status === 'pending') {
-				return true;
-			}
-			// If no status but has crawledAt timestamp, it's likely a newly crawled activity
-			if ((status === undefined || status === null || status === '') && a.crawledAt) {
-				return true;
-			}
-			return false;
+		// Get all sheets in the spreadsheet
+		const spreadsheet = await sheets.spreadsheets.get({
+			spreadsheetId: sheetId
 		});
 		
-		console.log(`📋 Found ${pending.length} pending activities (out of ${allActivities.length} total)`);
+		// Find all pending sheets (format: "Pending - YYYY-MM-DD - ...")
+		const pendingSheets = spreadsheet.data.sheets
+			.filter(sheet => {
+				const title = sheet.properties.title;
+				return /^Pending - \d{4}-\d{2}-\d{2}/.test(title);
+			})
+			.map(sheet => sheet.properties.title)
+			.sort()
+			.reverse(); // Newest first
 		
-		if (pending.length > 0) {
-			console.log(`📝 Sample pending activity:`, {
-				id: pending[0].id,
-				title: pending[0].title,
-				approvalStatus: pending[0].approvalStatus,
-				neighborhood: pending[0].neighborhood,
-				crawledAt: pending[0].crawledAt
-			});
-		} else {
-			const statusCounts = {};
-			allActivities.forEach(a => {
-				const status = a.approvalStatus || (a.crawledAt ? 'crawled_no_status' : 'undefined');
-				statusCounts[status] = (statusCounts[status] || 0) + 1;
-			});
-			console.log(`📊 Activity status breakdown:`, statusCounts);
+		console.log(`📋 Found ${pendingSheets.length} pending sheets:`, pendingSheets);
+		
+		// Read activities from all pending sheets
+		const allPendingActivities = [];
+		
+		for (const sheetName of pendingSheets) {
+			try {
+				const response = await sheets.spreadsheets.values.get({
+					spreadsheetId: sheetId,
+					range: `${sheetName}!A:Z`
+				});
+				
+				const rows = response.data.values || [];
+				if (rows.length <= 1) continue; // Skip if only headers
+				
+				const headers = rows[0];
+				
+				// Convert rows to activity objects
+				for (let i = 1; i < rows.length; i++) {
+					const row = rows[i];
+					const activity = {};
+					
+					headers.forEach((header, idx) => {
+						if (header && row[idx] !== undefined && row[idx] !== '') {
+							const value = row[idx];
+							// Handle JSON strings
+							if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('['))) {
+								try {
+									activity[header] = JSON.parse(value);
+								} catch {
+									activity[header] = value;
+								}
+							} else {
+								activity[header] = value;
+							}
+						}
+					});
+					
+					// Convert to app format
+					if (activity.id || activity.ID) {
+						const appActivity = {
+							id: activity.id || activity.ID || uuidv4(),
+							title: {
+								en: activity['Title (English)'] || activity['title_en'] || activity.title?.en || activity.title || '',
+								fr: activity['Title (French)'] || activity['title_fr'] || activity.title?.fr || activity.title || ''
+							},
+							description: {
+								en: activity['Description (English)'] || activity['description_en'] || activity.description?.en || activity.description || '',
+								fr: activity['Description (French)'] || activity['description_fr'] || activity.description?.fr || activity.description || ''
+							},
+							categories: typeof activity.Categories === 'string' 
+								? activity.Categories.split(',').map(s => s.trim().toLowerCase()).filter(s => s)
+								: (activity.categories || []),
+							ageMin: parseInt(activity['Min Age'] || activity.ageMin || 0),
+							ageMax: parseInt(activity['Max Age'] || activity.ageMax || 99),
+							price: {
+								amount: parseInt(activity['Price (€)'] || activity.price_amount || activity.price?.amount || 0),
+								currency: activity.Currency || activity.currency || 'EUR'
+							},
+							neighborhood: activity.Neighborhood || activity.neighborhood || '',
+							addresses: activity.Addresses || activity.addresses || '',
+							contactEmail: activity['Contact Email'] || activity.contactEmail || '',
+							contactPhone: activity['Contact Phone'] || activity.contactPhone || '',
+							websiteLink: activity['Website Link'] || activity.websiteLink || '',
+							images: typeof activity.Images === 'string' 
+								? activity.Images.split(',').map(s => s.trim()).filter(s => s)
+								: (activity.images || []),
+							approvalStatus: activity['Approval Status'] || activity.approvalStatus || 'pending',
+							crawledAt: activity['Crawled At'] || activity.crawledAt || new Date().toISOString(),
+							createdAt: activity['Created At'] || activity.createdAt || new Date().toISOString(),
+							updatedAt: activity['Updated At'] || activity.updatedAt || new Date().toISOString()
+						};
+						
+						allPendingActivities.push(appActivity);
+					}
+				}
+			} catch (error) {
+				console.error(`❌ Error reading pending sheet ${sheetName}:`, error.message);
+				continue;
+			}
 		}
 		
-		// Sort by crawledAt (newest first) or createdAt
-		pending.sort((a, b) => {
+		// Sort by crawledAt (newest first)
+		allPendingActivities.sort((a, b) => {
 			const aTime = a.crawledAt || a.createdAt || '';
 			const bTime = b.crawledAt || b.createdAt || '';
 			return bTime.localeCompare(aTime);
 		});
 		
+		console.log(`✅ Found ${allPendingActivities.length} pending activities from ${pendingSheets.length} pending sheets`);
+		
 		res.json({
-			total: pending.length,
-			activities: pending
+			total: allPendingActivities.length,
+			activities: allPendingActivities
 		});
 	} catch (error) {
 		console.error('Failed to get pending activities:', error);
@@ -1040,9 +1074,10 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 	}
 });
 
-// Approve or reject activity
+// Approve or reject activity - reads from pending sheets, writes to main Activities sheet when approved
 arrondissementCrawlerRouter.post('/approve', requireAuth('admin'), async (req, res) => {
 	const store = req.app.get('dataStore');
+	const sheetId = process.env.GS_SHEET_ID;
 	const { activityId, action } = req.body;
 	
 	if (!activityId || !action) {
@@ -1054,16 +1089,153 @@ arrondissementCrawlerRouter.post('/approve', requireAuth('admin'), async (req, r
 	}
 	
 	try {
-		const activity = await store.activities.get(activityId);
-		if (!activity) {
-			return res.status(404).json({ error: 'Activity not found' });
+		// Find activity in pending sheets
+		const sheets = getSheetsClient();
+		const spreadsheet = await sheets.spreadsheets.get({
+			spreadsheetId: sheetId
+		});
+		
+		const pendingSheets = spreadsheet.data.sheets
+			.filter(sheet => /^Pending - \d{4}-\d{2}-\d{2}/.test(sheet.properties.title))
+			.map(sheet => sheet.properties.title);
+		
+		let foundActivity = null;
+		let foundSheet = null;
+		
+		// Search through pending sheets
+		for (const sheetName of pendingSheets) {
+			const response = await sheets.spreadsheets.values.get({
+				spreadsheetId: sheetId,
+				range: `${sheetName}!A:Z`
+			});
+			
+			const rows = response.data.values || [];
+			if (rows.length <= 1) continue;
+			
+			const headers = rows[0];
+			const idColIndex = headers.findIndex(h => h && (h.toLowerCase() === 'id' || h.toLowerCase() === 'id (uuid)'));
+			
+			if (idColIndex === -1) continue;
+			
+			for (let i = 1; i < rows.length; i++) {
+				const row = rows[i];
+				if (row[idColIndex] === activityId) {
+					// Found the activity - reconstruct it
+					const activity = {};
+					headers.forEach((header, idx) => {
+						if (header && row[idx] !== undefined && row[idx] !== '') {
+							const value = row[idx];
+							if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('['))) {
+								try {
+									activity[header] = JSON.parse(value);
+								} catch {
+									activity[header] = value;
+								}
+							} else {
+								activity[header] = value;
+							}
+						}
+					});
+					
+					// Convert to app format
+					foundActivity = {
+						id: activity.id || activity.ID || activityId,
+						title: {
+							en: activity['Title (English)'] || activity['title_en'] || activity.title?.en || activity.title || '',
+							fr: activity['Title (French)'] || activity['title_fr'] || activity.title?.fr || activity.title || ''
+						},
+						description: {
+							en: activity['Description (English)'] || activity['description_en'] || activity.description?.en || activity.description || '',
+							fr: activity['Description (French)'] || activity['description_fr'] || activity.description?.fr || activity.description || ''
+						},
+						categories: typeof activity.Categories === 'string' 
+							? activity.Categories.split(',').map(s => s.trim().toLowerCase()).filter(s => s)
+							: (activity.categories || []),
+						ageMin: parseInt(activity['Min Age'] || activity.ageMin || 0),
+						ageMax: parseInt(activity['Max Age'] || activity.ageMax || 99),
+						price: {
+							amount: parseInt(activity['Price (€)'] || activity.price_amount || activity.price?.amount || 0),
+							currency: activity.Currency || activity.currency || 'EUR'
+						},
+						neighborhood: activity.Neighborhood || activity.neighborhood || '',
+						addresses: activity.Addresses || activity.addresses || '',
+						contactEmail: activity['Contact Email'] || activity.contactEmail || '',
+						contactPhone: activity['Contact Phone'] || activity.contactPhone || '',
+						websiteLink: activity['Website Link'] || activity.websiteLink || '',
+						images: typeof activity.Images === 'string' 
+							? activity.Images.split(',').map(s => s.trim()).filter(s => s)
+							: (activity.images || []),
+						approvalStatus: action === 'approve' ? 'approved' : 'rejected',
+						approvedAt: new Date().toISOString(),
+						approvedBy: req.user.email,
+						createdAt: activity['Created At'] || activity.createdAt || new Date().toISOString(),
+						updatedAt: new Date().toISOString()
+					};
+					
+					foundSheet = sheetName;
+					break;
+				}
+			}
+			
+			if (foundActivity) break;
 		}
 		
-		await store.activities.update(activityId, {
-			approvalStatus: action === 'approve' ? 'approved' : 'rejected',
-			approvedAt: new Date().toISOString(),
-			approvedBy: req.user.email
-		});
+		if (!foundActivity) {
+			return res.status(404).json({ error: 'Activity not found in pending sheets' });
+		}
+		
+		if (action === 'approve') {
+			// Add to main Activities sheet
+			await store.activities.create(foundActivity);
+			console.log(`✅ Approved activity ${activityId} - added to main Activities sheet`);
+		} else {
+			// Just update the pending sheet to mark as rejected
+			// Update the approval status in the pending sheet
+			const response = await sheets.spreadsheets.values.get({
+				spreadsheetId: sheetId,
+				range: `${foundSheet}!A:Z`
+			});
+			
+			const rows = response.data.values || [];
+			const headers = rows[0];
+			const idColIndex = headers.findIndex(h => h && (h.toLowerCase() === 'id' || h.toLowerCase() === 'id (uuid)'));
+			const statusColIndex = headers.findIndex(h => h && (h.toLowerCase().includes('approval') || h.toLowerCase().includes('status')));
+			
+			if (statusColIndex === -1) {
+				// Add approval status column if it doesn't exist
+				headers.push('Approval Status');
+				const newStatusColIndex = headers.length - 1;
+				rows[0] = headers;
+				
+				// Find the row and update it
+				for (let i = 1; i < rows.length; i++) {
+					if (rows[i][idColIndex] === activityId) {
+						while (rows[i].length <= newStatusColIndex) {
+							rows[i].push('');
+						}
+						rows[i][newStatusColIndex] = 'rejected';
+						break;
+					}
+				}
+			} else {
+				// Update existing status column
+				for (let i = 1; i < rows.length; i++) {
+					if (rows[i][idColIndex] === activityId) {
+						rows[i][statusColIndex] = 'rejected';
+						break;
+					}
+				}
+			}
+			
+			await sheets.spreadsheets.values.update({
+				spreadsheetId: sheetId,
+				range: `${foundSheet}!A1`,
+				valueInputOption: 'RAW',
+				requestBody: { values: rows }
+			});
+			
+			console.log(`❌ Rejected activity ${activityId} - marked in pending sheet`);
+		}
 		
 		res.json({
 			success: true,
@@ -1079,9 +1251,10 @@ arrondissementCrawlerRouter.post('/approve', requireAuth('admin'), async (req, r
 	}
 });
 
-// Batch approve/reject
+// Batch approve/reject - processes multiple activities from pending sheets
 arrondissementCrawlerRouter.post('/batch-approve', requireAuth('admin'), async (req, res) => {
 	const store = req.app.get('dataStore');
+	const sheetId = process.env.GS_SHEET_ID;
 	const { activityIds, action } = req.body;
 	
 	if (!activityIds || !Array.isArray(activityIds) || activityIds.length === 0) {
@@ -1093,19 +1266,140 @@ arrondissementCrawlerRouter.post('/batch-approve', requireAuth('admin'), async (
 	}
 	
 	try {
+		// Load all pending activities (reuse the pending endpoint logic)
+		const sheets = getSheetsClient();
+		const spreadsheet = await sheets.spreadsheets.get({
+			spreadsheetId: sheetId
+		});
+		
+		const pendingSheets = spreadsheet.data.sheets
+			.filter(sheet => /^Pending - \d{4}-\d{2}-\d{2}/.test(sheet.properties.title))
+			.map(sheet => sheet.properties.title);
+		
+		// Build a map of activityId -> activity data
+		const activityMap = new Map();
+		
+		for (const sheetName of pendingSheets) {
+			const response = await sheets.spreadsheets.values.get({
+				spreadsheetId: sheetId,
+				range: `${sheetName}!A:Z`
+			});
+			
+			const rows = response.data.values || [];
+			if (rows.length <= 1) continue;
+			
+			const headers = rows[0];
+			const idColIndex = headers.findIndex(h => h && (h.toLowerCase() === 'id' || h.toLowerCase() === 'id (uuid)'));
+			
+			if (idColIndex === -1) continue;
+			
+			for (let i = 1; i < rows.length; i++) {
+				const row = rows[i];
+				const rowId = row[idColIndex];
+				if (!rowId || !activityIds.includes(rowId)) continue;
+				
+				// Reconstruct activity
+				const activity = {};
+				headers.forEach((header, idx) => {
+					if (header && row[idx] !== undefined && row[idx] !== '') {
+						const value = row[idx];
+						if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('['))) {
+							try {
+								activity[header] = JSON.parse(value);
+							} catch {
+								activity[header] = value;
+							}
+						} else {
+							activity[header] = value;
+						}
+					}
+				});
+				
+				// Convert to app format
+				const appActivity = {
+					id: activity.id || activity.ID || rowId,
+					title: {
+						en: activity['Title (English)'] || activity['title_en'] || activity.title?.en || activity.title || '',
+						fr: activity['Title (French)'] || activity['title_fr'] || activity.title?.fr || activity.title || ''
+					},
+					description: {
+						en: activity['Description (English)'] || activity['description_en'] || activity.description?.en || activity.description || '',
+						fr: activity['Description (French)'] || activity['description_fr'] || activity.description?.fr || activity.description || ''
+					},
+					categories: typeof activity.Categories === 'string' 
+						? activity.Categories.split(',').map(s => s.trim().toLowerCase()).filter(s => s)
+						: (activity.categories || []),
+					ageMin: parseInt(activity['Min Age'] || activity.ageMin || 0),
+					ageMax: parseInt(activity['Max Age'] || activity.ageMax || 99),
+					price: {
+						amount: parseInt(activity['Price (€)'] || activity.price_amount || activity.price?.amount || 0),
+						currency: activity.Currency || activity.currency || 'EUR'
+					},
+					neighborhood: activity.Neighborhood || activity.neighborhood || '',
+					addresses: activity.Addresses || activity.addresses || '',
+					contactEmail: activity['Contact Email'] || activity.contactEmail || '',
+					contactPhone: activity['Contact Phone'] || activity.contactPhone || '',
+					websiteLink: activity['Website Link'] || activity.websiteLink || '',
+					images: typeof activity.Images === 'string' 
+						? activity.Images.split(',').map(s => s.trim()).filter(s => s)
+						: (activity.images || []),
+					approvalStatus: action === 'approve' ? 'approved' : 'rejected',
+					approvedAt: new Date().toISOString(),
+					approvedBy: req.user.email,
+					createdAt: activity['Created At'] || activity.createdAt || new Date().toISOString(),
+					updatedAt: new Date().toISOString(),
+					_sheetName: sheetName,
+					_rowIndex: i
+				};
+				
+				activityMap.set(rowId, appActivity);
+			}
+		}
+		
+		// Process each activity
 		const results = [];
 		for (const activityId of activityIds) {
 			try {
-				const activity = await store.activities.get(activityId);
+				const activity = activityMap.get(activityId);
 				if (activity) {
-					await store.activities.update(activityId, {
-						approvalStatus: action === 'approve' ? 'approved' : 'rejected',
-						approvedAt: new Date().toISOString(),
-						approvedBy: req.user.email
-					});
-					results.push({ activityId, status: 'success' });
+					if (action === 'approve') {
+						// Add to main Activities sheet
+						await store.activities.create(activity);
+						results.push({ activityId, status: 'success', message: 'Approved and added to Activities sheet' });
+					} else {
+						// Update pending sheet to mark as rejected
+						const response = await sheets.spreadsheets.values.get({
+							spreadsheetId: sheetId,
+							range: `${activity._sheetName}!A:Z`
+						});
+						
+						const rows = response.data.values || [];
+						const headers = rows[0];
+						const statusColIndex = headers.findIndex(h => h && (h.toLowerCase().includes('approval') || h.toLowerCase().includes('status')));
+						
+						if (statusColIndex === -1) {
+							headers.push('Approval Status');
+							rows[0] = headers;
+							const newStatusColIndex = headers.length - 1;
+							while (rows[activity._rowIndex].length <= newStatusColIndex) {
+								rows[activity._rowIndex].push('');
+							}
+							rows[activity._rowIndex][newStatusColIndex] = 'rejected';
+						} else {
+							rows[activity._rowIndex][statusColIndex] = 'rejected';
+						}
+						
+						await sheets.spreadsheets.values.update({
+							spreadsheetId: sheetId,
+							range: `${activity._sheetName}!A1`,
+							valueInputOption: 'RAW',
+							requestBody: { values: rows }
+						});
+						
+						results.push({ activityId, status: 'success', message: 'Rejected and marked in pending sheet' });
+					}
 				} else {
-					results.push({ activityId, status: 'not_found' });
+					results.push({ activityId, status: 'not_found', message: 'Activity not found in pending sheets' });
 				}
 			} catch (error) {
 				results.push({ activityId, status: 'error', error: error.message });

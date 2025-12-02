@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { translateCategories } from '../utils/categoryTranslations.js';
+import { formatTitle } from '../utils/textFormatting.js';
 
 export default function ActivityCard({ activity, locale, onView }) {
 	const cardRef = useRef(null);
@@ -53,7 +54,7 @@ export default function ActivityCard({ activity, locale, onView }) {
 			}
 		};
 	}, [onView]);
-	const title = activity.title?.[locale] || activity.title?.en || activity.title?.fr;
+	const title = formatTitle(activity.title, locale);
 	const desc = activity.description?.[locale] || activity.description?.en || activity.description?.fr;
 	const addressStr = activity.addresses || activity.addresse || '';
 	

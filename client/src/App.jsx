@@ -15,6 +15,7 @@ import ForgotPassword from './pages/ForgotPassword.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import LanguageToggle from './components/LanguageToggle.jsx';
 import FeedbackWidget from './components/FeedbackWidget.jsx';
+import Logo from './components/Logo.jsx';
 import { api } from './shared/api.js';
 import { auth } from './shared/api.js';
 import { trackPageView } from './utils/analytics.js';
@@ -54,7 +55,7 @@ export default function App() {
 	return (
 		<div style={{ fontFamily: 'system-ui, sans-serif', padding: 16 }}>
 					<header style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between' }}>
-						<Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>{t.appName}</Link>
+						<Logo />
 						<nav style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
 							<Link to="/profile" style={{ textDecoration: 'none', color: 'inherit' }}>{locale === 'fr' ? 'Connexion' : 'Sign In'}</Link>
 							<Link to="/provider" style={{ textDecoration: 'none', color: 'inherit' }}>{t.provider || 'Provider'}</Link>

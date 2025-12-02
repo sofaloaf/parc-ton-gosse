@@ -1,3 +1,5 @@
+import { formatCategory } from './textFormatting.js';
+
 // Category translations: French -> English
 const categoryTranslations = {
 	'sport': 'Sports',
@@ -36,19 +38,23 @@ const reverseCategoryTranslations = Object.fromEntries(
  * Translate a category based on locale
  * @param {string} category - The category to translate
  * @param {string} locale - 'en' or 'fr'
- * @returns {string} - Translated category
+ * @returns {string} - Translated and formatted category
  */
 export function translateCategory(category, locale) {
 	if (!category) return category;
 	const normalized = category.toLowerCase().trim();
 	
+	let translated;
 	if (locale === 'en') {
 		// Translate from French to English
-		return categoryTranslations[normalized] || category;
+		translated = categoryTranslations[normalized] || category;
 	} else {
 		// Keep French as-is, or translate from English to French
-		return reverseCategoryTranslations[normalized] || category;
+		translated = reverseCategoryTranslations[normalized] || category;
 	}
+	
+	// Apply proper capitalization
+	return formatCategory(translated, locale);
 }
 
 /**

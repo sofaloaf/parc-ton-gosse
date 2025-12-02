@@ -4,6 +4,7 @@ import { useI18n } from '../shared/i18n.jsx';
 import { api } from '../shared/api.js';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import { translateCategories } from '../utils/categoryTranslations.js';
+import { formatTitle } from '../utils/textFormatting.js';
 
 export default function ActivityDetail() {
 	const { id } = useParams();
@@ -51,7 +52,7 @@ export default function ActivityDetail() {
 	}
 
 	if (!activity) return null;
-	const title = activity.title?.[locale] || activity.title?.en || activity.title?.fr;
+	const title = formatTitle(activity.title, locale);
 	const desc = activity.description?.[locale] || activity.description?.en || activity.description?.fr;
 	
 	// Helper function to check if value is yes/no and return icon

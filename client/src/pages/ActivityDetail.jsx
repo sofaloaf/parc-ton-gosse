@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useI18n } from '../shared/i18n.jsx';
 import { api } from '../shared/api.js';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
+import { translateCategories } from '../utils/categoryTranslations.js';
 
 export default function ActivityDetail() {
 	const { id } = useParams();
@@ -128,7 +129,7 @@ export default function ActivityDetail() {
 					{/* Categories */}
 					{activity.categories && Array.isArray(activity.categories) && activity.categories.length > 0 && (
 						<div>
-							<strong>{t.categories}:</strong> {formatValue('categories', activity.categories)}
+							<strong>{t.categories}:</strong> {formatValue('categories', translateCategories(activity.categories, locale))}
 						</div>
 					)}
 					

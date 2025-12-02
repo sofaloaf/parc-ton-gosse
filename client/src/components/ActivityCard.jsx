@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { translateCategories } from '../utils/categoryTranslations.js';
 
 export default function ActivityCard({ activity, locale, onView }) {
 	const cardRef = useRef(null);
@@ -74,7 +75,7 @@ export default function ActivityCard({ activity, locale, onView }) {
 	const addresses = parseAddresses(addressStr);
 	const email = activity.contact__email_ || activity.contactEmail;
 	const phone = activity.contact__t_l_phone_ || activity.contactPhone;
-	const categories = activity.categories || [];
+	const categories = translateCategories(activity.categories || [], locale);
 	const price = activity.price?.amount || activity.price;
 	
 	// ProductHunt-inspired design with blue color scheme

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useI18n } from '../shared/i18n.jsx';
 import { api } from '../shared/api.js';
+import { translateCategory } from '../utils/categoryTranslations.js';
 
 const neighborhoods = ['1er','2e','3e','4e','5e','6e','7e','8e','9e','10e','11e','12e','13e','14e','15e','16e','17e','18e','19e','20e'];
 
@@ -44,7 +45,7 @@ export default function Filters({ onApply, params = {} }) {
 			}
 			// Fallback to empty array or default categories
 		});
-	}, []);
+	}, [locale]); // Re-fetch when locale changes to ensure categories are updated
 	// Count active filters
 	const activeFilterCount = Object.values(state).filter(v => v && v !== '').length;
 	const hasActiveFilters = activeFilterCount > 0;
@@ -79,7 +80,11 @@ export default function Filters({ onApply, params = {} }) {
 					aria-label={t.categories}
 				>
 					<option value="">—</option>
-					{categories.map(c => <option key={c} value={c}>{c}</option>)}
+					{categories.map(c => (
+						<option key={c} value={c}>
+							{translateCategory(c, locale)}
+						</option>
+					))}
 				</select>
 			</div>
 			<div>

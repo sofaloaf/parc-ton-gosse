@@ -395,45 +395,66 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 				}
 			});
 			
-			// Combine bilingual fields if they exist as separate columns
-			if (obj.title_en || obj.title_fr) {
-				// Find first position of title_en or title_fr in columnOrder
-				const titlePos = columnOrder.findIndex(c => c === 'title_en' || c === 'title_fr');
+			// Combine bilingual fields - handle both old (JSON) and new (separate columns) formats
+			// If title is already an object (from JSON parsing), keep it
+			if (typeof obj.title === 'object' && obj.title !== null && !Array.isArray(obj.title)) {
+				// Already a bilingual object, ensure it has en/fr
+				if (!obj.title.en && !obj.title.fr) {
+					// Invalid object, try to get from separate columns
+					obj.title = {
+						en: obj.title_en || '',
+						fr: obj.title_fr || ''
+					};
+				}
+			} else if (obj.title_en || obj.title_fr) {
+				// New format: separate columns
 				obj.title = {
-					en: obj.title_en || '',
-					fr: obj.title_fr || ''
+					en: obj.title_en || obj.title || '',
+					fr: obj.title_fr || obj.title || ''
 				};
-				delete obj.title_en;
-				delete obj.title_fr;
-				// Replace title_en/title_fr positions with single 'title'
-				if (titlePos >= 0) {
-					// Remove both title_en and title_fr
-					const filtered = columnOrder.filter(c => c !== 'title_en' && c !== 'title_fr');
-					// Insert 'title' at the first original position
-					filtered.splice(titlePos, 0, 'title');
-					columnOrder.length = 0;
-					columnOrder.push(...filtered);
-				}
+			} else if (obj.title && typeof obj.title === 'string') {
+				// Single string title - use for both languages
+				obj.title = {
+					en: obj.title,
+					fr: obj.title
+				};
+			} else if (!obj.title) {
+				// No title at all - set empty
+				obj.title = { en: '', fr: '' };
 			}
-			if (obj.description_en || obj.description_fr) {
-				// Find first position of description_en or description_fr in columnOrder
-				const descPos = columnOrder.findIndex(c => c === 'description_en' || c === 'description_fr');
+			
+			// Clean up title_en/title_fr if they exist
+			delete obj.title_en;
+			delete obj.title_fr;
+			
+			// Same for description
+			if (typeof obj.description === 'object' && obj.description !== null && !Array.isArray(obj.description)) {
+				// Already a bilingual object
+				if (!obj.description.en && !obj.description.fr) {
+					obj.description = {
+						en: obj.description_en || '',
+						fr: obj.description_fr || ''
+					};
+				}
+			} else if (obj.description_en || obj.description_fr) {
+				// New format: separate columns
 				obj.description = {
-					en: obj.description_en || '',
-					fr: obj.description_fr || ''
+					en: obj.description_en || obj.description || '',
+					fr: obj.description_fr || obj.description || ''
 				};
-				delete obj.description_en;
-				delete obj.description_fr;
-				// Replace description_en/description_fr positions with single 'description'
-				if (descPos >= 0) {
-					// Remove both description_en and description_fr
-					const filtered = columnOrder.filter(c => c !== 'description_en' && c !== 'description_fr');
-					// Insert 'description' at the first original position
-					filtered.splice(descPos, 0, 'description');
-					columnOrder.length = 0;
-					columnOrder.push(...filtered);
-				}
+			} else if (obj.description && typeof obj.description === 'string') {
+				// Single string description
+				obj.description = {
+					en: obj.description,
+					fr: obj.description
+				};
+			} else if (!obj.description) {
+				obj.description = { en: '', fr: '' };
 			}
+			
+			// Clean up description_en/description_fr if they exist
+			delete obj.description_en;
+			delete obj.description_fr;
 			
 			// Fix arrays for categories and images
 			if (typeof obj.categories === 'string') {

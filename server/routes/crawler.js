@@ -4,6 +4,12 @@ import fetch from 'node-fetch';
 import { JSDOM } from 'jsdom';
 import { v4 as uuidv4 } from 'uuid';
 import { requireAuth } from '../middleware/auth.js';
+import { 
+	generateTabName, 
+	activityToSheetRow, 
+	getHeaders, 
+	ACTIVITIES_COLUMN_ORDER 
+} from '../utils/sheetsFormatter.js';
 
 export const crawlerRouter = express.Router();
 
@@ -350,22 +356,23 @@ crawlerRouter.post('/validate', requireAuth('admin'), async (req, res) => {
 			return res.status(400).json({ error: 'Website link column not found. Look for column with "lien", "site", "url", or "website" in name.' });
 		}
 
-		// Create version name
-		const version = `v${Date.now()}`;
-		const dateStr = new Date().toISOString().split('T')[0];
-		const sheetName = `${version}_${dateStr}`;
+		// Create standardized tab name
+		const sheetName = generateTabName('validated', 'crawler');
 
 		// Process activities
 		const results = [];
-		const updatedRows = [headers]; // Start with headers
+		const updatedRows = [];
+		
+		// Use standardized column order and headers
+		const standardHeaders = getHeaders(ACTIVITIES_COLUMN_ORDER);
+		updatedRows.push(standardHeaders);
 
 		for (let i = 1; i < rows.length; i++) {
 			const row = rows[i];
 			const websiteUrl = row[websiteLinkIndex];
 
 			if (!websiteUrl || !websiteUrl.startsWith('http')) {
-				// No valid URL, keep original row
-				updatedRows.push(row);
+				// No valid URL, skip
 				results.push({
 					row: i + 1,
 					url: websiteUrl || 'N/A',
@@ -375,11 +382,11 @@ crawlerRouter.post('/validate', requireAuth('admin'), async (req, res) => {
 				continue;
 			}
 
-			// Build existing data object
+			// Build existing data object from original row
 			const existing = {};
 			headers.forEach((header, idx) => {
-				if (header) {
-					existing[header] = row[idx] || '';
+				if (header && row[idx]) {
+					existing[header] = row[idx];
 				}
 			});
 
@@ -387,8 +394,7 @@ crawlerRouter.post('/validate', requireAuth('admin'), async (req, res) => {
 			const crawled = await extractWebsiteData(websiteUrl);
 
 			if (crawled.error) {
-				// Error crawling, keep original row
-				updatedRows.push(row);
+				// Error crawling, skip
 				results.push({
 					row: i + 1,
 					url: websiteUrl,
@@ -401,12 +407,39 @@ crawlerRouter.post('/validate', requireAuth('admin'), async (req, res) => {
 			// Merge data
 			const { merged, changes } = mergeData(existing, crawled, headers);
 
-			// Build updated row
-			const updatedRow = headers.map(header => {
-				if (!header) return '';
-				return merged[header] || row[headers.indexOf(header)] || '';
-			});
+			// Convert to activity object format
+			const activity = {
+				id: existing.id || uuidv4(),
+				title_en: merged['title_en'] || merged['Title EN'] || merged['title']?.en || '',
+				title_fr: merged['title_fr'] || merged['Title FR'] || merged['title']?.fr || '',
+				description_en: merged['description_en'] || merged['Description EN'] || merged['description']?.en || '',
+				description_fr: merged['description_fr'] || merged['Description FR'] || merged['description']?.fr || '',
+				categories: merged['categories'] || merged['Categories'] || [],
+				activityType: merged['activityType'] || merged['Type d\'activité'] || '',
+				ageMin: merged['ageMin'] || merged['Age Min'] || 0,
+				ageMax: merged['ageMax'] || merged['Age Max'] || 99,
+				price_amount: merged['price_amount'] || merged['price']?.amount || merged['Price'] || 0,
+				currency: merged['currency'] || merged['price']?.currency || 'EUR',
+				neighborhood: merged['neighborhood'] || merged['Neighborhood'] || merged['Quartier'] || '',
+				addresses: merged['addresses'] || merged['Addresses'] || merged['Adresses'] || '',
+				contactEmail: merged['contactEmail'] || merged['Contact Email'] || '',
+				contactPhone: merged['contactPhone'] || merged['Contact Phone'] || '',
+				websiteLink: websiteUrl,
+				registrationLink: merged['registrationLink'] || merged['Registration Link'] || '',
+				disponibiliteJours: merged['disponibiliteJours'] || merged['Disponibilité (jours)'] || '',
+				disponibiliteDates: merged['disponibiliteDates'] || merged['Disponibilité (dates)'] || '',
+				images: merged['images'] || merged['Images'] || [],
+				adults: merged['adults'] || merged['Adults'] || false,
+				additionalNotes: merged['additionalNotes'] || merged['Additional Notes'] || '',
+				approvalStatus: merged['approvalStatus'] || 'approved',
+				providerId: merged['providerId'] || merged['Provider'] || '',
+				createdAt: merged['createdAt'] || new Date().toISOString(),
+				updatedAt: new Date().toISOString()
+			};
 
+			// Convert to sheet row format
+			const sheetRow = activityToSheetRow(activity, ACTIVITIES_COLUMN_ORDER);
+			const updatedRow = ACTIVITIES_COLUMN_ORDER.map(col => sheetRow[col] || '');
 			updatedRows.push(updatedRow);
 
 			results.push({
@@ -536,11 +569,11 @@ crawlerRouter.get('/status', requireAuth('admin'), async (req, res) => {
 			spreadsheetId: sheetId
 		});
 
-		// Find versioned sheets (format: v{timestamp}_{date})
+		// Find validated sheets (format: "Validated - YYYY-MM-DD - Crawler")
 		const versionedSheets = spreadsheet.data.sheets
 			.filter(sheet => {
 				const title = sheet.properties.title;
-				return /^v\d+_\d{4}-\d{2}-\d{2}$/.test(title);
+				return /^Validated - \d{4}-\d{2}-\d{2} -/.test(title);
 			})
 			.map(sheet => ({
 				name: sheet.properties.title,

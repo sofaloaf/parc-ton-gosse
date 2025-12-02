@@ -4,6 +4,12 @@ import fetch from 'node-fetch';
 import { JSDOM } from 'jsdom';
 import { v4 as uuidv4 } from 'uuid';
 import { requireAuth } from '../middleware/auth.js';
+import { 
+	generateTabName, 
+	activityToSheetRow, 
+	getHeaders, 
+	ACTIVITIES_COLUMN_ORDER 
+} from '../utils/sheetsFormatter.js';
 
 export const arrondissementCrawlerRouter = express.Router();
 
@@ -797,12 +803,10 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 		// Save pending activities
 		if (pendingActivities.length > 0) {
 			try {
-				// Create unique sheet name with timestamp to avoid duplicates
-				const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('.')[0];
-				const pendingSheetName = `Pending_${timestamp}`;
+				// Create standardized tab name
+				let finalSheetName = generateTabName('pending', 'arrondissement-crawler');
 				
 				// Check if sheet already exists and create with unique name if needed
-				let finalSheetName = pendingSheetName;
 				try {
 					await sheets.spreadsheets.batchUpdate({
 						spreadsheetId: sheetId,
@@ -817,10 +821,10 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 						}
 					});
 				} catch (sheetError) {
-					// If sheet exists, add a random suffix
+					// If sheet exists, add a timestamp suffix
 					if (sheetError.message && sheetError.message.includes('already exists')) {
-						const randomSuffix = Math.random().toString(36).substring(2, 8);
-						finalSheetName = `Pending_${timestamp}_${randomSuffix}`;
+						const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('.')[0].split('T')[1];
+						finalSheetName = `Pending - ${new Date().toISOString().split('T')[0]} - Arrondissement Crawler (${timestamp})`;
 						await sheets.spreadsheets.batchUpdate({
 							spreadsheetId: sheetId,
 							requestBody: {
@@ -838,26 +842,45 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 					}
 				}
 
-				// Get headers from existing activities
-				const activitiesResponse = await sheets.spreadsheets.values.get({
-					spreadsheetId: sheetId,
-					range: 'Activities!A1:Z1'
-				});
-				const headers = activitiesResponse.data.values?.[0] || [
-					'id', 'title', 'description', 'categories', 'ageMin', 'ageMax', 
-					'price', 'addresses', 'contactEmail', 'contactPhone', 'images', 
-					'neighborhood', 'websiteLink', 'approvalStatus', 'crawledAt', 'createdAt', 'updatedAt'
-				];
+				// Use standardized column order and headers
+				const standardHeaders = getHeaders(ACTIVITIES_COLUMN_ORDER);
 
-				// Convert activities to rows
-				const rows = [headers];
+				// Convert activities to sheet rows
+				const rows = [standardHeaders];
 				pendingActivities.forEach(activity => {
-					const row = headers.map(header => {
-						const value = activity[header];
-						if (value === null || value === undefined) return '';
-						if (typeof value === 'object') return JSON.stringify(value);
-						return String(value);
-					});
+					// Convert activity to sheet format
+					const sheetActivity = {
+						id: activity.id,
+						title_en: activity.title?.en || activity.title || '',
+						title_fr: activity.title?.fr || activity.title || '',
+						description_en: activity.description?.en || activity.description || '',
+						description_fr: activity.description?.fr || activity.description || '',
+						categories: activity.categories || [],
+						activityType: activity.activityType || '',
+						ageMin: activity.ageMin || 0,
+						ageMax: activity.ageMax || 99,
+						price_amount: activity.price?.amount || 0,
+						currency: activity.price?.currency || 'EUR',
+						neighborhood: activity.neighborhood || '',
+						addresses: activity.addresses || '',
+						contactEmail: activity.contactEmail || '',
+						contactPhone: activity.contactPhone || '',
+						websiteLink: activity.websiteLink || '',
+						registrationLink: activity.registrationLink || '',
+						disponibiliteJours: activity.disponibiliteJours || '',
+						disponibiliteDates: activity.disponibiliteDates || '',
+						images: activity.images || [],
+						adults: activity.adults || false,
+						additionalNotes: activity.additionalNotes || '',
+						approvalStatus: activity.approvalStatus || 'pending',
+						crawledAt: activity.crawledAt || new Date().toISOString(),
+						providerId: activity.providerId || '',
+						createdAt: activity.createdAt || new Date().toISOString(),
+						updatedAt: activity.updatedAt || new Date().toISOString()
+					};
+					
+					const sheetRow = activityToSheetRow(sheetActivity, ACTIVITIES_COLUMN_ORDER);
+					const row = ACTIVITIES_COLUMN_ORDER.map(col => sheetRow[col] || '');
 					rows.push(row);
 				});
 

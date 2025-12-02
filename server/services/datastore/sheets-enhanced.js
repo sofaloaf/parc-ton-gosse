@@ -350,7 +350,7 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 		});
 		
 		// Process rows
-		const processedRows = rows.slice(1).map(row => {
+		const processedRows = rows.slice(1).map((row, rowIndex) => {
 			const obj = { id: null };
 			const columnOrder = [...masterColumnOrder]; // Use master column order as base
 			
@@ -358,9 +358,9 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 				const fieldName = columnMap[i];
 				let val = row[i] || '';
 				
-				// Handle ID specially
+				// Handle ID specially - be more lenient
 				if (fieldName === 'id') {
-					obj.id = val;
+					obj.id = val || null;
 				}
 				// Handle JSON fields
 				else if (val && (val.startsWith('{') || val.startsWith('['))) {
@@ -434,9 +434,32 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 				obj.images = [];
 			}
 			
-			// Fix price object
-			if (typeof obj.price === 'number') {
-				obj.price = { amount: obj.price, currency: 'eur' };
+			// Fix price object - handle both old and new formats
+			if (obj.price_amount !== undefined || obj.price_amount !== null) {
+				// New format: price_amount and currency as separate columns
+				const amount = typeof obj.price_amount === 'string' ? parseFloat(obj.price_amount) || 0 : (obj.price_amount || 0);
+				const currency = obj.currency || 'EUR';
+				obj.price = { amount, currency };
+				delete obj.price_amount;
+				delete obj.currency;
+			} else if (typeof obj.price === 'number') {
+				// Old format: price as a number
+				obj.price = { amount: obj.price, currency: 'EUR' };
+			} else if (typeof obj.price === 'string') {
+				// Try to parse price string (e.g., "1500 EUR" or "1500")
+				const priceMatch = obj.price.match(/(\d+)\s*(\w+)?/);
+				if (priceMatch) {
+					obj.price = {
+						amount: parseInt(priceMatch[1]),
+						currency: priceMatch[2]?.toUpperCase() || 'EUR'
+					};
+				} else {
+					// Fallback
+					obj.price = { amount: 0, currency: 'EUR' };
+				}
+			} else if (!obj.price || typeof obj.price !== 'object') {
+				// No price found, set default
+				obj.price = { amount: 0, currency: 'EUR' };
 			}
 			
 			// Auto-fill neighborhood from addresses if missing
@@ -503,10 +526,29 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			// Store column order as metadata (will be used by frontend)
 			obj._columnOrder = columnOrder;
 			
+			// Generate ID if missing (for backward compatibility)
+			if (!obj.id) {
+				// Try to generate from other fields or use row index
+				const title = obj.title?.en || obj.title?.fr || obj.title_en || obj.title_fr || '';
+				if (title) {
+					// Generate a simple ID from title
+					obj.id = uuidv4(); // Use UUID for new IDs
+				} else {
+					// Skip rows that have no identifying information
+					return null;
+				}
+			}
+			
 			return obj;
-		});
+		}).filter(row => row !== null); // Filter out null rows
 		
-		return processedRows.filter(row => row.id); // Only return rows with IDs
+		// Return all rows, but log if some are missing IDs
+		const rowsWithoutId = processedRows.filter(row => !row.id);
+		if (rowsWithoutId.length > 0) {
+			console.warn(`⚠️ Found ${rowsWithoutId.length} rows without IDs in ${sheetName}, generated IDs for them`);
+		}
+		
+		return processedRows;
 	} catch (e) {
 		if (e.message?.includes('Unable to parse range')) {
 			return [];

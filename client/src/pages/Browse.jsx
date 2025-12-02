@@ -79,34 +79,55 @@ export default function Browse() {
 			}
 		};
 		
-		fetchWithRetry(`/activities${qs ? `?${qs}` : ''}`).then(async (data) => {
-			const activitiesList = Array.isArray(data) ? data : [];
-			setActivities(activitiesList);
-			setError(null);
-			console.log(`✅ Loaded ${activitiesList.length} activities`);
-			
-			// Batch fetch ratings for all activities (limit to first 50 to avoid too many requests)
-			if (activitiesList.length > 0) {
-				const activitiesToFetch = activitiesList.slice(0, 50);
-				const ratingPromises = activitiesToFetch.map(activity =>
-					api(`/reviews/activity/${activity.id}/rating`)
-						.then(rating => ({ activityId: activity.id, rating }))
-						.catch(() => ({ activityId: activity.id, rating: { average: 0, count: 0 } }))
-				);
+		fetchWithRetry(`/activities${qs ? `?${qs}` : ''}`)
+			.then((data) => {
+				const activitiesList = Array.isArray(data) ? data : [];
+				setActivities(activitiesList);
+				setError(null);
+				setLoading(false);
+				console.log(`✅ Loaded ${activitiesList.length} activities`);
 				
-				try {
-					const ratingResults = await Promise.all(ratingPromises);
-					const ratingsMap = {};
-					ratingResults.forEach(({ activityId, rating }) => {
-						ratingsMap[activityId] = rating;
-					});
-					setRatings(ratingsMap);
-				} catch (err) {
-					console.warn('Failed to fetch some ratings:', err);
-					// Continue without ratings rather than failing completely
+				// Batch fetch ratings asynchronously in background (non-blocking)
+				// Only fetch for visible activities to reduce load
+				if (activitiesList.length > 0) {
+					// Use requestIdleCallback if available, otherwise setTimeout
+					const fetchRatings = () => {
+						const activitiesToFetch = activitiesList.slice(0, 20); // Reduced to 20 to prevent overload
+						const ratingPromises = activitiesToFetch.map(activity =>
+							api(`/reviews/activity/${activity.id}/rating`)
+								.then(rating => ({ activityId: activity.id, rating }))
+								.catch(() => null) // Return null on error, filter out later
+						);
+						
+						Promise.all(ratingPromises)
+							.then(ratingResults => {
+								const ratingsMap = {};
+								ratingResults
+									.filter(result => result && result.rating && result.rating.count > 0)
+									.forEach(({ activityId, rating }) => {
+										ratingsMap[activityId] = rating;
+									});
+								if (Object.keys(ratingsMap).length > 0) {
+									setRatings(prev => ({ ...prev, ...ratingsMap }));
+								}
+							})
+							.catch(err => {
+								// Silent fail - ratings are optional
+								if (process.env.NODE_ENV === 'development') {
+									console.warn('Failed to fetch ratings (non-critical):', err);
+								}
+							});
+					};
+					
+					// Use requestIdleCallback for better performance, fallback to setTimeout
+					if (typeof window.requestIdleCallback === 'function') {
+						window.requestIdleCallback(fetchRatings, { timeout: 2000 });
+					} else {
+						setTimeout(fetchRatings, 1000);
+					}
 				}
-			}
-		}).catch((err) => {
+			})
+			.catch((err) => {
 			// Always log errors for debugging
 			console.error('❌ Error fetching activities:', {
 				message: err.message,
@@ -115,7 +136,6 @@ export default function Browse() {
 			});
 			setActivities([]);
 			setError(getErrorMessage(err));
-		}).finally(() => {
 			setLoading(false);
 		});
 	}, [params, locale]);

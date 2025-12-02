@@ -11,6 +11,7 @@ import CardViewCounter from '../components/CardViewCounter.jsx';
 export default function Browse() {
 	const { locale, t } = useI18n();
 	const [activities, setActivities] = useState([]);
+	const [ratings, setRatings] = useState({}); // Map of activityId -> {average, count}
 	const [params, setParams] = useState({});
 	const [viewMode, setViewMode] = useState('cards');
 	const [loading, setLoading] = useState(true);
@@ -78,10 +79,33 @@ export default function Browse() {
 			}
 		};
 		
-		fetchWithRetry(`/activities${qs ? `?${qs}` : ''}`).then((data) => {
-			setActivities(Array.isArray(data) ? data : []);
+		fetchWithRetry(`/activities${qs ? `?${qs}` : ''}`).then(async (data) => {
+			const activitiesList = Array.isArray(data) ? data : [];
+			setActivities(activitiesList);
 			setError(null);
-			console.log(`✅ Loaded ${data.length} activities`);
+			console.log(`✅ Loaded ${activitiesList.length} activities`);
+			
+			// Batch fetch ratings for all activities (limit to first 50 to avoid too many requests)
+			if (activitiesList.length > 0) {
+				const activitiesToFetch = activitiesList.slice(0, 50);
+				const ratingPromises = activitiesToFetch.map(activity =>
+					api(`/reviews/activity/${activity.id}/rating`)
+						.then(rating => ({ activityId: activity.id, rating }))
+						.catch(() => ({ activityId: activity.id, rating: { average: 0, count: 0 } }))
+				);
+				
+				try {
+					const ratingResults = await Promise.all(ratingPromises);
+					const ratingsMap = {};
+					ratingResults.forEach(({ activityId, rating }) => {
+						ratingsMap[activityId] = rating;
+					});
+					setRatings(ratingsMap);
+				} catch (err) {
+					console.warn('Failed to fetch some ratings:', err);
+					// Continue without ratings rather than failing completely
+				}
+			}
 		}).catch((err) => {
 			// Always log errors for debugging
 			console.error('❌ Error fetching activities:', {
@@ -296,6 +320,7 @@ export default function Browse() {
 														key={a.id} 
 														activity={a} 
 														locale={locale}
+														rating={ratings[a.id] || { average: 0, count: 0 }}
 														onView={() => onCardView && onCardView(a.id)}
 													/>
 												))}

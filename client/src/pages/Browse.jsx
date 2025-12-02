@@ -86,36 +86,6 @@ export default function Browse() {
 			setError(null);
 			setLoading(false);
 			console.log(`✅ Loaded ${activitiesList.length} activities`);
-			
-			// Fetch ratings using batch endpoint (more efficient)
-			if (activitiesList.length > 0) {
-				// Fetch in background after a delay to not block initial render
-				setTimeout(() => {
-					const activityIds = activitiesList.slice(0, 50).map(a => a.id);
-					api('/reviews/activities/ratings', {
-						method: 'POST',
-						body: { activityIds }
-					})
-						.then(ratingsMap => {
-							// Filter out ratings with 0 count
-							const filtered = {};
-							Object.entries(ratingsMap).forEach(([id, rating]) => {
-								if (rating.count > 0) {
-									filtered[id] = rating;
-								}
-							});
-							if (Object.keys(filtered).length > 0) {
-								setRatings(prev => ({ ...prev, ...filtered }));
-							}
-						})
-						.catch(err => {
-							// Silent fail - ratings are optional
-							if (process.env.NODE_ENV === 'development') {
-								console.warn('Failed to fetch ratings (non-critical):', err);
-							}
-						});
-				}, 1000);
-			}
 			})
 			.catch((err) => {
 			// Always log errors for debugging
@@ -134,34 +104,34 @@ export default function Browse() {
 	useEffect(() => {
 		if (activities.length === 0) return;
 		
-		// Delay rating fetch to ensure activities are displayed first
-		const timeoutId = setTimeout(() => {
-			const activityIds = activities.slice(0, 50).map(a => a.id);
-			api('/reviews/activities/ratings', {
-				method: 'POST',
-				body: { activityIds }
-			})
-				.then(ratingsMap => {
-					const filtered = {};
-					Object.entries(ratingsMap).forEach(([id, rating]) => {
-						if (rating.count > 0) {
-							filtered[id] = rating;
-						}
-					});
-					if (Object.keys(filtered).length > 0) {
-						setRatings(prev => ({ ...prev, ...filtered }));
-					}
-				})
-				.catch(err => {
-					// Silent fail - ratings are optional and don't block activities display
-					if (process.env.NODE_ENV === 'development') {
-						console.warn('Failed to fetch ratings (non-critical):', err);
+		// Fetch ratings in background after activities load - limit to first 20 to avoid too many requests
+		const activitiesToFetch = activities.slice(0, 20);
+		const ratingPromises = activitiesToFetch.map(activity =>
+			api(`/reviews/activity/${activity.id}/rating`)
+				.then(rating => ({ activityId: activity.id, rating }))
+				.catch(() => ({ activityId: activity.id, rating: { average: 0, count: 0 } }))
+		);
+		
+		// Use Promise.allSettled to ensure all requests complete even if some fail
+		Promise.allSettled(ratingPromises)
+			.then(results => {
+				const ratingsMap = {};
+				results.forEach((result) => {
+					if (result.status === 'fulfilled' && result.value.rating.count > 0) {
+						ratingsMap[result.value.activityId] = result.value.rating;
 					}
 				});
-		}, 2000); // 2 second delay to ensure activities are displayed first
-		
-		return () => clearTimeout(timeoutId);
-	}, [activities.length]); // Only fetch when activities count changes
+				if (Object.keys(ratingsMap).length > 0) {
+					setRatings(prev => ({ ...prev, ...ratingsMap }));
+				}
+			})
+			.catch(err => {
+				// Silent fail - ratings are optional and don't block activities display
+				if (process.env.NODE_ENV === 'development') {
+					console.warn('Failed to fetch some ratings (non-critical):', err);
+				}
+			});
+	}, [activities]);
 
 	return (
 		<CardViewCounter>

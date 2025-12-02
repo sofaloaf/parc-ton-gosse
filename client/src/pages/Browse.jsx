@@ -81,51 +81,15 @@ export default function Browse() {
 		
 		fetchWithRetry(`/activities${qs ? `?${qs}` : ''}`)
 			.then((data) => {
-				const activitiesList = Array.isArray(data) ? data : [];
-				setActivities(activitiesList);
-				setError(null);
-				setLoading(false);
-				console.log(`✅ Loaded ${activitiesList.length} activities`);
-				
-				// Batch fetch ratings asynchronously in background (non-blocking)
-				// Only fetch for visible activities to reduce load
-				if (activitiesList.length > 0) {
-					// Use requestIdleCallback if available, otherwise setTimeout
-					const fetchRatings = () => {
-						const activitiesToFetch = activitiesList.slice(0, 20); // Reduced to 20 to prevent overload
-						const ratingPromises = activitiesToFetch.map(activity =>
-							api(`/reviews/activity/${activity.id}/rating`)
-								.then(rating => ({ activityId: activity.id, rating }))
-								.catch(() => null) // Return null on error, filter out later
-						);
-						
-						Promise.all(ratingPromises)
-							.then(ratingResults => {
-								const ratingsMap = {};
-								ratingResults
-									.filter(result => result && result.rating && result.rating.count > 0)
-									.forEach(({ activityId, rating }) => {
-										ratingsMap[activityId] = rating;
-									});
-								if (Object.keys(ratingsMap).length > 0) {
-									setRatings(prev => ({ ...prev, ...ratingsMap }));
-								}
-							})
-							.catch(err => {
-								// Silent fail - ratings are optional
-								if (process.env.NODE_ENV === 'development') {
-									console.warn('Failed to fetch ratings (non-critical):', err);
-								}
-							});
-					};
-					
-					// Use requestIdleCallback for better performance, fallback to setTimeout
-					if (typeof window.requestIdleCallback === 'function') {
-						window.requestIdleCallback(fetchRatings, { timeout: 2000 });
-					} else {
-						setTimeout(fetchRatings, 1000);
-					}
-				}
+			const activitiesList = Array.isArray(data) ? data : [];
+			setActivities(activitiesList);
+			setError(null);
+			setLoading(false);
+			console.log(`✅ Loaded ${activitiesList.length} activities`);
+			
+			// NOTE: Ratings fetching disabled temporarily to prevent API overload
+			// Will be re-enabled once we verify activities loading is stable
+			// Ratings will show as 0 stars until we can safely fetch them
 			})
 			.catch((err) => {
 			// Always log errors for debugging

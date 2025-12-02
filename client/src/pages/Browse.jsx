@@ -81,23 +81,23 @@ export default function Browse() {
 		
 		fetchWithRetry(`/activities${qs ? `?${qs}` : ''}`)
 			.then((data) => {
-			const activitiesList = Array.isArray(data) ? data : [];
-			setActivities(activitiesList);
-			setError(null);
-			setLoading(false);
-			console.log(`✅ Loaded ${activitiesList.length} activities`);
+				const activitiesList = Array.isArray(data) ? data : [];
+				setActivities(activitiesList);
+				setError(null); // Clear any previous errors
+				setLoading(false);
+				console.log(`✅ Loaded ${activitiesList.length} activities`);
 			})
 			.catch((err) => {
-			// Always log errors for debugging
-			console.error('❌ Error fetching activities:', {
-				message: err.message,
-				url: `/activities${qs ? `?${qs}` : ''}`,
-				timestamp: new Date().toISOString()
+				// Always log errors for debugging
+				console.error('❌ Error fetching activities:', {
+					message: err.message,
+					url: `/activities${qs ? `?${qs}` : ''}`,
+					timestamp: new Date().toISOString()
+				});
+				setActivities([]);
+				setError(getErrorMessage(err));
+				setLoading(false);
 			});
-			setActivities([]);
-			setError(getErrorMessage(err));
-			setLoading(false);
-		});
 	}, [params, locale]);
 
 	// Separate effect to fetch ratings after activities are loaded (non-blocking)

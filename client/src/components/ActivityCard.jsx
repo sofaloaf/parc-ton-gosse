@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { translateCategories } from '../utils/categoryTranslations.js';
 import { formatTitle } from '../utils/textFormatting.js';
+import { getCategoryIcon } from '../utils/categoryIcons.js';
 
 export default function ActivityCard({ activity, locale, onView }) {
 	const cardRef = useRef(null);
@@ -147,9 +148,10 @@ export default function ActivityCard({ activity, locale, onView }) {
 						alignItems: 'center',
 						justifyContent: 'center',
 						color: 'white',
-						fontSize: '48px'
+						fontSize: '64px',
+						fontWeight: 'normal'
 					}}>
-						🎨
+						{getCategoryIcon(activity.categories || categories)}
 					</div>
 				)}
 				

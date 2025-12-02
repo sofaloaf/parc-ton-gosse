@@ -1,10 +1,13 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { translateCategories } from '../utils/categoryTranslations.js';
 import { formatTitle } from '../utils/textFormatting.js';
 import { getCategoryIcons } from '../utils/categoryIcons.js';
+import StarRating from './StarRating.jsx';
+import { api } from '../shared/api.js';
 
 export default function ActivityCard({ activity, locale, onView }) {
+	const [rating, setRating] = useState({ average: 0, count: 0 });
 	const cardRef = useRef(null);
 	const hasTracked = useRef(false);
 	const observerRef = useRef(null);
@@ -55,6 +58,14 @@ export default function ActivityCard({ activity, locale, onView }) {
 			}
 		};
 	}, [onView]);
+	
+	// Fetch rating for this activity
+	useEffect(() => {
+		api(`/reviews/activity/${activity.id}/rating`)
+			.then(data => setRating(data))
+			.catch(() => setRating({ average: 0, count: 0 }));
+	}, [activity.id]);
+	
 	const title = formatTitle(activity.title, locale);
 	const desc = activity.description?.[locale] || activity.description?.en || activity.description?.fr;
 	const addressStr = activity.addresses || activity.addresse || '';
@@ -169,20 +180,31 @@ export default function ActivityCard({ activity, locale, onView }) {
 					gap: '12px',
 					flex: 1
 				}}>
-					{/* Title */}
-					<h3 style={{ 
-						margin: 0, 
-						fontSize: '20px',
-						fontWeight: 700,
-						color: '#1e293b',
-						lineHeight: '1.3',
-						display: '-webkit-box',
-						WebkitLineClamp: 2,
-						WebkitBoxOrient: 'vertical',
-						overflow: 'hidden'
-					}}>
-						{title}
-					</h3>
+					{/* Title and Rating */}
+					<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+						<h3 style={{ 
+							margin: 0, 
+							fontSize: '20px',
+							fontWeight: 700,
+							color: '#1e293b',
+							lineHeight: '1.3',
+							display: '-webkit-box',
+							WebkitLineClamp: 2,
+							WebkitBoxOrient: 'vertical',
+							overflow: 'hidden',
+							flex: 1
+						}}>
+							{title}
+						</h3>
+						{rating.count > 0 && (
+							<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', flexShrink: 0 }}>
+								<StarRating rating={rating.average} size="small" />
+								<span style={{ fontSize: '11px', color: '#64748b' }}>
+									({rating.count})
+								</span>
+							</div>
+						)}
+					</div>
 					
 					{/* Description */}
 					{desc && (

@@ -4,11 +4,60 @@ import { requireAuth } from '../middleware/auth.js';
 
 export const reviewsRouter = express.Router();
 
+// Get all reviews
 reviewsRouter.get('/', async (req, res) => {
 	const store = req.app.get('dataStore');
 	res.json(await store.reviews.list());
 });
 
+// Get reviews for a specific activity
+reviewsRouter.get('/activity/:activityId', async (req, res) => {
+	const store = req.app.get('dataStore');
+	const allReviews = await store.reviews.list();
+	const activityReviews = allReviews.filter(r => r.activityId === req.params.activityId && (r.status === 'approved' || !r.status));
+	res.json(activityReviews);
+});
+
+// Get average rating for an activity
+reviewsRouter.get('/activity/:activityId/rating', async (req, res) => {
+	const store = req.app.get('dataStore');
+	const allReviews = await store.reviews.list();
+	const activityReviews = allReviews.filter(r => 
+		r.activityId === req.params.activityId && 
+		(r.status === 'approved' || !r.status) &&
+		r.rating != null
+	);
+	
+	if (activityReviews.length === 0) {
+		return res.json({ average: 0, count: 0 });
+	}
+	
+	const sum = activityReviews.reduce((acc, r) => acc + (Number(r.rating) || 0), 0);
+	const average = sum / activityReviews.length;
+	
+	res.json({ 
+		average: Math.round(average * 10) / 10, // Round to 1 decimal
+		count: activityReviews.length 
+	});
+});
+
+// Get user's review for an activity (if exists)
+reviewsRouter.get('/activity/:activityId/user', requireAuth(null), async (req, res) => {
+	const store = req.app.get('dataStore');
+	const allReviews = await store.reviews.list();
+	const userReview = allReviews.find(r => 
+		r.activityId === req.params.activityId && 
+		(r.parentId === req.user.id || r.userId === req.user.id)
+	);
+	
+	if (!userReview) {
+		return res.status(404).json({ error: 'Not found' });
+	}
+	
+	res.json(userReview);
+});
+
+// Get single review
 reviewsRouter.get('/:id', async (req, res) => {
 	const store = req.app.get('dataStore');
 	const item = await store.reviews.get(req.params.id);
@@ -16,12 +65,52 @@ reviewsRouter.get('/:id', async (req, res) => {
 	res.json(item);
 });
 
-reviewsRouter.post('/', requireAuth('parent'), async (req, res) => {
+// Create or update review (any authenticated user can rate)
+reviewsRouter.post('/', requireAuth(null), async (req, res) => {
 	const store = req.app.get('dataStore');
+	const { activityId, rating, comment } = req.body;
+	
+	if (!activityId || !rating) {
+		return res.status(400).json({ error: 'activityId and rating are required' });
+	}
+	
+	if (rating < 1 || rating > 5) {
+		return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+	}
+	
+	// Check if user already reviewed this activity
+	const allReviews = await store.reviews.list();
+	const existingReview = allReviews.find(r => 
+		r.activityId === activityId && 
+		(r.parentId === req.user.id || r.userId === req.user.id)
+	);
+	
 	const now = new Date().toISOString();
-	const review = { id: uuidv4(), status: 'pending', ...req.body, createdAt: now, updatedAt: now };
-	const created = await store.reviews.create(review);
-	res.status(201).json(created);
+	
+	if (existingReview) {
+		// Update existing review
+		const updated = await store.reviews.update(existingReview.id, {
+			rating: Number(rating),
+			comment: comment || existingReview.comment || '',
+			updatedAt: now
+		});
+		res.json(updated);
+	} else {
+		// Create new review
+		const review = {
+			id: uuidv4(),
+			activityId,
+			parentId: req.user.id,
+			userId: req.user.id,
+			rating: Number(rating),
+			comment: comment || '',
+			status: 'approved', // Auto-approve ratings (can be moderated later if needed)
+			createdAt: now,
+			updatedAt: now
+		};
+		const created = await store.reviews.create(review);
+		res.status(201).json(created);
+	}
 });
 
 // Moderation

@@ -26,7 +26,8 @@ export function requireAuth(requiredRole) {
 		try {
 			const decoded = jwt.verify(token, JWT_SECRET_FINAL);
 			req.user = decoded;
-			if (requiredRole && !hasRole(decoded, requiredRole)) {
+			// If requiredRole is null/undefined, allow any authenticated user
+			if (requiredRole != null && !hasRole(decoded, requiredRole)) {
 				return res.status(403).json({ error: 'Forbidden' });
 			}
 			next();

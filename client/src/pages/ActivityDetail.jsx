@@ -1,23 +1,53 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useI18n } from '../shared/i18n.jsx';
 import { api } from '../shared/api.js';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
 import { translateCategories } from '../utils/categoryTranslations.js';
 import { formatTitle } from '../utils/textFormatting.js';
+import StarRating from '../components/StarRating.jsx';
 
 export default function ActivityDetail() {
 	const { id } = useParams();
 	const { locale, t } = useI18n();
+	const navigate = useNavigate();
 	const [activity, setActivity] = useState(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState(null);
+	const [rating, setRating] = useState({ average: 0, count: 0 });
+	const [userRating, setUserRating] = useState(null);
+	const [user, setUser] = useState(null);
+	const [submittingRating, setSubmittingRating] = useState(false);
 
+	// Check if user is logged in
+	useEffect(() => {
+		api('/me')
+			.then(data => setUser(data.user))
+			.catch(() => setUser(null));
+	}, []);
+	
+	// Load activity and ratings
 	useEffect(() => {
 		setLoading(true);
 		setError(null);
-		api(`/activities/${id}`)
-			.then(setActivity)
+		
+		Promise.all([
+			api(`/activities/${id}`).catch(err => { throw err; }),
+			api(`/reviews/activity/${id}/rating`).catch(() => ({ average: 0, count: 0 })),
+			api('/me').then(data => data.user).catch(() => null)
+		])
+			.then(([activityData, ratingData, userData]) => {
+				setActivity(activityData);
+				setRating(ratingData);
+				setUser(userData);
+				
+				// If user is logged in, check if they've already rated
+				if (userData) {
+					api(`/reviews/activity/${id}/user`)
+						.then(review => setUserRating(review.rating))
+						.catch(() => setUserRating(null));
+				}
+			})
 			.catch((err) => {
 				setError(err.message || 'Failed to load activity');
 			})
@@ -25,6 +55,49 @@ export default function ActivityDetail() {
 				setLoading(false);
 			});
 	}, [id]);
+	
+	// Reload rating when user rating changes
+	useEffect(() => {
+		if (user) {
+			api(`/reviews/activity/${id}/user`)
+				.then(review => setUserRating(review.rating))
+				.catch(() => setUserRating(null));
+		}
+		api(`/reviews/activity/${id}/rating`)
+			.then(data => setRating(data))
+			.catch(() => setRating({ average: 0, count: 0 }));
+	}, [id, user, submittingRating]);
+	
+	const handleRate = async (newRating) => {
+		if (!user) {
+			// Redirect to login
+			navigate('/profile');
+			return;
+		}
+		
+		setSubmittingRating(true);
+		try {
+			await api('/reviews', {
+				method: 'POST',
+				body: {
+					activityId: id,
+					rating: newRating,
+					comment: ''
+				}
+			});
+			setUserRating(newRating);
+			// Reload rating stats
+			const ratingData = await api(`/reviews/activity/${id}/rating`);
+			setRating(ratingData);
+		} catch (err) {
+			console.error('Failed to submit rating:', err);
+			alert(locale === 'fr' 
+				? 'Impossible d\'enregistrer votre note. Veuillez réessayer.'
+				: 'Failed to save rating. Please try again.');
+		} finally {
+			setSubmittingRating(false);
+		}
+	};
 
 	if (loading) {
 		return <LoadingSpinner message={locale === 'fr' ? 'Chargement...' : 'Loading...'} />;
@@ -100,7 +173,87 @@ export default function ActivityDetail() {
 	
 	return (
 		<div style={{ display: 'grid', gap: 20, maxWidth: '900px' }}>
-			<h1>{title}</h1>
+			<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px', flexWrap: 'wrap' }}>
+				<h1 style={{ margin: 0, flex: 1 }}>{title}</h1>
+				{rating.count > 0 && (
+					<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+							<StarRating rating={rating.average} size="large" />
+							<span style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b' }}>
+								{rating.average.toFixed(1)}
+							</span>
+						</div>
+						<span style={{ fontSize: '14px', color: '#64748b' }}>
+							{rating.count} {rating.count === 1 
+								? (locale === 'fr' ? 'avis' : 'review')
+								: (locale === 'fr' ? 'avis' : 'reviews')}
+						</span>
+					</div>
+				)}
+			</div>
+			
+			{/* User Rating Section */}
+			{user && (
+				<div style={{
+					padding: '20px',
+					background: '#f8fafc',
+					borderRadius: '12px',
+					border: '1px solid #e2e8f0'
+				}}>
+					<h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 600, color: '#1e293b' }}>
+						{locale === 'fr' ? 'Votre note' : 'Your Rating'}
+					</h3>
+					<div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+						<StarRating 
+							rating={userRating || 0} 
+							onRate={handleRate}
+							interactive={true}
+							size="large"
+						/>
+						{userRating && (
+							<span style={{ fontSize: '14px', color: '#64748b' }}>
+								{locale === 'fr' ? 'Vous avez noté' : 'You rated'} {userRating} {locale === 'fr' ? 'étoiles' : 'stars'}
+							</span>
+						)}
+						{submittingRating && (
+							<span style={{ fontSize: '14px', color: '#64748b' }}>
+								{locale === 'fr' ? 'Enregistrement...' : 'Saving...'}
+							</span>
+						)}
+					</div>
+				</div>
+			)}
+			
+			{!user && (
+				<div style={{
+					padding: '16px',
+					background: '#eff6ff',
+					borderRadius: '12px',
+					border: '1px solid #bfdbfe',
+					textAlign: 'center'
+				}}>
+					<p style={{ margin: '0 0 12px 0', color: '#1e40af', fontSize: '14px' }}>
+						{locale === 'fr' 
+							? 'Connectez-vous pour noter cette activité'
+							: 'Sign in to rate this activity'}
+					</p>
+					<Link 
+						to="/profile"
+						style={{
+							display: 'inline-block',
+							padding: '8px 16px',
+							background: '#3b82f6',
+							color: 'white',
+							textDecoration: 'none',
+							borderRadius: '8px',
+							fontSize: '14px',
+							fontWeight: 500
+						}}
+					>
+						{locale === 'fr' ? 'Se connecter' : 'Sign In'}
+					</Link>
+				</div>
+			)}
 			
 			{/* Images */}
 			{Array.isArray(activity.images) && activity.images.length > 0 && (

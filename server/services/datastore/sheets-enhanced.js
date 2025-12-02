@@ -467,7 +467,7 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			}
 			
 			// Fix price object - handle both old and new formats
-			if (obj.price_amount !== undefined || obj.price_amount !== null) {
+			if (obj.price_amount !== undefined && obj.price_amount !== null && obj.price_amount !== '') {
 				// New format: price_amount and currency as separate columns
 				const amount = typeof obj.price_amount === 'string' ? parseFloat(obj.price_amount) || 0 : (obj.price_amount || 0);
 				const currency = obj.currency || 'EUR';
@@ -559,31 +559,59 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			obj._columnOrder = columnOrder;
 			
 			// Generate ID if missing (for backward compatibility)
+			// Be very lenient - only skip completely empty rows
 			if (!obj.id) {
-				// Try to generate from other fields or use row index
-				const title = obj.title?.en || obj.title?.fr || obj.title_en || obj.title_fr || '';
-				if (title) {
-					// Generate a simple ID from title
-					obj.id = uuidv4(); // Use UUID for new IDs
+				// Check if row has any meaningful data
+				const hasData = obj.title || obj.title_en || obj.title_fr || 
+				               obj.description || obj.description_en || obj.description_fr ||
+				               obj.websiteLink || obj.neighborhood || obj.categories;
+				
+				if (hasData) {
+					// Generate UUID for rows with data but no ID
+					obj.id = uuidv4();
 				} else {
-					// Skip rows that have no identifying information
+					// Completely empty row - skip it
 					return null;
+				}
+			}
+			
+			// Ensure ID is a string
+			if (obj.id) {
+				obj.id = String(obj.id).trim();
+				if (obj.id === '' || obj.id === 'null' || obj.id === 'undefined') {
+					obj.id = uuidv4();
 				}
 			}
 			
 			return obj;
 		}).filter(row => row !== null); // Filter out null rows
 		
-		// Log results
-		const validRows = processedRows.filter(row => row && row.id);
+		// Filter out null rows and ensure all have IDs
+		const validRows = processedRows.filter(row => {
+			if (!row) return false;
+			// Ensure ID exists and is valid
+			if (!row.id || row.id === 'null' || row.id === 'undefined' || row.id.trim() === '') {
+				// Try to generate ID if row has data
+				const hasData = row.title || row.description || row.websiteLink || row.neighborhood;
+				if (hasData) {
+					row.id = uuidv4();
+					return true;
+				}
+				return false;
+			}
+			return true;
+		});
+		
 		const invalidRows = processedRows.length - validRows.length;
 		
-		if (invalidRows > 0) {
-			console.warn(`⚠️ ${sheetName}: ${invalidRows} rows skipped (no ID or empty), ${validRows.length} valid rows`);
-		} else if (validRows.length > 0) {
-			console.log(`✅ ${sheetName}: Successfully loaded ${validRows.length} activities`);
-		} else {
-			console.warn(`⚠️ ${sheetName}: No valid activities found (${processedRows.length} total rows processed)`);
+		// Always log results for Activities sheet
+		if (sheetName === 'Activities' || sheetName.includes('Activities')) {
+			console.log(`📊 ${sheetName}: Loaded ${validRows.length} activities (${invalidRows} rows skipped)`);
+			if (validRows.length > 0) {
+				console.log(`   Sample activity: ID=${validRows[0].id}, Title=${validRows[0].title?.en || validRows[0].title?.fr || 'N/A'}`);
+			}
+		} else if (invalidRows > 0) {
+			console.warn(`⚠️ ${sheetName}: ${invalidRows} rows skipped, ${validRows.length} valid rows`);
 		}
 		
 		return validRows;

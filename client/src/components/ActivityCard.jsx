@@ -78,6 +78,7 @@ export default function ActivityCard({ activity, locale, onView }) {
 	const phone = activity.contact__t_l_phone_ || activity.contactPhone;
 	const categories = translateCategories(activity.categories || [], locale);
 	const price = activity.price?.amount || activity.price;
+	const images = activity.images || [];
 	
 	// Modern card design inspired by Withlocals/GetYourGuide
 	const firstImage = images && images.length > 0 ? images[0] : null;
@@ -306,6 +307,7 @@ export default function ActivityCard({ activity, locale, onView }) {
 							</a>
 						)}
 					</div>
+				</div>
 				</div>
 			</div>
 		</Link>

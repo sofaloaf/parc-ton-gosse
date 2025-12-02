@@ -337,10 +337,16 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 		if (rows.length === 0) return [];
 		
 		const headerRow = rows[0];
+		if (!headerRow || headerRow.length === 0) {
+			console.warn(`⚠️ No headers found in ${sheetName}`);
+			return [];
+		}
+		
 		// Map column names to field names using our mapping
 		const columnMap = {};
 		const masterColumnOrder = []; // Master column order from headers (no duplicates)
 		headerRow.forEach((colName, index) => {
+			if (!colName) return; // Skip empty headers
 			const fieldName = findFieldName(sheetType, colName);
 			columnMap[index] = fieldName;
 			// Only add to masterColumnOrder if not already present (handle duplicate headers)
@@ -348,6 +354,11 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 				masterColumnOrder.push(fieldName);
 			}
 		});
+		
+		// Log column mapping for debugging
+		if (process.env.NODE_ENV === 'development') {
+			console.log(`📊 Reading ${sheetName}: Found ${headerRow.length} columns, mapped to ${Object.keys(columnMap).length} fields`);
+		}
 		
 		// Process rows
 		const processedRows = rows.slice(1).map((row, rowIndex) => {
@@ -542,13 +553,19 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			return obj;
 		}).filter(row => row !== null); // Filter out null rows
 		
-		// Return all rows, but log if some are missing IDs
-		const rowsWithoutId = processedRows.filter(row => !row.id);
-		if (rowsWithoutId.length > 0) {
-			console.warn(`⚠️ Found ${rowsWithoutId.length} rows without IDs in ${sheetName}, generated IDs for them`);
+		// Log results
+		const validRows = processedRows.filter(row => row && row.id);
+		const invalidRows = processedRows.length - validRows.length;
+		
+		if (invalidRows > 0) {
+			console.warn(`⚠️ ${sheetName}: ${invalidRows} rows skipped (no ID or empty), ${validRows.length} valid rows`);
+		} else if (validRows.length > 0) {
+			console.log(`✅ ${sheetName}: Successfully loaded ${validRows.length} activities`);
+		} else {
+			console.warn(`⚠️ ${sheetName}: No valid activities found (${processedRows.length} total rows processed)`);
 		}
 		
-		return processedRows;
+		return validRows;
 	} catch (e) {
 		if (e.message?.includes('Unable to parse range')) {
 			return [];

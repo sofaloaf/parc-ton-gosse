@@ -87,9 +87,35 @@ export default function Browse() {
 			setLoading(false);
 			console.log(`✅ Loaded ${activitiesList.length} activities`);
 			
-			// NOTE: Ratings fetching disabled temporarily to prevent API overload
-			// Will be re-enabled once we verify activities loading is stable
-			// Ratings will show as 0 stars until we can safely fetch them
+			// Fetch ratings using batch endpoint (more efficient)
+			if (activitiesList.length > 0) {
+				// Fetch in background after a delay to not block initial render
+				setTimeout(() => {
+					const activityIds = activitiesList.slice(0, 50).map(a => a.id);
+					api('/reviews/activities/ratings', {
+						method: 'POST',
+						body: { activityIds }
+					})
+						.then(ratingsMap => {
+							// Filter out ratings with 0 count
+							const filtered = {};
+							Object.entries(ratingsMap).forEach(([id, rating]) => {
+								if (rating.count > 0) {
+									filtered[id] = rating;
+								}
+							});
+							if (Object.keys(filtered).length > 0) {
+								setRatings(prev => ({ ...prev, ...filtered }));
+							}
+						})
+						.catch(err => {
+							// Silent fail - ratings are optional
+							if (process.env.NODE_ENV === 'development') {
+								console.warn('Failed to fetch ratings (non-critical):', err);
+							}
+						});
+				}, 1000);
+			}
 			})
 			.catch((err) => {
 			// Always log errors for debugging

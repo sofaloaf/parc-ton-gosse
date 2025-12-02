@@ -41,6 +41,49 @@ reviewsRouter.get('/activity/:activityId/rating', async (req, res) => {
 	});
 });
 
+// Batch get ratings for multiple activities (optimized)
+reviewsRouter.post('/activities/ratings', async (req, res) => {
+	const store = req.app.get('dataStore');
+	const { activityIds } = req.body;
+	
+	if (!activityIds || !Array.isArray(activityIds)) {
+		return res.status(400).json({ error: 'activityIds array required' });
+	}
+	
+	// Limit to prevent abuse
+	const idsToFetch = activityIds.slice(0, 50);
+	
+	try {
+		const allReviews = await store.reviews.list();
+		const approvedReviews = allReviews.filter(r => 
+			(r.status === 'approved' || !r.status) &&
+			r.rating != null
+		);
+		
+		const ratingsMap = {};
+		
+		idsToFetch.forEach(activityId => {
+			const activityReviews = approvedReviews.filter(r => r.activityId === activityId);
+			
+			if (activityReviews.length === 0) {
+				ratingsMap[activityId] = { average: 0, count: 0 };
+			} else {
+				const sum = activityReviews.reduce((acc, r) => acc + (Number(r.rating) || 0), 0);
+				const average = sum / activityReviews.length;
+				ratingsMap[activityId] = {
+					average: Math.round(average * 10) / 10,
+					count: activityReviews.length
+				};
+			}
+		});
+		
+		res.json(ratingsMap);
+	} catch (error) {
+		console.error('Failed to batch fetch ratings:', error);
+		res.status(500).json({ error: 'Failed to fetch ratings' });
+	}
+});
+
 // Get user's review for an activity (if exists)
 reviewsRouter.get('/activity/:activityId/user', requireAuth(null), async (req, res) => {
 	const store = req.app.get('dataStore');

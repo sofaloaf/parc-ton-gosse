@@ -130,7 +130,38 @@ export default function Browse() {
 		});
 	}, [params, locale]);
 
-
+	// Separate effect to fetch ratings after activities are loaded (non-blocking)
+	useEffect(() => {
+		if (activities.length === 0) return;
+		
+		// Delay rating fetch to ensure activities are displayed first
+		const timeoutId = setTimeout(() => {
+			const activityIds = activities.slice(0, 50).map(a => a.id);
+			api('/reviews/activities/ratings', {
+				method: 'POST',
+				body: { activityIds }
+			})
+				.then(ratingsMap => {
+					const filtered = {};
+					Object.entries(ratingsMap).forEach(([id, rating]) => {
+						if (rating.count > 0) {
+							filtered[id] = rating;
+						}
+					});
+					if (Object.keys(filtered).length > 0) {
+						setRatings(prev => ({ ...prev, ...filtered }));
+					}
+				})
+				.catch(err => {
+					// Silent fail - ratings are optional and don't block activities display
+					if (process.env.NODE_ENV === 'development') {
+						console.warn('Failed to fetch ratings (non-critical):', err);
+					}
+				});
+		}, 2000); // 2 second delay to ensure activities are displayed first
+		
+		return () => clearTimeout(timeoutId);
+	}, [activities.length]); // Only fetch when activities count changes
 
 	return (
 		<CardViewCounter>

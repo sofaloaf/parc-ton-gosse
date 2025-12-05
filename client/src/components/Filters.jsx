@@ -31,9 +31,11 @@ export default function Filters({ onApply, params = {} }) {
 
 	// Fetch categories from actual data
 	useEffect(() => {
-		api('/activities').then(data => {
+		api('/activities').then(response => {
+			// Handle both old format (array) and new format (paginated object)
+			const activities = Array.isArray(response) ? response : (response.data || []);
 			const cats = new Set();
-			data.forEach(activity => {
+			activities.forEach(activity => {
 				if (activity.categories && Array.isArray(activity.categories)) {
 					activity.categories.forEach(cat => cats.add(cat));
 				}

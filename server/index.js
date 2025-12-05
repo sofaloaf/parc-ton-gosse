@@ -43,8 +43,11 @@ import { crawlerRouter } from './routes/crawler.js';
 import { arrondissementCrawlerRouter } from './routes/arrondissementCrawler.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { cardViewsRouter } from './routes/cardViews.js';
+import { cacheRouter } from './routes/cache.js';
+import { testEmailRouter } from './routes/test-email.js';
 import { requireAuth } from './middleware/auth.js';
 import { csrfProtection } from './middleware/csrf.js';
+import { getCache } from './services/cache/index.js';
 
 const app = express();
 // Trust proxy for Railway (needed for rate limiting and correct IP detection)
@@ -267,6 +270,9 @@ const commitmentLimiter = rateLimit({
 	trustProxy: process.env.NODE_ENV === 'production' ? true : false
 });
 
+// Initialize cache early (before data store)
+getCache(); // Initialize cache singleton
+
 // Data store binding on app with error handling
 // Initialize data store asynchronously - don't block server startup
 let dataStore = null;
@@ -475,6 +481,8 @@ app.use('/api/preorders', preordersRouter);
 app.use('/api/crawler', crawlerRouter);
 app.use('/api/arrondissement-crawler', arrondissementCrawlerRouter);
 app.use('/api/sessions', sessionsRouter);
+app.use('/api/cache', cacheRouter);
+app.use('/api/test-email', testEmailRouter);
 
 // Get current user with trial status
 app.get('/api/me', requireAuth(), async (req, res) => {

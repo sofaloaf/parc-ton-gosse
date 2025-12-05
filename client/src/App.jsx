@@ -43,6 +43,15 @@ export default function App() {
 		});
 	}, [locale, setRemoteDict]);
 
+	// Also check user on route changes (in case user logs in/out)
+	useEffect(() => {
+		api('/me').then(data => {
+			setUser(data.user);
+		}).catch(() => {
+			setUser(null);
+		});
+	}, [location.pathname]);
+
 	const handleLogout = async () => {
 		try {
 			await auth.logout();
@@ -62,7 +71,7 @@ export default function App() {
 							{user && (
 								<div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', background: '#f0f0f0', borderRadius: 4 }}>
 									<span style={{ fontSize: 14 }}>
-										{locale === 'fr' ? 'Bienvenue' : 'Welcome'}, <strong>{user.email}</strong>
+										{locale === 'fr' ? 'Bienvenue' : 'Welcome'}, <strong>{user.profile?.name || user.email}</strong>
 									</span>
 									<button 
 										onClick={handleLogout} 

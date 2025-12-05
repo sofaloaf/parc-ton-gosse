@@ -80,8 +80,11 @@ export default function Browse() {
 		};
 		
 		fetchWithRetry(`/activities${qs ? `?${qs}` : ''}`)
-			.then((data) => {
-				const activitiesList = Array.isArray(data) ? data : [];
+			.then((response) => {
+				// Handle both old format (array) and new format (paginated object)
+				const activitiesList = Array.isArray(response) 
+					? response 
+					: (response.data || []);
 				setActivities(activitiesList);
 				setError(null); // Clear any previous errors
 				setLoading(false);

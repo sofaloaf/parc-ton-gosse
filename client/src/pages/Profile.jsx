@@ -75,6 +75,14 @@ export default function Profile() {
 			
 			trackLogin('email');
 			
+			// Refresh user data from server to get complete profile
+			try {
+				const userData = await api('/me');
+				setUser(userData.user);
+			} catch (e) {
+				console.error('Failed to refresh user data:', e);
+			}
+			
 			// Check if user needs onboarding
 			if (result.user && !result.user.profile?.onboardingCompleted && result.user.role === 'parent') {
 				setTimeout(() => {
@@ -131,6 +139,14 @@ export default function Profile() {
 			setReferralCode('');
 			
 			trackSignup('email');
+			
+			// Refresh user data from server to get complete profile
+			try {
+				const userData = await api('/me');
+				setUser(userData.user);
+			} catch (e) {
+				console.error('Failed to refresh user data:', e);
+			}
 			
 			// Redirect to onboarding
 			setTimeout(() => {

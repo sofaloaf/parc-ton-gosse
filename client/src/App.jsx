@@ -58,7 +58,14 @@ export default function App() {
 		} catch (e) {
 			// Ignore errors on logout
 		}
+		// Clear user state immediately
 		setUser(null);
+		// Clear any localStorage data
+		localStorage.removeItem('sessionStartTime');
+		localStorage.removeItem('anonymousSessionStartTime');
+		localStorage.removeItem('cardViewCount');
+		// Force a page reload to clear any cached state
+		window.location.href = '/';
 	};
 
 	return (

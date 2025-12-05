@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../shared/api.js';
 import { useI18n } from '../shared/i18n.jsx';
@@ -19,6 +19,9 @@ export default function CardViewCounter({ children }) {
 	const [cardViews, setCardViews] = useState(0);
 	const [showPaywall, setShowPaywall] = useState(false);
 	const [loading, setLoading] = useState(true);
+	const [isProcessing, setIsProcessing] = useState(false);
+	const lastViewTime = useRef(0);
+	const DEBOUNCE_MS = 500; // Minimum time between card view tracking (500ms)
 
 	useEffect(() => {
 		const initializeCounter = async () => {
@@ -76,6 +79,26 @@ export default function CardViewCounter({ children }) {
 	}, []);
 
 	const handleCardView = async (activityId) => {
+		// Prevent concurrent processing
+		if (isProcessing) {
+			return;
+		}
+
+		// Debounce: prevent rapid-fire calls
+		const now = Date.now();
+		if (now - lastViewTime.current < DEBOUNCE_MS) {
+			return;
+		}
+		lastViewTime.current = now;
+
+		// Check limit BEFORE incrementing to prevent bypass
+		if (cardViews >= MAX_FREE_CARDS) {
+			setShowPaywall(true);
+			return;
+		}
+
+		setIsProcessing(true);
+
 		try {
 			// Check if user is authenticated
 			const userData = await api('/me').catch(() => null);
@@ -85,10 +108,18 @@ export default function CardViewCounter({ children }) {
 			    userData?.user?.role === 'provider' ||
 			    userData?.user?.hasPreordered ||
 			    userData?.user?.subscriptionActive) {
+				setIsProcessing(false);
 				return;
 			}
 
-			// Increment count first (optimistic update)
+			// Check limit again after auth check
+			if (cardViews >= MAX_FREE_CARDS) {
+				setShowPaywall(true);
+				setIsProcessing(false);
+				return;
+			}
+
+			// Increment count (only after all checks pass)
 			const newCount = cardViews + 1;
 			setCardViews(newCount);
 			localStorage.setItem('cardViewCount', newCount.toString());
@@ -109,6 +140,7 @@ export default function CardViewCounter({ children }) {
 						// Show paywall if count >= MAX_FREE_CARDS
 						if (result.count >= MAX_FREE_CARDS) {
 							setShowPaywall(true);
+							setIsProcessing(false);
 							return;
 						}
 					}
@@ -124,6 +156,8 @@ export default function CardViewCounter({ children }) {
 			}
 		} catch (error) {
 			console.error('Failed to track card view:', error);
+		} finally {
+			setIsProcessing(false);
 		}
 	};
 

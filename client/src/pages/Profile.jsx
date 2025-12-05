@@ -24,13 +24,18 @@ export default function Profile() {
 		// Check if user is already logged in (cookies are sent automatically)
 		setLoading(true);
 		api('/me').then(data => {
-			setUser(data.user);
-			// Check if user needs onboarding
-			if (data.user && !data.user.profile?.onboardingCompleted && data.user.role === 'parent') {
-				// Redirect to onboarding after a short delay
-				setTimeout(() => {
-					navigate('/onboarding');
-				}, 2000);
+			// Only set user if we actually got a user object
+			if (data && data.user) {
+				setUser(data.user);
+				// Check if user needs onboarding
+				if (data.user && !data.user.profile?.onboardingCompleted && data.user.role === 'parent') {
+					// Redirect to onboarding after a short delay
+					setTimeout(() => {
+						navigate('/onboarding');
+					}, 2000);
+				}
+			} else {
+				setUser(null);
 			}
 		}).catch(() => {
 			setUser(null);

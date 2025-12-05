@@ -493,10 +493,12 @@ authRouter.post('/track-login', async (req, res) => {
 
 // Logout - clear cookie
 authRouter.post('/logout', (req, res) => {
+	// Clear cookie with same settings as when it was set
 	res.clearCookie('token', {
 		httpOnly: true,
 		secure: process.env.NODE_ENV === 'production',
-		sameSite: 'strict'
+		sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Match login cookie settings
+		path: '/' // Ensure we clear the cookie from the correct path
 	});
 	res.json({ success: true });
 });

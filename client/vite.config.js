@@ -14,6 +14,20 @@ export default defineConfig({
 			}
 		}
 	},
+	build: {
+		// Optimize build performance
+		minify: 'esbuild',
+		target: 'es2015',
+		chunkSizeWarningLimit: 1000,
+		rollupOptions: {
+			output: {
+				manualChunks: {
+					'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+					'leaflet-vendor': ['leaflet', 'react-leaflet']
+				}
+			}
+		}
+	},
 	server: {
 		port: 5173
 	}

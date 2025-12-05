@@ -33,12 +33,16 @@ export default function App() {
 	useEffect(() => {
 		api(`/i18n/${locale}`).then(setRemoteDictLoc => {
 			setRemoteDict(prev => ({ ...prev, [locale]: setRemoteDictLoc }));
-		}).catch(() => {});
+		}).catch((err) => {
+			console.warn('Failed to load i18n:', err);
+			// Don't fail the app if i18n fails
+		});
 		
 		// Check if user is logged in (cookies are sent automatically)
 		api('/me').then(data => {
 			setUser(data.user);
-		}).catch(() => {
+		}).catch((err) => {
+			console.warn('Failed to check user:', err);
 			setUser(null);
 		});
 	}, [locale, setRemoteDict]);

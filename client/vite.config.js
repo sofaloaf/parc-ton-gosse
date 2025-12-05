@@ -19,6 +19,8 @@ export default defineConfig({
 		minify: 'esbuild',
 		target: 'es2015',
 		chunkSizeWarningLimit: 1000,
+		// Ensure public files are copied
+		publicDir: 'public',
 		rollupOptions: {
 			output: {
 				manualChunks: {

@@ -55,12 +55,21 @@ class ErrorBoundary extends React.Component {
 }
 
 // Wrap app with error boundary
+console.log('🚀 Starting app initialization...');
 const rootElement = document.getElementById('root');
 if (!rootElement) {
-	console.error('Root element not found!');
+	console.error('❌ Root element not found!');
+	document.body.innerHTML = `
+		<div style="padding: 40px; text-align: center; font-family: system-ui, sans-serif;">
+			<h1 style="color: #ef4444;">Root element not found</h1>
+			<p style="color: #64748b;">The #root div is missing from the HTML</p>
+		</div>
+	`;
 } else {
+	console.log('✅ Root element found, creating React root...');
 	try {
 		const root = createRoot(rootElement);
+		console.log('✅ React root created, rendering app...');
 		root.render(
 			<React.StrictMode>
 				<ErrorBoundary>
@@ -72,13 +81,15 @@ if (!rootElement) {
 				</ErrorBoundary>
 			</React.StrictMode>
 		);
+		console.log('✅ App rendered successfully');
 	} catch (error) {
-		console.error('Failed to render app:', error);
+		console.error('❌ Failed to render app:', error);
 		rootElement.innerHTML = `
 			<div style="padding: 40px; text-align: center; font-family: system-ui, sans-serif;">
 				<h1 style="color: #ef4444;">Failed to load application</h1>
 				<p style="color: #64748b;">${error.message}</p>
-				<button onclick="window.location.reload()" style="padding: 12px 24px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer;">
+				<pre style="text-align: left; background: #f1f5f9; padding: 16px; border-radius: 8px; overflow: auto;">${error.stack}</pre>
+				<button onclick="window.location.reload()" style="padding: 12px 24px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 16px;">
 					Reload Page
 				</button>
 			</div>

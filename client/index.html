@@ -21,9 +21,14 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Debug logging
+      console.log('📄 HTML loaded');
+      console.log('Root element exists:', !!document.getElementById('root'));
+    </script>
     <!-- Runtime API URL override - external file to avoid CSP issues -->
     <!-- Load synchronously (no async/defer) to ensure it runs before React -->
-    <script src="/api-url-override.js"></script>
+    <script src="/api-url-override.js" onerror="console.error('Failed to load api-url-override.js')"></script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

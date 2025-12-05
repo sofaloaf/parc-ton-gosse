@@ -21,6 +21,10 @@ export default defineConfig({
 		chunkSizeWarningLimit: 1000,
 		// Ensure public files are copied
 		publicDir: 'public',
+		// Disable source maps in production for faster builds
+		sourcemap: false,
+		// Reduce build time
+		cssCodeSplit: false,
 		rollupOptions: {
 			output: {
 				manualChunks: {

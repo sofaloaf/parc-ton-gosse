@@ -130,7 +130,18 @@ export default function Preorder() {
 			// Redirect to confirmation
 			navigate(`/preorder/confirmation?commitment=${result.commitmentId}`);
 		} catch (err) {
-			setError(err.message || (locale === 'fr' ? 'Échec de l\'engagement' : 'Failed to create commitment'));
+			// Better error handling - try to extract error message from response
+			let errorMessage = locale === 'fr' ? 'Échec de l\'engagement' : 'Failed to create commitment';
+			if (err.message) {
+				try {
+					const errorJson = JSON.parse(err.message);
+					errorMessage = errorJson.error || errorMessage;
+				} catch (e) {
+					// If it's not JSON, use the message as is
+					errorMessage = err.message;
+				}
+			}
+			setError(errorMessage);
 			setProcessing(false);
 		}
 	};
@@ -211,8 +222,8 @@ export default function Preorder() {
 						</h3>
 						<p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>
 							{locale === 'fr' 
-								? 'Lancement prévu: Q1 2025. Vous recevrez un email de confirmation avec les détails d\'accès et les instructions de paiement.'
-								: 'Expected launch: Q1 2025. You\'ll receive a confirmation email with access details and payment instructions.'}
+								? 'Lancement prévu: Q1 2026. Vous recevrez un email de confirmation avec les détails d\'accès et les instructions de paiement.'
+								: 'Expected launch: Q1 2026. You\'ll receive a confirmation email with access details and payment instructions.'}
 						</p>
 					</div>
 

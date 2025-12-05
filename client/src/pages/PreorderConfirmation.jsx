@@ -121,8 +121,8 @@ export default function PreorderConfirmation() {
 							<strong style={{ display: 'block', marginBottom: 4 }}>{locale === 'fr' ? 'Lancement prévu' : 'Expected Launch'}</strong>
 							<span style={{ fontSize: 14, color: '#475569' }}>
 								{locale === 'fr' 
-									? 'Q1 2025 - Nous vous enverrons un email avec vos identifiants d\'accès et les instructions de paiement'
-									: 'Q1 2025 - We\'ll send you an email with your access credentials and payment instructions'}
+									? 'Q1 2026 - Nous vous enverrons un email avec vos identifiants d\'accès et les instructions de paiement'
+									: 'Q1 2026 - We\'ll send you an email with your access credentials and payment instructions'}
 							</span>
 						</div>
 					</div>

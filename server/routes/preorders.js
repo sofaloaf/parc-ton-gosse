@@ -135,34 +135,39 @@ preordersRouter.post('/commit', requireAuth(), validateCommitment, async (req, r
 		});
 		
 		// Create commitment record for tracking in Google Sheets
-		try {
-			const preorderRecord = {
-				id: commitmentId,
-				userId: req.user.id,
-				userEmail: req.user.email,
-				userName: user.profile?.name || user.email,
-				plan: selectedPlan,
-				amount: Math.round(amount * 100) / 100,
-				currency: 'EUR',
-				promoCode: sanitizedPromoCode || '',
-				paymentIntentId: null, // No payment intent for commitments
-				status: 'committed', // Status: committed (will be 'paid' when processed)
-				createdAt: now,
-				updatedAt: now
-			};
-			
-			console.log('Creating preorder record:', preorderRecord);
-			await store.preorders.create(preorderRecord);
-			console.log('✅ Preorder record created successfully');
-		} catch (e) {
-			// Log error but don't fail the commitment if tracking fails
-			console.error('❌ Failed to create commitment record in Google Sheets:', e);
-			console.error('Error details:', {
-				message: e.message,
-				stack: e.stack,
-				commitmentId,
-				userId: req.user.id
-			});
+		// Only try if preorders store exists (might not be available in all data stores)
+		if (store.preorders && typeof store.preorders.create === 'function') {
+			try {
+				const preorderRecord = {
+					id: commitmentId,
+					userId: req.user.id,
+					userEmail: req.user.email,
+					userName: user.profile?.name || user.email,
+					plan: selectedPlan,
+					amount: Math.round(amount * 100) / 100,
+					currency: 'EUR',
+					promoCode: sanitizedPromoCode || '',
+					paymentIntentId: null, // No payment intent for commitments
+					status: 'committed', // Status: committed (will be 'paid' when processed)
+					createdAt: now,
+					updatedAt: now
+				};
+				
+				console.log('Creating preorder record:', preorderRecord);
+				await store.preorders.create(preorderRecord);
+				console.log('✅ Preorder record created successfully');
+			} catch (e) {
+				// Log error but don't fail the commitment if tracking fails
+				console.error('❌ Failed to create commitment record in Google Sheets:', e);
+				console.error('Error details:', {
+					message: e.message,
+					stack: e.stack,
+					commitmentId,
+					userId: req.user.id
+				});
+			}
+		} else {
+			console.log('⚠️ Preorders store not available, skipping record creation');
 		}
 		
 		// Track conversion event: commitment_made

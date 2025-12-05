@@ -82,8 +82,8 @@ export default function TimeLimitModal({ onCommit }) {
 					margin: '0 0 32px 0'
 				}}>
 					{locale === 'fr' 
-						? 'Vous avez exploré Parc Ton Gosse pendant 25 minutes au total (5 minutes anonymes + 20 minutes avec compte). Pour continuer à explorer toutes les activités et fonctionnalités, veuillez vous engager à payer. Aucun paiement ne sera effectué aujourd\'hui - vous serez facturé au lancement de la plateforme (Q1 2025).'
-						: 'You\'ve explored Parc Ton Gosse for 25 minutes total (5 minutes anonymous + 20 minutes with account). To continue exploring all activities and features, please commit to pay. No payment will be processed today - you will be charged when the platform launches (Q1 2025).'}
+						? 'Vous avez exploré Parc Ton Gosse pendant 25 minutes au total (5 minutes anonymes + 20 minutes avec compte). Pour continuer à explorer toutes les activités et fonctionnalités, veuillez vous engager à payer. Aucun paiement ne sera effectué aujourd\'hui - vous serez facturé au lancement de la plateforme (Q1 2026).'
+						: 'You\'ve explored Parc Ton Gosse for 25 minutes total (5 minutes anonymous + 20 minutes with account). To continue exploring all activities and features, please commit to pay. No payment will be processed today - you will be charged when the platform launches (Q1 2026).'}
 				</p>
 
 				{/* Benefits */}
@@ -182,8 +182,8 @@ export default function TimeLimitModal({ onCommit }) {
 					lineHeight: 1.5
 				}}>
 					{locale === 'fr' 
-						? 'En cliquant sur "S\'engager maintenant", vous acceptez nos conditions générales. Le paiement sera traité au lancement de la plateforme (Q1 2025).'
-						: 'By clicking "Commit Now", you agree to our terms and conditions. Payment will be processed at platform launch (Q1 2025).'}
+						? 'En cliquant sur "S\'engager maintenant", vous acceptez nos conditions générales. Le paiement sera traité au lancement de la plateforme (Q1 2026).'
+						: 'By clicking "Commit Now", you agree to our terms and conditions. Payment will be processed at platform launch (Q1 2026).'}
 				</p>
 			</div>
 		</div>

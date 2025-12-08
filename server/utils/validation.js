@@ -17,6 +17,7 @@ export const envSchema = Joi.object({
 	GS_SERVICE_ACCOUNT: Joi.string().optional(),
 	GS_PRIVATE_KEY: Joi.string().optional(),
 	GS_SHEET_ID: Joi.string().optional().allow(''),
+	GS_SANDBOX_SHEET_ID: Joi.string().optional().allow(''),
 	AIRTABLE_API_KEY: Joi.string().optional().allow(''),
 	AIRTABLE_BASE_ID: Joi.string().optional().allow('')
 }).unknown();

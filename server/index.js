@@ -45,6 +45,8 @@ import { sessionsRouter } from './routes/sessions.js';
 import { cardViewsRouter } from './routes/cardViews.js';
 import { cacheRouter } from './routes/cache.js';
 import { testEmailRouter } from './routes/test-email.js';
+import { sandboxRouter } from './routes/sandbox.js';
+import { initSandboxSheets } from './services/sandbox-sheets.js';
 import { requireAuth } from './middleware/auth.js';
 import { csrfProtection } from './middleware/csrf.js';
 import { getCache } from './services/cache/index.js';
@@ -359,6 +361,11 @@ let dataStore = null;
 		});
 		app.set('dataStore', dataStore);
 		console.log(`✅ Data store initialized: ${backend}`);
+		
+		// Initialize sandbox sheets (separate from production)
+		initSandboxSheets().catch(err => {
+			console.warn('⚠️  Sandbox sheets initialization failed (non-critical):', err.message);
+		});
 	} catch (error) {
 		console.error('❌ Failed to initialize data store:', error.message);
 		console.error('Stack:', error.stack);
@@ -483,6 +490,7 @@ app.use('/api/arrondissement-crawler', arrondissementCrawlerRouter);
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/cache', cacheRouter);
 app.use('/api/test-email', testEmailRouter);
+app.use('/api/sandbox', sandboxRouter);
 
 // Get current user with trial status
 app.get('/api/me', requireAuth(), async (req, res) => {

@@ -46,6 +46,7 @@ import { cardViewsRouter } from './routes/cardViews.js';
 import { cacheRouter } from './routes/cache.js';
 import { testEmailRouter } from './routes/test-email.js';
 import { sandboxRouter } from './routes/sandbox.js';
+import { sandboxCleanupRouter } from './routes/sandbox-cleanup.js';
 import { initSandboxSheets } from './services/sandbox-sheets.js';
 import { requireAuth } from './middleware/auth.js';
 import { csrfProtection } from './middleware/csrf.js';
@@ -491,6 +492,7 @@ app.use('/api/sessions', sessionsRouter);
 app.use('/api/cache', cacheRouter);
 app.use('/api/test-email', testEmailRouter);
 app.use('/api/sandbox', sandboxRouter);
+app.use('/api/sandbox/cleanup', sandboxCleanupRouter);
 
 // Get current user with trial status
 app.get('/api/me', requireAuth(), async (req, res) => {

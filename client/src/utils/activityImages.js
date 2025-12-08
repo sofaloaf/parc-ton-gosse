@@ -1,92 +1,141 @@
 /**
- * Generate professional activity images based on activity description and categories
- * Uses Picsum Photos for free, high-quality stock photos with consistent seeding
+ * Generate professional activity images based on activity categories
+ * Uses direct image URLs - no API calls needed
+ * Category-specific images showing children doing activities
  */
 
 /**
- * Extract keywords from activity for image search
+ * Category to image URL mapping
+ * Using Unsplash direct image URLs (free, no API key needed)
+ * Each URL shows children doing that specific activity
+ * Images are optimized for 400x300px cards
  */
-function extractImageKeywords(activity, locale = 'en') {
-	const keywords = [];
+const CATEGORY_IMAGES = {
+	// Sports category - Children playing sports
+	'sport': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
+	'sports': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
+	'football': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
+	'soccer': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
+	'basketball': 'https://images.unsplash.com/photo-1519869325934-21c5bf688fcf?w=400&h=300&fit=crop&q=80&auto=format',
+	'tennis': 'https://images.unsplash.com/photo-1622163642991-c6c81a9162b8?w=400&h=300&fit=crop&q=80&auto=format',
+	'swimming': 'https://images.unsplash.com/photo-1530549387789-4c1017266635?w=400&h=300&fit=crop&q=80&auto=format',
+	'natation': 'https://images.unsplash.com/photo-1530549387789-4c1017266635?w=400&h=300&fit=crop&q=80&auto=format',
+	'rugby': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
+	'handball': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
+	'volleyball': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
+	'gymnastics': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
+	'gymnastique': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
 	
-	// Add categories
-	if (activity.categories && Array.isArray(activity.categories)) {
-		keywords.push(...activity.categories.slice(0, 2));
+	// Arts category - Children doing art
+	'art': 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=400&h=300&fit=crop&q=80&auto=format',
+	'arts': 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=400&h=300&fit=crop&q=80&auto=format',
+	'peinture': 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=400&h=300&fit=crop&q=80&auto=format',
+	'painting': 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=400&h=300&fit=crop&q=80&auto=format',
+	'dessin': 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=400&h=300&fit=crop&q=80&auto=format',
+	'drawing': 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=400&h=300&fit=crop&q=80&auto=format',
+	'sculpture': 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=400&h=300&fit=crop&q=80&auto=format',
+	'pottery': 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=400&h=300&fit=crop&q=80&auto=format',
+	'poterie': 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=400&h=300&fit=crop&q=80&auto=format',
+	
+	// Music category - Children playing music
+	'music': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=300&fit=crop&q=80&auto=format',
+	'musique': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=300&fit=crop&q=80&auto=format',
+	'piano': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=300&fit=crop&q=80&auto=format',
+	'guitar': 'https://images.unsplash.com/photo-1511735111819-9a3f7709049c?w=400&h=300&fit=crop&q=80&auto=format',
+	'guitare': 'https://images.unsplash.com/photo-1511735111819-9a3f7709049c?w=400&h=300&fit=crop&q=80&auto=format',
+	'violin': 'https://images.unsplash.com/photo-1511735111819-9a3f7709049c?w=400&h=300&fit=crop&q=80&auto=format',
+	'violon': 'https://images.unsplash.com/photo-1511735111819-9a3f7709049c?w=400&h=300&fit=crop&q=80&auto=format',
+	'chant': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=300&fit=crop&q=80&auto=format',
+	'singing': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=300&fit=crop&q=80&auto=format',
+	'chorale': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=300&fit=crop&q=80&auto=format',
+	'choir': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=300&fit=crop&q=80&auto=format',
+	'batterie': 'https://images.unsplash.com/photo-1511735111819-9a3f7709049c?w=400&h=300&fit=crop&q=80&auto=format',
+	'drums': 'https://images.unsplash.com/photo-1511735111819-9a3f7709049c?w=400&h=300&fit=crop&q=80&auto=format',
+	
+	// Dance category - Children dancing
+	'dance': 'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=400&h=300&fit=crop&q=80&auto=format',
+	'danse': 'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=400&h=300&fit=crop&q=80&auto=format',
+	'ballet': 'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=400&h=300&fit=crop&q=80&auto=format',
+	'hip-hop': 'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=400&h=300&fit=crop&q=80&auto=format',
+	'hip hop': 'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=400&h=300&fit=crop&q=80&auto=format',
+	'contemporain': 'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=400&h=300&fit=crop&q=80&auto=format',
+	'contemporary': 'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=400&h=300&fit=crop&q=80&auto=format',
+	
+	// Martial Arts category - Children doing martial arts
+	'martial arts': 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?w=400&h=300&fit=crop&q=80&auto=format',
+	'arts martiaux': 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?w=400&h=300&fit=crop&q=80&auto=format',
+	'judo': 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?w=400&h=300&fit=crop&q=80&auto=format',
+	'karate': 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?w=400&h=300&fit=crop&q=80&auto=format',
+	'aikido': 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?w=400&h=300&fit=crop&q=80&auto=format',
+	'kung fu': 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?w=400&h=300&fit=crop&q=80&auto=format',
+	'kung-fu': 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?w=400&h=300&fit=crop&q=80&auto=format',
+	
+	// Culture/Theater category - Children in theater/culture
+	'culture': 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=400&h=300&fit=crop&q=80&auto=format',
+	'theatre': 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=400&h=300&fit=crop&q=80&auto=format',
+	'théâtre': 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=400&h=300&fit=crop&q=80&auto=format',
+	'theater': 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=400&h=300&fit=crop&q=80&auto=format',
+	
+	// Games category - Children playing games
+	'games': 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&h=300&fit=crop&q=80&auto=format',
+	'jeux': 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&h=300&fit=crop&q=80&auto=format',
+	'jeu': 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&h=300&fit=crop&q=80&auto=format',
+	'chess': 'https://images.unsplash.com/photo-1529699211952-734e80c4d42b?w=400&h=300&fit=crop&q=80&auto=format',
+	'echecs': 'https://images.unsplash.com/photo-1529699211952-734e80c4d42b?w=400&h=300&fit=crop&q=80&auto=format',
+	'puzzle': 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&h=300&fit=crop&q=80&auto=format',
+	
+	// Default fallback - Children doing activities
+	'default': 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=400&h=300&fit=crop&q=80&auto=format'
+};
+
+/**
+ * Get category-specific image URL
+ * Maps activity categories to appropriate images showing children doing those activities
+ */
+function getCategoryImageUrl(categories) {
+	if (!categories || !Array.isArray(categories) || categories.length === 0) {
+		return CATEGORY_IMAGES.default;
 	}
 	
-	// Extract keywords from title
-	const title = activity.title?.[locale] || activity.title?.en || activity.title?.fr || '';
-	if (title) {
-		// Remove common words and extract meaningful terms
-		const titleWords = title.toLowerCase()
-			.split(/\s+/)
-			.filter(word => word.length > 3)
-			.filter(word => !['pour', 'avec', 'des', 'les', 'the', 'for', 'with', 'and', 'et'].includes(word))
-			.slice(0, 2);
-		keywords.push(...titleWords);
+	// Check each category in order (first match wins)
+	for (const category of categories) {
+		const normalized = category.toLowerCase().trim();
+		
+		// Direct match (exact)
+		if (CATEGORY_IMAGES[normalized]) {
+			return CATEGORY_IMAGES[normalized];
+		}
+		
+		// Check for partial matches - category contains key or key contains category
+		// This handles variations like "arts martiaux" matching "martial arts"
+		for (const [key, url] of Object.entries(CATEGORY_IMAGES)) {
+			if (key === 'default') continue; // Skip default in loop
+			
+			// Exact word match (more precise)
+			const keyWords = key.split(/\s+/);
+			const catWords = normalized.split(/\s+/);
+			
+			// Check if any word from key matches any word from category
+			if (keyWords.some(kw => catWords.includes(kw)) || 
+			    catWords.some(cw => keyWords.includes(cw))) {
+				return url;
+			}
+			
+			// Fallback: substring match
+			if (normalized.includes(key) || key.includes(normalized)) {
+				return url;
+			}
+		}
 	}
 	
-	// Extract keywords from description
-	const desc = activity.description?.[locale] || activity.description?.en || activity.description?.fr || '';
-	if (desc) {
-		const descWords = desc.toLowerCase()
-			.split(/\s+/)
-			.filter(word => word.length > 4)
-			.filter(word => !['children', 'kids', 'enfant', 'activité', 'activity', 'paris'].includes(word))
-			.slice(0, 2);
-		keywords.push(...descWords);
-	}
-	
-	// Map common activity terms to better search terms
-	const termMap = {
-		'sport': 'children playing sports',
-		'sports': 'children playing sports',
-		'football': 'children playing football',
-		'soccer': 'children playing soccer',
-		'basketball': 'children playing basketball',
-		'tennis': 'children playing tennis',
-		'swimming': 'children swimming',
-		'natation': 'children swimming',
-		'arts': 'children doing art',
-		'art': 'children doing art',
-		'peinture': 'children painting',
-		'painting': 'children painting',
-		'music': 'children playing music',
-		'musique': 'children playing music',
-		'piano': 'children playing piano',
-		'dance': 'children dancing',
-		'danse': 'children dancing',
-		'gymnastics': 'children gymnastics',
-		'gymnastique': 'children gymnastics',
-		'judo': 'children martial arts',
-		'karate': 'children martial arts',
-		'cooking': 'children cooking',
-		'cuisine': 'children cooking',
-		'reading': 'children reading',
-		'lecture': 'children reading',
-		'coding': 'children coding',
-		'programming': 'children coding',
-		'robotics': 'children robotics',
-		'yoga': 'children yoga',
-		'gardening': 'children gardening',
-		'jardinage': 'children gardening'
-	};
-	
-	// Replace keywords with better search terms
-	const mappedKeywords = keywords.map(k => {
-		const normalized = k.toLowerCase();
-		return termMap[normalized] || k;
-	});
-	
-	// Combine and create search query
-	const searchQuery = mappedKeywords.slice(0, 2).join(' ') || 'children activities';
-	
-	return searchQuery;
+	// Fallback to default
+	return CATEGORY_IMAGES.default;
 }
 
 /**
  * Generate professional activity image URL
- * Uses Picsum Photos with activity-specific seed for consistent, professional images
+ * Uses category-specific images showing children doing activities
+ * No API calls - direct image URLs
  */
 export function getActivityImageUrl(activity, locale = 'en', width = 400, height = 300) {
 	// If activity already has images, use the first one
@@ -98,38 +147,10 @@ export function getActivityImageUrl(activity, locale = 'en', width = 400, height
 		}
 	}
 	
-	// Generate a consistent seed based on activity ID and categories
-	// This ensures the same activity always gets the same image
-	const seed = generateImageSeed(activity);
-	
-	// Use Picsum Photos - free, professional stock photos
-	// Using seed ensures consistent images per activity
-	// Format: https://picsum.photos/seed/{seed}/{width}/{height}
-	return `https://picsum.photos/seed/${seed}/${width}/${height}`;
+	// Get category-specific image
+	return getCategoryImageUrl(activity.categories);
 }
 
-/**
- * Generate a consistent seed for image selection based on activity
- */
-function generateImageSeed(activity) {
-	// Create a hash-like seed from activity ID and first category
-	const id = activity.id || '';
-	const firstCategory = activity.categories && activity.categories.length > 0 
-		? activity.categories[0] 
-		: 'activity';
-	
-	// Simple hash function to convert string to number
-	let hash = 0;
-	const str = `${id}-${firstCategory}`;
-	for (let i = 0; i < str.length; i++) {
-		const char = str.charCodeAt(i);
-		hash = ((hash << 5) - hash) + char;
-		hash = hash & hash; // Convert to 32-bit integer
-	}
-	
-	// Ensure positive number and limit range for Picsum (0-1000 works well)
-	return Math.abs(hash) % 1000;
-}
 
 /**
  * Generate multiple image URLs for an activity
@@ -147,12 +168,10 @@ export function getActivityImageUrls(activity, locale = 'en', count = 3) {
 		}
 	}
 	
-	// Generate additional images if needed
-	const seed = generateImageSeed(activity);
+	// Generate additional images if needed (use category image)
+	const categoryImage = getCategoryImageUrl(activity.categories);
 	while (urls.length < count) {
-		// Use different seeds for variety
-		const imageSeed = seed + urls.length;
-		urls.push(`https://picsum.photos/seed/${imageSeed}/400/300`);
+		urls.push(categoryImage);
 	}
 	
 	return urls;

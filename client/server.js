@@ -6,7 +6,7 @@
 import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,7 +19,6 @@ const distPath = join(__dirname, 'dist');
 console.log(`📂 Dist directory: ${distPath}`);
 if (existsSync(distPath)) {
   console.log(`✅ Dist directory exists`);
-  const { readdirSync } = await import('fs');
   try {
     const files = readdirSync(distPath);
     console.log(`📄 Files in dist: ${files.join(', ')}`);

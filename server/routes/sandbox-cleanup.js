@@ -594,7 +594,7 @@ async function readActivitiesFromTab(sheets, sheetId, tabName) {
 			if (Object.keys(activity).length > 0) {
 				// Generate ID if missing
 				if (!activity.id) {
-					activity.id = require('uuid').v4();
+					activity.id = uuidv4();
 				}
 				activities.push(activity);
 			}

@@ -210,6 +210,36 @@ export default function AdminPanel() {
 		}
 	};
 
+	const runCleanup = async () => {
+		setCleanupLoading(true);
+		setCleanupError('');
+		setCleanupResults(null);
+
+		try {
+			// First ensure we have a CSRF token
+			await api('/me');
+			await new Promise(resolve => setTimeout(resolve, 100));
+			
+			// Execute cleanup
+			const result = await api('/sandbox/cleanup/copy-and-format', {
+				method: 'POST',
+				body: {
+					newTabName: 'Activities Cleaned',
+					sourceTabName: 'Activities'
+				}
+			});
+
+			setCleanupResults(result);
+			setCleanupError('');
+		} catch (err) {
+			setCleanupError(err.message || 'Failed to run cleanup');
+			setCleanupResults(null);
+			console.error('Cleanup error:', err);
+		} finally {
+			setCleanupLoading(false);
+		}
+	};
+
 	const runArrondissementCrawler = async () => {
 		setArrondissementCrawlerLoading(true);
 		setArrondissementCrawlerError('');
@@ -1006,36 +1036,6 @@ export default function AdminPanel() {
 		</div>
 	);
 }
-
-	const runCleanup = async () => {
-		setCleanupLoading(true);
-		setCleanupError('');
-		setCleanupResults(null);
-
-		try {
-			// First ensure we have a CSRF token
-			await api('/me');
-			await new Promise(resolve => setTimeout(resolve, 100));
-			
-			// Execute cleanup
-			const result = await api('/sandbox/cleanup/copy-and-format', {
-				method: 'POST',
-				body: {
-					newTabName: 'Activities Cleaned',
-					sourceTabName: 'Activities'
-				}
-			});
-
-			setCleanupResults(result);
-			setCleanupError('');
-		} catch (err) {
-			setCleanupError(err.message || 'Failed to run cleanup');
-			setCleanupResults(null);
-			console.error('Cleanup error:', err);
-		} finally {
-			setCleanupLoading(false);
-		}
-	};
 
 function KPICard({ title, value, subtitle, color = '#007bff' }) {
 	return (

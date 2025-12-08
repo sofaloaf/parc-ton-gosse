@@ -23,6 +23,7 @@ import { trackPageView } from './utils/analytics.js';
 export default function App() {
 	const { t, locale, setRemoteDict } = useI18n();
 	const [user, setUser] = useState(null);
+	const [initializing, setInitializing] = useState(true);
 	const location = useLocation();
 
 	// Track page views with Google Analytics
@@ -31,27 +32,53 @@ export default function App() {
 	}, [location]);
 
 	useEffect(() => {
+		setInitializing(true);
+		
+		// Load i18n with timeout to prevent hanging
+		const i18nTimeout = setTimeout(() => {
+			console.warn('i18n API call timed out');
+		}, 5000);
+		
 		api(`/i18n/${locale}`).then(setRemoteDictLoc => {
+			clearTimeout(i18nTimeout);
 			setRemoteDict(prev => ({ ...prev, [locale]: setRemoteDictLoc }));
 		}).catch((err) => {
+			clearTimeout(i18nTimeout);
 			console.warn('Failed to load i18n:', err);
 			// Don't fail the app if i18n fails
 		});
 		
 		// Check if user is logged in (cookies are sent automatically)
+		const userTimeout = setTimeout(() => {
+			console.warn('User API call timed out');
+			setUser(null);
+			setInitializing(false);
+		}, 5000);
+		
 		api('/me').then(data => {
+			clearTimeout(userTimeout);
 			setUser(data.user);
+			setInitializing(false);
 		}).catch((err) => {
+			clearTimeout(userTimeout);
 			console.warn('Failed to check user:', err);
 			setUser(null);
+			setInitializing(false);
 		});
 	}, [locale, setRemoteDict]);
 
 	// Also check user on route changes (in case user logs in/out)
 	useEffect(() => {
+		const timeout = setTimeout(() => {
+			console.warn('User check API call timed out');
+			setUser(null);
+		}, 5000);
+		
 		api('/me').then(data => {
+			clearTimeout(timeout);
 			setUser(data.user);
 		}).catch(() => {
+			clearTimeout(timeout);
 			setUser(null);
 		});
 	}, [location.pathname]);
@@ -72,9 +99,29 @@ export default function App() {
 		window.location.href = '/';
 	};
 
+	// Show loading state briefly to prevent blank screen
+	if (initializing) {
+		return (
+			<div style={{ 
+				fontFamily: 'system-ui, sans-serif', 
+				padding: 16,
+				display: 'flex',
+				justifyContent: 'center',
+				alignItems: 'center',
+				minHeight: '100vh'
+			}}>
+				<div style={{ textAlign: 'center' }}>
+					<div style={{ fontSize: 18, color: '#64748b', marginBottom: 8 }}>
+						{locale === 'fr' ? 'Chargement...' : 'Loading...'}
+					</div>
+				</div>
+			</div>
+		);
+	}
+
 	return (
 		<div style={{ fontFamily: 'system-ui, sans-serif', padding: 16 }}>
-					<header style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between' }}>
+					<header style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
 						<Logo />
 						<nav style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
 							<Link to="/profile" style={{ textDecoration: 'none', color: 'inherit' }}>{locale === 'fr' ? 'Connexion' : 'Sign In'}</Link>

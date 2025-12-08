@@ -19,20 +19,24 @@ function resolveBaseUrl() {
 
 	const { hostname, origin } = window.location;
 	
-	// CRITICAL: For ANY Railway domain, ALWAYS use backend URL - never same-origin
+	// CRITICAL: For ANY Railway domain OR custom domain, ALWAYS use backend URL - never same-origin
 	// This is the most important check - do it FIRST before anything else
-	// Check multiple ways to catch all Railway domains
+	// Check multiple ways to catch all Railway domains and custom domain
 	const isRailwayDomain = hostname.includes('.up.railway.app') || 
 	                       hostname.includes('railway') ||
 	                       hostname.includes('victorious-gentleness') ||
 	                       hostname.includes('parc-ton-gosse');
 	
-	if (isRailwayDomain) {
+	// Check for custom domain (parctongosse.com)
+	const isCustomDomain = hostname === 'parctongosse.com' || 
+	                      hostname === 'www.parctongosse.com';
+	
+	if (isRailwayDomain || isCustomDomain) {
 		// Only use PRODUCTION_API_URL if this is NOT the backend service itself
 		if (!hostname.includes('backend')) {
 			cachedBaseUrl = PRODUCTION_API_URL;
 			if (process.env.NODE_ENV === 'development') {
-				console.log('✅ API URL resolved (Railway domain detected):', cachedBaseUrl);
+				console.log('✅ API URL resolved (Railway/custom domain detected):', cachedBaseUrl);
 				console.log('   Frontend hostname:', hostname);
 				console.log('   Frontend origin:', origin);
 				console.log('   PRODUCTION_API_URL constant:', PRODUCTION_API_URL);

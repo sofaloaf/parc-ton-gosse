@@ -37,11 +37,13 @@ https://victorious-gentleness-production.up.railway.app
 https://parc-ton-gosse-production.up.railway.app
 ```
 
-**For Custom Domain (if you have one):**
+**For Custom Domain (REQUIRED for parctongosse.com):**
 ```
 https://parctongosse.com
 https://www.parctongosse.com
 ```
+
+**⚠️ IMPORTANT:** You MUST add both `parctongosse.com` and `www.parctongosse.com` if you're using the custom domain!
 
 ### Step 3: Add Authorized Redirect URIs
 
@@ -59,11 +61,13 @@ https://victorious-gentleness-production.up.railway.app
 https://parc-ton-gosse-production.up.railway.app
 ```
 
-**For Custom Domain:**
+**For Custom Domain (REQUIRED for parctongosse.com):**
 ```
 https://parctongosse.com
 https://www.parctongosse.com
 ```
+
+**⚠️ IMPORTANT:** You MUST add both `parctongosse.com` and `www.parctongosse.com` if you're using the custom domain!
 
 ### Step 4: Save Changes
 

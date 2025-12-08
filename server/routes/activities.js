@@ -27,7 +27,8 @@ activitiesRouter.get('/', async (req, res) => {
 		} = req.query;
 		
 		// Parse pagination params
-		const limitNum = limit ? Math.min(parseInt(limit, 10) || 20, 100) : 20; // Max 100 per page
+		// Default to 200 to show all activities (can be overridden with limit query param)
+		const limitNum = limit ? Math.min(parseInt(limit, 10) || 200, 500) : 200; // Default 200, max 500 per page
 		const offsetNum = offset ? Math.max(parseInt(offset, 10) || 0, 0) : 0;
 		
 		// Build filter object for cache key

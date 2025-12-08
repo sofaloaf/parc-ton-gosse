@@ -20,6 +20,9 @@ export default function AdminPanel() {
 	const [arrondissementCrawlerError, setArrondissementCrawlerError] = useState('');
 	const [pendingActivities, setPendingActivities] = useState([]);
 	const [pendingLoading, setPendingLoading] = useState(false);
+	const [cleanupLoading, setCleanupLoading] = useState(false);
+	const [cleanupResults, setCleanupResults] = useState(null);
+	const [cleanupError, setCleanupError] = useState('');
 
 	useEffect(() => {
 		// First, ensure we have a CSRF token by making a GET request
@@ -907,6 +910,85 @@ export default function AdminPanel() {
 				</ChartCard>
 			</div>
 
+			{/* Sandbox Cleanup Section */}
+			<ChartCard title="Sandbox Cleanup & Formatting">
+				<div style={{ marginBottom: 20 }}>
+					<p style={{ color: '#666', marginBottom: 16 }}>
+						Create a new tab in the sandbox sheet with cleaned and formatted activity data. 
+						This will:
+					</p>
+					<ul style={{ color: '#666', marginLeft: 20, marginBottom: 16 }}>
+						<li>Copy all activities from the "Activities" tab</li>
+						<li>Clean formatting (remove extra spaces, normalize data)</li>
+						<li>Separate bilingual fields (title_en, title_fr, etc.)</li>
+						<li>Format price (amount, currency columns)</li>
+						<li>Create a new "Activities Cleaned" tab</li>
+					</ul>
+					<button
+						onClick={runCleanup}
+						disabled={cleanupLoading}
+						style={{
+							padding: '12px 24px',
+							background: cleanupLoading ? '#6c757d' : '#28a745',
+							color: 'white',
+							border: 'none',
+							borderRadius: 4,
+							cursor: cleanupLoading ? 'not-allowed' : 'pointer',
+							fontSize: 16,
+							fontWeight: 'bold'
+						}}
+					>
+						{cleanupLoading ? (
+							<>
+								<span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #fff', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', marginRight: 8 }}></span>
+								Cleaning and Formatting...
+							</>
+						) : (
+							<>
+								🧹 Create Cleaned Tab
+							</>
+						)}
+					</button>
+					{cleanupError && (
+						<div style={{
+							marginTop: 16,
+							padding: 12,
+							background: '#f8d7da',
+							color: '#721c24',
+							borderRadius: 4,
+							border: '1px solid #f5c6cb'
+						}}>
+							<strong>Error:</strong> {cleanupError}
+						</div>
+					)}
+					{cleanupResults && (
+						<div style={{
+							marginTop: 16,
+							padding: 16,
+							background: '#d4edda',
+							borderRadius: 4,
+							border: '1px solid #c3e6cb'
+						}}>
+							<h4 style={{ marginTop: 0, color: '#155724' }}>✅ Cleanup Completed Successfully!</h4>
+							<div style={{ marginBottom: 12 }}>
+								<strong>New Tab:</strong> <code style={{ background: 'white', padding: '2px 6px', borderRadius: 3 }}>{cleanupResults.tabName}</code>
+							</div>
+							<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
+								<div>
+									<strong style={{ color: '#155724' }}>Activities Copied:</strong> {cleanupResults.count}
+								</div>
+								<div>
+									<strong style={{ color: '#155724' }}>Columns:</strong> {cleanupResults.activities?.[0] ? Object.keys(cleanupResults.activities[0]).length : 'N/A'}
+								</div>
+							</div>
+							<div style={{ marginTop: 12, fontSize: 14, color: '#155724' }}>
+								✅ Check your Google Sheets for the new tab: <strong>{cleanupResults.tabName}</strong>
+							</div>
+						</div>
+					)}
+				</div>
+			</ChartCard>
+
 			<button
 				onClick={loadMetrics}
 				style={{
@@ -924,6 +1006,36 @@ export default function AdminPanel() {
 		</div>
 	);
 }
+
+	const runCleanup = async () => {
+		setCleanupLoading(true);
+		setCleanupError('');
+		setCleanupResults(null);
+
+		try {
+			// First ensure we have a CSRF token
+			await api('/me');
+			await new Promise(resolve => setTimeout(resolve, 100));
+			
+			// Execute cleanup
+			const result = await api('/sandbox/cleanup/copy-and-format', {
+				method: 'POST',
+				body: {
+					newTabName: 'Activities Cleaned',
+					sourceTabName: 'Activities'
+				}
+			});
+
+			setCleanupResults(result);
+			setCleanupError('');
+		} catch (err) {
+			setCleanupError(err.message || 'Failed to run cleanup');
+			setCleanupResults(null);
+			console.error('Cleanup error:', err);
+		} finally {
+			setCleanupLoading(false);
+		}
+	};
 
 function KPICard({ title, value, subtitle, color = '#007bff' }) {
 	return (

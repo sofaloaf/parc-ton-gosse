@@ -2,6 +2,14 @@
 set -e
 
 echo "🚀 Starting build process..."
+echo "📂 Current directory: $(pwd)"
+echo "📂 Listing files:"
+ls -la
+
+# Ensure we're in the client directory (if build.sh is in client/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+echo "📂 Changed to script directory: $(pwd)"
 
 # Nixpacks should have already run npm install, but verify dependencies exist
 if [ ! -d "node_modules" ]; then
@@ -17,10 +25,29 @@ fi
 
 # Set timeout for build (5 minutes max)
 echo "🔨 Building application..."
+echo "📂 Building from: $(pwd)"
 timeout 300 npm run build || {
   echo "❌ Build timed out or failed"
   exit 1
 }
+
+# Verify build output
+echo "📂 Verifying build output..."
+if [ -d "dist" ]; then
+  echo "✅ dist directory exists"
+  ls -la dist/
+  if [ -f "dist/index.html" ]; then
+    echo "✅ index.html exists"
+    echo "📄 Checking JS file reference in index.html:"
+    grep -o 'index-[^"]*\.js' dist/index.html || echo "⚠️  No JS file reference found"
+  else
+    echo "❌ index.html not found in dist/"
+    exit 1
+  fi
+else
+  echo "❌ dist directory not found"
+  exit 1
+fi
 
 echo "✅ Build completed successfully"
 

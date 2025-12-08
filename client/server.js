@@ -54,9 +54,15 @@ app.use(express.static(distPath, {
 // SPA fallback - serve index.html for routes that don't match static files
 // This will only be reached if express.static didn't find a file
 app.get('*', (req, res, next) => {
-  // Skip if this is a request for a static asset
+  // Skip if this is a request for a static asset - return 404 with helpful message
   if (req.path.startsWith('/assets/') || req.path.match(/\.(js|css|json|ico|png|jpg|svg|woff|woff2|ttf|eot)$/)) {
-    return res.status(404).send('File not found');
+    console.error(`❌ Static file not found: ${req.path}`);
+    console.error(`   This usually means the build is out of sync. Check that index.html references the correct files.`);
+    return res.status(404).json({ 
+      error: 'File not found',
+      path: req.path,
+      message: 'Static asset not found. The build may be out of sync.'
+    });
   }
   // Otherwise serve index.html for SPA routing
   res.sendFile(join(distPath, 'index.html'), (err) => {

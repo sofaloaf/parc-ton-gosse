@@ -23,6 +23,7 @@ export default function AdminPanel() {
 	const [cleanupLoading, setCleanupLoading] = useState(false);
 	const [cleanupResults, setCleanupResults] = useState(null);
 	const [cleanupError, setCleanupError] = useState('');
+	const [sandboxStatus, setSandboxStatus] = useState(null);
 
 	useEffect(() => {
 		// First, ensure we have a CSRF token by making a GET request
@@ -313,8 +314,18 @@ export default function AdminPanel() {
 	useEffect(() => {
 		if (isAuthenticated) {
 			loadPendingActivities();
+			checkSandboxStatus();
 		}
 	}, [isAuthenticated]);
+	
+	const checkSandboxStatus = async () => {
+		try {
+			const status = await api('/sandbox/cleanup/status');
+			setSandboxStatus(status);
+		} catch (err) {
+			console.error('Failed to check sandbox status:', err);
+		}
+	};
 
 	if (loading) {
 		return (
@@ -943,6 +954,28 @@ export default function AdminPanel() {
 			{/* Sandbox Cleanup Section */}
 			<ChartCard title="Sandbox Cleanup & Formatting">
 				<div style={{ marginBottom: 20 }}>
+					{sandboxStatus && (
+						<div style={{
+							marginBottom: 16,
+							padding: 12,
+							background: sandboxStatus.available ? '#d4edda' : '#fff3cd',
+							border: `1px solid ${sandboxStatus.available ? '#c3e6cb' : '#ffeaa7'}`,
+							borderRadius: 4
+						}}>
+							<strong style={{ color: sandboxStatus.available ? '#155724' : '#856404' }}>
+								Status: {sandboxStatus.available ? '✅ Ready' : '⚠️ Not Configured'}
+							</strong>
+							<div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+								{sandboxStatus.message}
+							</div>
+							{!sandboxStatus.configured && (
+								<div style={{ fontSize: 11, color: '#856404', marginTop: 8 }}>
+									<strong>Setup Required:</strong> Set <code>GS_SANDBOX_SHEET_ID</code> in Railway backend variables.
+									<br />Value: <code>1CLgw4ut7WI2nWxGP2xDhBer1ejjwbqXr4OTspJidI1A</code>
+								</div>
+							)}
+						</div>
+					)}
 					<p style={{ color: '#666', marginBottom: 16 }}>
 						Create a new tab in the sandbox sheet with cleaned and formatted activity data. 
 						This will:

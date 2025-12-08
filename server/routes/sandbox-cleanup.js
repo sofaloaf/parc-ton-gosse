@@ -14,6 +14,35 @@ export const sandboxCleanupRouter = express.Router();
 sandboxCleanupRouter.use(requireAuth('admin'));
 
 /**
+ * Check sandbox status and configuration
+ * GET /api/sandbox/cleanup/status
+ */
+sandboxCleanupRouter.get('/status', async (req, res) => {
+	const sandboxSheetId = process.env.GS_SANDBOX_SHEET_ID;
+	const serviceAccount = process.env.GS_SERVICE_ACCOUNT;
+	const privateKey = process.env.GS_PRIVATE_KEY;
+	
+	const status = {
+		configured: !!sandboxSheetId,
+		available: isSandboxAvailable(),
+		sheetId: sandboxSheetId || 'NOT SET',
+		hasServiceAccount: !!serviceAccount,
+		hasPrivateKey: !!privateKey,
+		message: ''
+	};
+	
+	if (!sandboxSheetId) {
+		status.message = 'GS_SANDBOX_SHEET_ID not set. Set it in Railway backend variables.';
+	} else if (!isSandboxAvailable()) {
+		status.message = 'Sandbox sheet ID is set but not initialized. Check service account access and backend logs.';
+	} else {
+		status.message = 'Sandbox is ready to use.';
+	}
+	
+	res.json(status);
+});
+
+/**
  * Create new tab and copy activities with cleaned formatting
  * POST /api/sandbox/cleanup/copy-and-format
  */

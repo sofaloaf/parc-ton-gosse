@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { translateCategories } from '../utils/categoryTranslations.js';
 import { formatTitle } from '../utils/textFormatting.js';
 import { getCategoryIcons } from '../utils/categoryIcons.js';
+import { getActivityImageUrl } from '../utils/activityImages.js';
 import StarRating from './StarRating.jsx';
 
 export default function ActivityCard({ activity, locale, onView, rating = { average: 0, count: 0 } }) {
@@ -83,8 +84,17 @@ export default function ActivityCard({ activity, locale, onView, rating = { aver
 	const price = activity.price?.amount || activity.price;
 	const images = activity.images || [];
 	
-	// Modern card design inspired by Withlocals/GetYourGuide
-	const firstImage = images && images.length > 0 ? images[0] : null;
+	// Generate professional activity image based on description
+	const [imageUrl, setImageUrl] = useState(() => {
+		// Use existing image if available, otherwise generate one
+		if (images && images.length > 0 && typeof images[0] === 'string' && 
+		    (images[0].startsWith('http://') || images[0].startsWith('https://'))) {
+			return images[0];
+		}
+		return getActivityImageUrl(activity, locale, 400, 300);
+	});
+	const [imageError, setImageError] = useState(false);
+	const [imageLoading, setImageLoading] = useState(true);
 	
 	return (
 		<Link 
@@ -119,49 +129,81 @@ export default function ActivityCard({ activity, locale, onView, rating = { aver
 				e.currentTarget.style.borderColor = '#e2e8f0';
 			}}
 			>
-				{/* Image Section */}
-				{firstImage ? (
-					<div style={{
-						width: '100%',
-						height: '200px',
-						background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-						position: 'relative',
-						overflow: 'hidden'
-					}}>
+				{/* Image Section - Professional activity images */}
+				<div style={{
+					width: '100%',
+					height: '200px',
+					background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
+					position: 'relative',
+					overflow: 'hidden'
+				}}>
+					{!imageError ? (
 						<img 
-							src={firstImage} 
+							src={imageUrl} 
 							alt={title}
+							loading="lazy"
 							style={{
 								width: '100%',
 								height: '100%',
-								objectFit: 'cover'
+								objectFit: 'cover',
+								transition: 'opacity 0.3s ease',
+								opacity: imageLoading ? 0.3 : 1
 							}}
+							onLoad={() => setImageLoading(false)}
 							onError={(e) => {
+								setImageError(true);
+								setImageLoading(false);
 								e.target.style.display = 'none';
 							}}
 						/>
-					</div>
-				) : (
-					<div style={{
-						width: '100%',
-						height: '200px',
-						background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-						display: 'flex',
-						alignItems: 'center',
-						justifyContent: 'center',
-						color: 'white',
-						fontSize: '48px',
-						fontWeight: 'normal',
-						gap: '12px',
-						flexWrap: 'wrap'
-					}}>
-						{getCategoryIcons(activity.categories || []).map((icon, idx) => (
-							<span key={idx} style={{ fontSize: '48px', lineHeight: 1 }}>
-								{icon}
-							</span>
-						))}
-					</div>
-				)}
+					) : null}
+					{imageError && (
+						<div style={{
+							width: '100%',
+							height: '100%',
+							display: 'flex',
+							alignItems: 'center',
+							justifyContent: 'center',
+							background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+							color: 'white',
+							fontSize: '48px',
+							fontWeight: 'normal',
+							gap: '12px',
+							flexWrap: 'wrap'
+						}}>
+							{getCategoryIcons(activity.categories || []).map((icon, idx) => (
+								<span key={idx} style={{ fontSize: '48px', lineHeight: 1 }}>
+									{icon}
+								</span>
+							))}
+						</div>
+					)}
+					{imageLoading && !imageError && (
+						<div style={{
+							position: 'absolute',
+							top: 0,
+							left: 0,
+							width: '100%',
+							height: '100%',
+							display: 'flex',
+							alignItems: 'center',
+							justifyContent: 'center',
+							background: 'rgba(240, 249, 255, 0.9)',
+							zIndex: 1
+						}}>
+							<div 
+								className="image-loading-spinner"
+								style={{
+									width: '32px',
+									height: '32px',
+									border: '3px solid #e0f2fe',
+									borderTop: '3px solid #3b82f6',
+									borderRadius: '50%'
+								}}
+							></div>
+						</div>
+					)}
+				</div>
 				
 				{/* Content Section */}
 				<div style={{ 

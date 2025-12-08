@@ -18,10 +18,23 @@ sandboxCleanupRouter.use(requireAuth('admin'));
  * POST /api/sandbox/cleanup/copy-and-format
  */
 sandboxCleanupRouter.post('/copy-and-format', async (req, res) => {
+	// Try to initialize sandbox if not already available
 	if (!isSandboxAvailable()) {
+		console.log('🔄 Sandbox not initialized, attempting to initialize...');
+		const { initSandboxSheets } = await import('../services/sandbox-sheets.js');
+		await initSandboxSheets();
+	}
+	
+	if (!isSandboxAvailable()) {
+		const sandboxSheetId = process.env.GS_SANDBOX_SHEET_ID;
 		return res.status(503).json({ 
 			error: 'Sandbox not available',
-			message: 'GS_SANDBOX_SHEET_ID not configured'
+			message: sandboxSheetId 
+				? 'Sandbox sheet ID is set but initialization failed. Check service account access and backend logs.'
+				: 'GS_SANDBOX_SHEET_ID not configured. Please set it in Railway backend variables.',
+			hint: sandboxSheetId 
+				? 'Verify the service account has Editor access to the sandbox sheet.'
+				: 'Set GS_SANDBOX_SHEET_ID=1CLgw4ut7WI2nWxGP2xDhBer1ejjwbqXr4OTspJidI1A in Railway backend variables.'
 		});
 	}
 	

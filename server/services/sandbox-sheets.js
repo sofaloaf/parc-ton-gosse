@@ -17,8 +17,14 @@ export async function initSandboxSheets() {
 	const privateKey = process.env.GS_PRIVATE_KEY;
 	const sandboxSheetId = process.env.GS_SANDBOX_SHEET_ID; // New env var
 	
+	console.log('🔍 Checking sandbox configuration...');
+	console.log(`   GS_SANDBOX_SHEET_ID: ${sandboxSheetId ? 'SET' : 'NOT SET'}`);
+	console.log(`   GS_SERVICE_ACCOUNT: ${serviceAccount ? 'SET' : 'NOT SET'}`);
+	console.log(`   GS_PRIVATE_KEY: ${privateKey ? 'SET' : 'NOT SET'}`);
+	
 	if (!sandboxSheetId) {
 		console.warn('⚠️  GS_SANDBOX_SHEET_ID not set - sandbox features disabled');
+		console.warn('   To enable sandbox, set GS_SANDBOX_SHEET_ID in Railway backend variables');
 		return null;
 	}
 	

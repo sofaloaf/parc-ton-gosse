@@ -14,13 +14,17 @@ let sandboxStore = null;
  */
 export async function initSandboxSheets() {
 	const serviceAccount = process.env.GS_SERVICE_ACCOUNT;
-	const privateKey = process.env.GS_PRIVATE_KEY;
 	const sandboxSheetId = process.env.GS_SANDBOX_SHEET_ID; // New env var
+	
+	// Check for private key in both formats (Railway uses GS_PRIVATE_KEY_BASE64)
+	let privateKey = process.env.GS_PRIVATE_KEY;
+	const privateKeyBase64 = process.env.GS_PRIVATE_KEY_BASE64;
 	
 	console.log('🔍 Checking sandbox configuration...');
 	console.log(`   GS_SANDBOX_SHEET_ID: ${sandboxSheetId ? 'SET' : 'NOT SET'}`);
 	console.log(`   GS_SERVICE_ACCOUNT: ${serviceAccount ? 'SET' : 'NOT SET'}`);
 	console.log(`   GS_PRIVATE_KEY: ${privateKey ? 'SET' : 'NOT SET'}`);
+	console.log(`   GS_PRIVATE_KEY_BASE64: ${privateKeyBase64 ? 'SET' : 'NOT SET'}`);
 	
 	if (!sandboxSheetId) {
 		console.warn('⚠️  GS_SANDBOX_SHEET_ID not set - sandbox features disabled');
@@ -28,23 +32,39 @@ export async function initSandboxSheets() {
 		return null;
 	}
 	
-	if (!serviceAccount || !privateKey) {
-		console.warn('⚠️  Google Sheets credentials not set - sandbox features disabled');
+	if (!serviceAccount) {
+		console.warn('⚠️  GS_SERVICE_ACCOUNT not set - sandbox features disabled');
+		return null;
+	}
+	
+	// Use base64 version if available (Railway format), otherwise use regular
+	if (!privateKey && privateKeyBase64) {
+		console.log('✅ Using GS_PRIVATE_KEY_BASE64 (base64-encoded)');
+		try {
+			privateKey = Buffer.from(privateKeyBase64, 'base64').toString('utf-8');
+			console.log(`✅ Base64 key decoded successfully (length: ${privateKey.length})`);
+		} catch (e) {
+			console.error('❌ Failed to decode GS_PRIVATE_KEY_BASE64:', e.message);
+			return null;
+		}
+	}
+	
+	if (!privateKey) {
+		console.warn('⚠️  Google Sheets private key not set (neither GS_PRIVATE_KEY nor GS_PRIVATE_KEY_BASE64) - sandbox features disabled');
 		return null;
 	}
 	
 	try {
-		// Process private key (handle base64 encoding)
+		// Process private key (handle newlines and formatting)
 		let processedPrivateKey = privateKey;
-		if (!privateKey.includes('BEGIN PRIVATE KEY')) {
-			try {
-				processedPrivateKey = Buffer.from(privateKey, 'base64').toString('utf-8');
-			} catch (e) {
-				// Not base64, use as-is
-				processedPrivateKey = privateKey;
-			}
-		}
+		
+		// Replace escaped newlines with actual newlines
 		processedPrivateKey = processedPrivateKey.replace(/\\n/g, '\n');
+		
+		// Ensure proper formatting
+		if (!processedPrivateKey.includes('BEGIN PRIVATE KEY')) {
+			console.warn('⚠️  Private key format may be incorrect');
+		}
 		
 		sandboxStore = await createSheetsStore({
 			serviceAccount,

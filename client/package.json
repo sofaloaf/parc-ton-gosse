@@ -1,25 +1,25 @@
 {
   "name": "parc-ton-gosse-client",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "serve -s dist -l $PORT --no-clipboard --cors"
+    "start": "node server.js"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^2.4.0",
     "@stripe/stripe-js": "^2.2.0",
+    "express": "^4.19.2",
     "leaflet": "^1.9.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-ga4": "^2.1.0",
     "react-leaflet": "^4.2.1",
     "react-router-dom": "^6.26.2",
-    "recharts": "^3.3.0",
-    "serve": "^14.2.5"
+    "recharts": "^3.3.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

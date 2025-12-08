@@ -47,35 +47,52 @@ sandboxCleanupRouter.get('/status', async (req, res) => {
  * POST /api/sandbox/cleanup/copy-and-format
  */
 sandboxCleanupRouter.post('/copy-and-format', async (req, res) => {
-	// Try to initialize sandbox if not already available
-	if (!isSandboxAvailable()) {
-		console.log('🔄 Sandbox not initialized, attempting to initialize...');
-		const { initSandboxSheets } = await import('../services/sandbox-sheets.js');
-		await initSandboxSheets();
-	}
-	
-	if (!isSandboxAvailable()) {
-		const sandboxSheetId = process.env.GS_SANDBOX_SHEET_ID;
-		return res.status(503).json({ 
-			error: 'Sandbox not available',
-			message: sandboxSheetId 
-				? 'Sandbox sheet ID is set but initialization failed. Check service account access and backend logs.'
-				: 'GS_SANDBOX_SHEET_ID not configured. Please set it in Railway backend variables.',
-			hint: sandboxSheetId 
-				? 'Verify the service account has Editor access to the sandbox sheet.'
-				: 'Set GS_SANDBOX_SHEET_ID=1CLgw4ut7WI2nWxGP2xDhBer1ejjwbqXr4OTspJidI1A in Railway backend variables.'
-		});
-	}
-	
-	const { newTabName = 'Activities Cleaned', sourceTabName = 'Activities' } = req.body;
+	// Set a timeout for the entire operation (2 minutes)
+	const timeout = setTimeout(() => {
+		if (!res.headersSent) {
+			res.status(504).json({
+				error: 'Operation timeout',
+				message: 'The cleanup operation took too long. This might be due to a large number of activities or API rate limits.',
+				success: false
+			});
+		}
+	}, 120000); // 2 minutes
 	
 	try {
+		// Try to initialize sandbox if not already available
+		if (!isSandboxAvailable()) {
+			console.log('🔄 Sandbox not initialized, attempting to initialize...');
+			const { initSandboxSheets } = await import('../services/sandbox-sheets.js');
+			await initSandboxSheets();
+		}
+		
+		if (!isSandboxAvailable()) {
+			clearTimeout(timeout);
+			const sandboxSheetId = process.env.GS_SANDBOX_SHEET_ID;
+			return res.status(503).json({ 
+				error: 'Sandbox not available',
+				message: sandboxSheetId 
+					? 'Sandbox sheet ID is set but initialization failed. Check service account access and backend logs.'
+					: 'GS_SANDBOX_SHEET_ID not configured. Please set it in Railway backend variables.',
+				hint: sandboxSheetId 
+					? 'Verify the service account has Editor access to the sandbox sheet.'
+					: 'Set GS_SANDBOX_SHEET_ID=1CLgw4ut7WI2nWxGP2xDhBer1ejjwbqXr4OTspJidI1A in Railway backend variables.'
+			});
+		}
+		
+		const { newTabName = 'Activities Cleaned', sourceTabName = 'Activities' } = req.body;
+		
+		console.log(`🧹 Starting cleanup: ${sourceTabName} → ${newTabName}`);
+		
 		const store = getSandboxStore();
 		
 		// Get all activities from source tab
+		console.log(`📖 Reading activities from "${sourceTabName}" tab...`);
 		const activities = await store.activities.list();
+		console.log(`✅ Found ${activities.length} activities`);
 		
 		if (activities.length === 0) {
+			clearTimeout(timeout);
 			return res.status(404).json({ 
 				error: 'No activities found',
 				message: `No activities found in "${sourceTabName}" tab`
@@ -83,33 +100,50 @@ sandboxCleanupRouter.post('/copy-and-format', async (req, res) => {
 		}
 		
 		// Get Google Sheets client
+		console.log('🔐 Getting Google Sheets client...');
 		const sheets = await getSheetsClient();
 		const sheetId = process.env.GS_SANDBOX_SHEET_ID;
 		
 		// Create new tab
+		console.log(`📝 Creating new tab "${newTabName}"...`);
 		await createTab(sheets, sheetId, newTabName);
+		console.log(`✅ Tab "${newTabName}" created`);
 		
 		// Clean and format activities
+		console.log(`🧹 Cleaning and formatting ${activities.length} activities...`);
 		const cleanedActivities = activities.map(activity => cleanActivity(activity));
+		console.log(`✅ Cleaned ${cleanedActivities.length} activities`);
 		
 		// Get headers from first activity
 		const headers = getHeaders(cleanedActivities[0]);
+		console.log(`📋 Using ${headers.length} columns`);
 		
-		// Write to new tab
-		await writeActivitiesToTab(sheets, sheetId, newTabName, headers, cleanedActivities);
+		// Write to new tab (batch if too many)
+		console.log(`💾 Writing ${cleanedActivities.length} activities to "${newTabName}" tab...`);
+		if (cleanedActivities.length > 1000) {
+			// Batch write for large datasets
+			await writeActivitiesToTabBatched(sheets, sheetId, newTabName, headers, cleanedActivities);
+		} else {
+			await writeActivitiesToTab(sheets, sheetId, newTabName, headers, cleanedActivities);
+		}
+		console.log(`✅ Successfully wrote ${cleanedActivities.length} activities`);
 		
+		clearTimeout(timeout);
 		res.json({
 			success: true,
 			message: `Created "${newTabName}" tab with ${cleanedActivities.length} cleaned activities`,
 			tabName: newTabName,
 			count: cleanedActivities.length,
-			activities: cleanedActivities
+			activities: cleanedActivities.slice(0, 10) // Only return first 10 for preview
 		});
 	} catch (error) {
-		console.error('Error copying and formatting:', error);
+		clearTimeout(timeout);
+		console.error('❌ Error copying and formatting:', error);
+		console.error('Stack:', error.stack);
 		res.status(500).json({
 			error: error.message,
-			success: false
+			success: false,
+			details: process.env.NODE_ENV === 'development' ? error.stack : undefined
 		});
 	}
 });
@@ -369,6 +403,96 @@ function getHeaders(activity) {
 	}
 	
 	return headers;
+}
+
+/**
+ * Write activities to a tab (batched for large datasets)
+ */
+async function writeActivitiesToTabBatched(sheets, sheetId, tabName, headers, activities) {
+	const batchSize = 500; // Google Sheets API limit is ~10MB, ~500 rows is safe
+	const batches = [];
+	
+	// First batch: headers
+	batches.push([headers]);
+	
+	// Split activities into batches
+	for (let i = 0; i < activities.length; i += batchSize) {
+		const batch = activities.slice(i, i + batchSize);
+		const rows = batch.map(activity => formatActivityRow(activity, headers));
+		batches.push(rows);
+	}
+	
+	console.log(`📦 Writing ${batches.length - 1} batches of activities...`);
+	
+	// Write headers first
+	await sheets.spreadsheets.values.update({
+		spreadsheetId: sheetId,
+		range: `${tabName}!A1`,
+		valueInputOption: 'RAW',
+		resource: { values: [headers] }
+	});
+	
+	// Write batches
+	for (let i = 1; i < batches.length; i++) {
+		const startRow = i === 1 ? 2 : (i - 1) * batchSize + 2;
+		const range = `${tabName}!A${startRow}`;
+		console.log(`   Writing batch ${i}/${batches.length - 1} (rows ${startRow}-${startRow + batches[i].length - 1})...`);
+		
+		await sheets.spreadsheets.values.update({
+			spreadsheetId: sheetId,
+			range: range,
+			valueInputOption: 'RAW',
+			resource: { values: batches[i] }
+		});
+	}
+	
+	console.log(`✅ All batches written successfully`);
+}
+
+/**
+ * Format a single activity row
+ */
+function formatActivityRow(activity, headers) {
+	return headers.map(header => {
+		if (header === 'title_en') {
+			const title = activity.title;
+			return (typeof title === 'object' && title !== null) ? (title.en || '') : '';
+		}
+		if (header === 'title_fr') {
+			const title = activity.title;
+			return (typeof title === 'object' && title !== null) ? (title.fr || '') : '';
+		}
+		if (header === 'description_en') {
+			const desc = activity.description;
+			return (typeof desc === 'object' && desc !== null) ? (desc.en || '') : '';
+		}
+		if (header === 'description_fr') {
+			const desc = activity.description;
+			return (typeof desc === 'object' && desc !== null) ? (desc.fr || '') : '';
+		}
+		if (header === 'price_amount') {
+			const price = activity.price;
+			if (typeof price === 'object' && price !== null) return price.amount || 0;
+			if (typeof price === 'number') return price;
+			return 0;
+		}
+		if (header === 'price_currency') {
+			const price = activity.price;
+			return (typeof price === 'object' && price !== null) ? (price.currency || 'EUR') : 'EUR';
+		}
+		
+		let value = activity[header];
+		if (value === null || value === undefined) return '';
+		if (typeof value === 'object' && !Array.isArray(value)) {
+			if (header === 'addresses' && Array.isArray(value)) {
+				return value.map(addr => typeof addr === 'string' ? addr : JSON.stringify(addr)).join(' | ');
+			}
+			return JSON.stringify(value);
+		}
+		if (Array.isArray(value)) return value.join(', ');
+		if (value instanceof Date) return value.toISOString();
+		return String(value);
+	});
 }
 
 /**

@@ -23,3 +23,8 @@ parc-ton-gosse*.json
 .env.production
 .env.development
 
+
+# Build output
+client/dist/
+server/dist/
+dist/

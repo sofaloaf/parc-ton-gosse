@@ -61,7 +61,12 @@ export default function App() {
 			setInitializing(false);
 		}).catch((err) => {
 			clearTimeout(userTimeout);
-			console.warn('Failed to check user:', err);
+			// 401 is expected when user is not logged in - don't log as error
+			const errorMessage = err?.message || String(err);
+			const isUnauthorized = errorMessage.includes('401') || errorMessage.includes('Unauthorized');
+			if (!isUnauthorized) {
+				console.warn('Failed to check user:', err);
+			}
 			setUser(null);
 			setInitializing(false);
 		});
@@ -77,8 +82,9 @@ export default function App() {
 		api('/me').then(data => {
 			clearTimeout(timeout);
 			setUser(data.user);
-		}).catch(() => {
+		}).catch((err) => {
 			clearTimeout(timeout);
+			// 401 is expected when user is not logged in - silently handle
 			setUser(null);
 		});
 	}, [location.pathname]);

@@ -27,6 +27,7 @@ fi
 echo "🧹 Cleaning previous build..."
 rm -rf dist
 rm -rf .vite
+rm -rf node_modules/.vite
 echo "✅ Cleaned dist and cache directories"
 
 # Set timeout for build (5 minutes max)
@@ -45,7 +46,20 @@ if [ -d "dist" ]; then
   if [ -f "dist/index.html" ]; then
     echo "✅ index.html exists"
     echo "📄 Checking JS file reference in index.html:"
-    grep -o 'index-[^"]*\.js' dist/index.html || echo "⚠️  No JS file reference found"
+    JS_FILE=$(grep -o 'index-[^"]*\.js' dist/index.html | head -1)
+    if [ -n "$JS_FILE" ]; then
+      echo "   Referenced JS file: $JS_FILE"
+      if [ -f "dist/assets/$JS_FILE" ]; then
+        echo "✅ Referenced JS file exists in dist/assets/"
+      else
+        echo "❌ Referenced JS file NOT FOUND in dist/assets/"
+        echo "   Files in dist/assets/:"
+        ls -la dist/assets/ || echo "   dist/assets/ directory not found"
+        exit 1
+      fi
+    else
+      echo "⚠️  No JS file reference found in index.html"
+    fi
   else
     echo "❌ index.html not found in dist/"
     exit 1

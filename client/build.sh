@@ -26,7 +26,8 @@ fi
 # Clean previous build to ensure fresh build
 echo "🧹 Cleaning previous build..."
 rm -rf dist
-echo "✅ Cleaned dist directory"
+rm -rf .vite
+echo "✅ Cleaned dist and cache directories"
 
 # Set timeout for build (5 minutes max)
 echo "🔨 Building application..."

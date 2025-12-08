@@ -221,12 +221,16 @@ export default function AdminPanel() {
 			await api('/me');
 			await new Promise(resolve => setTimeout(resolve, 100));
 			
+			// Get source tab name from input
+			const sourceTabInput = document.getElementById('sourceTabName');
+			const sourceTabName = sourceTabInput?.value?.trim() || 'Parctongosse_exported_02-21-2024csv';
+			
 			// Execute cleanup
 			const result = await api('/sandbox/cleanup/copy-and-format', {
 				method: 'POST',
 				body: {
 					newTabName: 'Activities Cleaned',
-					sourceTabName: 'Activities'
+					sourceTabName: sourceTabName
 				}
 			});
 
@@ -981,12 +985,30 @@ export default function AdminPanel() {
 						This will:
 					</p>
 					<ul style={{ color: '#666', marginLeft: 20, marginBottom: 16 }}>
-						<li>Copy all activities from the "Activities" tab</li>
+						<li>Copy all activities from the source tab</li>
 						<li>Clean formatting (remove extra spaces, normalize data)</li>
 						<li>Separate bilingual fields (title_en, title_fr, etc.)</li>
 						<li>Format price (amount, currency columns)</li>
 						<li>Create a new "Activities Cleaned" tab</li>
 					</ul>
+					<div style={{ marginBottom: 16 }}>
+						<label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold', color: '#333' }}>
+							Source Tab Name:
+						</label>
+						<input
+							type="text"
+							id="sourceTabName"
+							defaultValue="Parctongosse_exported_02-21-2024csv"
+							style={{
+								width: '100%',
+								padding: '8px 12px',
+								border: '1px solid #ddd',
+								borderRadius: 4,
+								fontSize: 14
+							}}
+							placeholder="Enter tab name (e.g., Parctongosse_exported_02-21-2024csv)"
+						/>
+					</div>
 					<button
 						onClick={runCleanup}
 						disabled={cleanupLoading}

@@ -84,25 +84,24 @@ sandboxCleanupRouter.post('/copy-and-format', async (req, res) => {
 		
 		console.log(`🧹 Starting cleanup: ${sourceTabName} → ${newTabName}`);
 		
-		const store = getSandboxStore();
+		// Get Google Sheets client first
+		console.log('🔐 Getting Google Sheets client...');
+		const sheets = await getSheetsClient();
+		const sheetId = process.env.GS_SANDBOX_SHEET_ID;
 		
-		// Get all activities from source tab
-		console.log(`📖 Reading activities from "${sourceTabName}" tab...`);
-		const activities = await store.activities.list();
+		// Read activities directly from the specified tab (not using store which looks for "Activities")
+		console.log(`📖 Reading activities directly from "${sourceTabName}" tab...`);
+		const activities = await readActivitiesFromTab(sheets, sheetId, sourceTabName);
 		console.log(`✅ Found ${activities.length} activities`);
 		
 		if (activities.length === 0) {
 			clearTimeout(timeout);
 			return res.status(404).json({ 
 				error: 'No activities found',
-				message: `No activities found in "${sourceTabName}" tab`
+				message: `No activities found in "${sourceTabName}" tab. Make sure the tab name is correct.`,
+				hint: 'Available tabs can be checked in the Google Sheet'
 			});
 		}
-		
-		// Get Google Sheets client
-		console.log('🔐 Getting Google Sheets client...');
-		const sheets = await getSheetsClient();
-		const sheetId = process.env.GS_SANDBOX_SHEET_ID;
 		
 		// Create new tab
 		console.log(`📝 Creating new tab "${newTabName}"...`);
@@ -549,6 +548,65 @@ async function createTab(sheets, sheetId, tabName) {
 		}
 		console.error('Error creating tab:', error);
 		throw new Error(`Failed to create tab: ${error.message}`);
+	}
+}
+
+/**
+ * Read activities directly from a specific tab
+ */
+async function readActivitiesFromTab(sheets, sheetId, tabName) {
+	try {
+		// Read the sheet data
+		const response = await sheets.spreadsheets.values.get({
+			spreadsheetId: sheetId,
+			range: `${tabName}!A:Z`
+		});
+		
+		const rows = response.data.values || [];
+		if (rows.length === 0) return [];
+		
+		const headers = rows[0];
+		const activities = [];
+		
+		// Process each row
+		for (let i = 1; i < rows.length; i++) {
+			const row = rows[i];
+			if (!row || row.length === 0) continue;
+			
+			const activity = {};
+			headers.forEach((header, colIndex) => {
+				const value = row[colIndex] || '';
+				if (value) {
+					// Try to parse JSON if it looks like JSON
+					if (typeof value === 'string' && (value.startsWith('{') || value.startsWith('['))) {
+						try {
+							activity[header] = JSON.parse(value);
+						} catch {
+							activity[header] = value;
+						}
+					} else {
+						activity[header] = value;
+					}
+				}
+			});
+			
+			// Only add if it has some data
+			if (Object.keys(activity).length > 0) {
+				// Generate ID if missing
+				if (!activity.id) {
+					activity.id = require('uuid').v4();
+				}
+				activities.push(activity);
+			}
+		}
+		
+		return activities;
+	} catch (error) {
+		if (error.message?.includes('Unable to parse range') || error.message?.includes('not found')) {
+			console.error(`❌ Tab "${tabName}" not found in sheet`);
+			return [];
+		}
+		throw error;
 	}
 }
 

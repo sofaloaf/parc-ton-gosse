@@ -4,6 +4,7 @@
  */
 
 import express from 'express';
+import { v4 as uuidv4 } from 'uuid';
 import { requireAuth } from '../middleware/auth.js';
 import { getSandboxStore, isSandboxAvailable } from '../services/sandbox-sheets.js';
 // googleapis will be imported dynamically

@@ -23,6 +23,11 @@ else
   echo "✅ Dependencies already installed by Nixpacks"
 fi
 
+# Clean previous build to ensure fresh build
+echo "🧹 Cleaning previous build..."
+rm -rf dist
+echo "✅ Cleaned dist directory"
+
 # Set timeout for build (5 minutes max)
 echo "🔨 Building application..."
 echo "📂 Building from: $(pwd)"

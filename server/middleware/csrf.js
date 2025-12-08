@@ -66,7 +66,9 @@ export function csrfProtection() {
 		                           path.includes('/arrondissement-crawler') ||
 		                           originalUrl.includes('/arrondissement-crawler') ||
 		                           path.includes('/metrics') ||
-		                           originalUrl.includes('/metrics');
+		                           originalUrl.includes('/metrics') ||
+		                           path.includes('/sandbox') ||
+		                           originalUrl.includes('/sandbox');
 		
 		if (isAdminOnlyEndpoint) {
 			// Check if user has a valid admin token

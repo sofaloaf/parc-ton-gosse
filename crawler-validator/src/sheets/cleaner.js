@@ -69,11 +69,25 @@ export async function readActivitiesFromSheet(sheetId, tabName = 'Activities') {
       return [];
     }
 
-    const headers = rows[0].map(h => h?.toString().trim() || '');
+    // Find first non-empty row as headers
+    let headerRowIndex = 0;
+    for (let i = 0; i < Math.min(10, rows.length); i++) {
+      if (rows[i] && rows[i].length > 0 && rows[i].some(cell => cell && cell.toString().trim().length > 0)) {
+        headerRowIndex = i;
+        break;
+      }
+    }
+
+    const headers = rows[headerRowIndex].map(h => h?.toString().trim() || '');
     console.log(`📋 Found ${headers.length} columns: ${headers.slice(0, 5).join(', ')}...`);
 
-    // Map French column names to English field names
-    const columnMap = {
+    // Check if this is already a cleaned sheet (has English column names)
+    const isCleanedSheet = headers.some(h => 
+      h === 'title_en' || h === 'title_fr' || h === 'description_en' || h === 'description_fr'
+    );
+
+    // Map French column names to English field names (only if not already cleaned)
+    const columnMap = isCleanedSheet ? {} : {
       'Nom du club': 'title',
       'Titre': 'title',
       'Title': 'title',
@@ -100,7 +114,8 @@ export async function readActivitiesFromSheet(sheetId, tabName = 'Activities') {
     };
 
     const activities = [];
-    for (let i = 1; i < rows.length; i++) {
+    const dataStartRow = headerRowIndex + 1;
+    for (let i = dataStartRow; i < rows.length; i++) {
       const row = rows[i];
       if (!row || row.length === 0) continue;
 
@@ -108,12 +123,16 @@ export async function readActivitiesFromSheet(sheetId, tabName = 'Activities') {
       headers.forEach((header, colIndex) => {
         if (!header) return;
         const value = row[colIndex]?.toString().trim() || '';
-        if (value) {
-          // Map French column names to English
+        if (value || value === '0') { // Include 0 values
+          // Map French column names to English (only if not cleaned sheet)
           const mappedHeader = columnMap[header] || header;
           
+          // Handle arrays (categories, addresses) - if comma-separated string
+          if ((mappedHeader === 'categories' || mappedHeader === 'addresses') && value.includes(',')) {
+            activity[mappedHeader] = value.split(',').map(v => v.trim()).filter(v => v.length > 0);
+          }
           // Try to parse JSON if it looks like JSON
-          if (value.startsWith('{') || value.startsWith('[')) {
+          else if (value.startsWith('{') || value.startsWith('[')) {
             try {
               activity[mappedHeader] = JSON.parse(value);
             } catch {

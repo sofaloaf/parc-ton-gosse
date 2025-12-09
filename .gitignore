@@ -28,3 +28,7 @@ parc-ton-gosse*.json
 client/dist/
 server/dist/
 dist/
+
+# Crawler/Validator (isolated - can be committed when ready)
+# crawler-validator/output/
+# crawler-validator/.env

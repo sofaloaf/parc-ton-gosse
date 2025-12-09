@@ -9,6 +9,7 @@
     "start": "node src/index.js",
     "crawl": "node src/crawler/index.js",
     "validate": "node src/validator/index.js",
+    "cleanup-sheet": "node src/cleanup-sheet.js",
     "test": "node --test tests/**/*.test.js"
   },
   "keywords": [

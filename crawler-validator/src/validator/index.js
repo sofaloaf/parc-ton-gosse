@@ -19,13 +19,21 @@ export async function validateActivities(activities) {
       warnings: []
     };
 
-    // Validate required fields
-    if (!activity.title || typeof activity.title !== 'string' || activity.title.trim().length === 0) {
+    // Validate required fields (handle both old and cleaned formats)
+    const hasTitle = (activity.title && typeof activity.title === 'string' && activity.title.trim().length > 0) ||
+                     (activity.title_en && typeof activity.title_en === 'string' && activity.title_en.trim().length > 0) ||
+                     (activity.title_fr && typeof activity.title_fr === 'string' && activity.title_fr.trim().length > 0);
+    
+    if (!hasTitle) {
       result.valid = false;
-      result.errors.push('Missing or invalid title');
+      result.errors.push('Missing or invalid title (need title, title_en, or title_fr)');
     }
 
-    if (!activity.description || typeof activity.description !== 'string' || activity.description.trim().length === 0) {
+    const hasDescription = (activity.description && typeof activity.description === 'string' && activity.description.trim().length > 0) ||
+                          (activity.description_en && typeof activity.description_en === 'string' && activity.description_en.trim().length > 0) ||
+                          (activity.description_fr && typeof activity.description_fr === 'string' && activity.description_fr.trim().length > 0);
+    
+    if (!hasDescription) {
       result.warnings.push('Missing description');
     }
 

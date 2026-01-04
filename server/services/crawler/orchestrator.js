@@ -81,7 +81,7 @@ export class CrawlerOrchestrator {
 				...mairieSources.slice(0, 100)
 			];
 			
-			console.log(`  📋 Processing ${mairieSources.length} mairie sources and ${otherSources.length} other sources`);
+			console.log(`  📋 Processing ${webSources.length} web search sources and ${mairieSources.length} city hall sources`);
 			
 			// First, extract from main sources
 			for (const source of sourcesToProcess) {

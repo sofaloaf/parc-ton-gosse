@@ -987,6 +987,96 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 				const mairieActivities = await searchMairieActivities(arrondissement, postalCode);
 				console.log(`✅ Found ${mairieActivities.length} activities from mairie pages`);
 
+				// STEP 1.5: Direct website access for known organizations (NEW APPROACH)
+				console.log(`📋 Step 1.5: Direct website access for known organizations...`);
+				try {
+					// Get existing activities to find their websites
+					const store = req.app.get('dataStore');
+					if (store) {
+						const existingActivities = await store.activities.list();
+						const arrondissementActivities = existingActivities.filter(a => {
+							const neighborhood = (a.neighborhood || '').toLowerCase();
+							return neighborhood === arrondissement.toLowerCase() || 
+							       neighborhood.includes('20') ||
+							       neighborhood === '20e';
+						});
+
+						console.log(`  📊 Found ${arrondissementActivities.length} existing activities for ${arrondissement}`);
+						
+						// Extract organizations with websites
+						const orgsWithWebsites = arrondissementActivities
+							.filter(a => {
+								const website = a.websiteLink || a.website || '';
+								return website && website.length > 0 && 
+								       !website.includes('mairie') && 
+								       !website.includes('paris.fr');
+							})
+							.map(a => ({
+								name: a.title?.fr || a.title?.en || a.title || '',
+								website: a.websiteLink || a.website || '',
+								id: a.id
+							}))
+							.filter(org => org.name && org.website);
+
+						console.log(`  🌐 Found ${orgsWithWebsites.length} organizations with websites`);
+
+						// Try to access and extract from organization websites directly
+						const directExtractions = [];
+						for (const org of orgsWithWebsites.slice(0, 30)) { // Limit to 30 to avoid too many requests
+							try {
+								let websiteUrl = org.website;
+								if (!websiteUrl.startsWith('http')) {
+									websiteUrl = `https://${websiteUrl}`;
+								}
+
+								// Skip if already found in mairie results
+								const alreadyFound = mairieActivities.some(m => 
+									m.name.toLowerCase() === org.name.toLowerCase() ||
+									m.website === websiteUrl
+								);
+								if (alreadyFound) continue;
+
+								const response = await fetch(websiteUrl, {
+									headers: {
+										'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+										'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+									},
+									timeout: 10000,
+									method: 'HEAD' // Just check if accessible
+								});
+
+								if (response.ok) {
+									// Website is accessible, add it
+									directExtractions.push({
+										name: org.name,
+										website: websiteUrl,
+										email: null,
+										phone: null,
+										address: null,
+										arrondissement: arrondissement,
+										sourceUrl: websiteUrl,
+										status: 'pending',
+										source: 'direct_website_access'
+									});
+									console.log(`    ✅ ${org.name}: ${websiteUrl}`);
+								}
+							} catch (error) {
+								// Website not accessible, skip
+							}
+							
+							// Rate limiting
+							await new Promise(resolve => setTimeout(resolve, 500));
+						}
+
+						if (directExtractions.length > 0) {
+							mairieActivities.push(...directExtractions);
+							console.log(`  ✅ Added ${directExtractions.length} organizations via direct website access`);
+						}
+					}
+				} catch (directError) {
+					console.error(`  ⚠️  Direct website access failed:`, directError.message);
+				}
+
 				// Convert to enhanced crawler format
 				const mairieEntities = mairieActivities.map(activity => ({
 					id: uuidv4(),

@@ -71,10 +71,16 @@ export class DiscoveryModule {
 			results.expandedResults = await this.expandGraph(results.googleResults.concat(results.directResults));
 		}
 
-		return {
-			...results,
-			allResults: [...results.googleResults, ...results.directResults, ...results.expandedResults]
-		};
+		// Aggregate all results - prioritize direct results (mairie pages) first
+		results.allResults = [
+			...results.directResults, // Mairie pages first (proven to work)
+			...results.googleResults,
+			...results.expandedResults
+		];
+
+		console.log(`  📊 Discovery summary: ${results.directResults.length} direct, ${results.googleResults.length} Google, ${results.expandedResults.length} expanded, ${results.allResults.length} total`);
+
+		return results;
 	}
 
 	/**

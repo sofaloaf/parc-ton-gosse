@@ -1318,15 +1318,17 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						}
 					});
 
-					// Build comprehensive query with activity keywords
-					const activityKeywords = [
-						'club', 'clubs', 'activité', 'activités', 'association', 'associations',
-						'sport', 'sports', 'théâtre', 'danse', 'musique', 'arts martiaux',
-						'loisir', 'loisirs', 'atelier', 'ateliers', 'cours', 'cercle'
-					];
+					// Build comprehensive query using template: [city] + [arrondissement] + [kids] + [activities with OR]
+					// Get comprehensive activity keywords from discovery module
+					const discoveryModule = orchestrator.discovery;
+					const activityKeywords = discoveryModule.getActivityKeywords();
 					
-					// Use top keywords for query
-					const query = `${activityKeywords.slice(0, 5).join(' ')} enfants ${arrondissement} arrondissement Paris -newsletter -"lettre d'information"`;
+					// Use top 30 activities with OR operators
+					const topActivities = activityKeywords.slice(0, 30);
+					const activityQuery = topActivities.join(' OR ');
+					
+					// Build query: Paris [arrondissement] arrondissement enfants kids (activity1 OR activity2 OR ...)
+					const query = `Paris ${arrondissement} arrondissement enfants kids (${activityQuery}) -newsletter -"lettre d'information"`;
 					const crawlResults = await orchestrator.crawl(query, {
 						arrondissement: arrondissement,
 						postalCode: postalCode,

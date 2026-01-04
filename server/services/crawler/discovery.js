@@ -40,41 +40,42 @@ export class DiscoveryModule {
 			}
 		}
 
-		// 1.5. Comprehensive activity-specific searches for the arrondissement
+		// 1.5. Comprehensive activity-specific searches using template: [city] + [kids] + [activities with OR]
 		if (options.arrondissement) {
-			// Activity keywords in French and English
-			const activityKeywords = [
-				// French
-				'club', 'clubs', 'activité', 'activités', 'association', 'associations',
-				'sport', 'sports', 'théâtre', 'théâtres', 'danse', 'danses',
-				'arts martiaux', 'art martial', 'musique', 'musiques',
-				'extracurriculaire', 'extracurriculaires',
-				// English
-				'organization', 'organizations', 'activity', 'activities',
-				'theater', 'theatre', 'dance', 'dancing', 'martial arts',
-				'music', 'extracurricular',
-				// Additional relevant terms
-				'loisir', 'loisirs', 'atelier', 'ateliers', 'cours', 'cercle',
-				'école', 'écoles', 'académie', 'académies', 'centre', 'centres'
-			];
-
-			// Build comprehensive search queries
+			const activityKeywords = this.getActivityKeywords();
+			const arrondissement = options.arrondissement;
+			const city = 'Paris';
+			
+			// Build queries using template: [city] + [arrondissement] + [kids/enfant] + [activities with OR]
 			const specificQueries = [];
 			
-			// Base queries with arrondissement
-			for (const keyword of activityKeywords.slice(0, 15)) { // Limit to avoid too many API calls
-				specificQueries.push(`${keyword} enfants ${options.arrondissement} Paris`);
-				specificQueries.push(`${keyword} enfants Paris ${options.arrondissement}`);
+			// Group activities into chunks to create multiple targeted queries
+			const chunkSize = 20; // 20 activities per query
+			for (let i = 0; i < activityKeywords.length; i += chunkSize) {
+				const activityChunk = activityKeywords.slice(i, i + chunkSize);
+				const activityQuery = activityChunk.join(' OR ');
+				
+				// Build query: Paris [arrondissement] arrondissement enfants kids (activity1 OR activity2 OR ...)
+				const query = `${city} ${arrondissement} arrondissement enfants kids (${activityQuery}) -newsletter -"lettre d'information"`;
+				specificQueries.push(query);
 			}
-
-			// Specific targeted searches
-			specificQueries.push(`"cercle escrime" ${options.arrondissement} Paris`);
-			specificQueries.push(`associations ${options.arrondissement} arrondissement Paris`);
-			specificQueries.push(`clubs sport ${options.arrondissement} Paris`);
-			specificQueries.push(`activités enfants ${options.arrondissement} arrondissement`);
-
-			// Limit to 20 queries to avoid rate limiting
-			for (const specificQuery of specificQueries.slice(0, 20)) {
+			
+			// Also add some specific targeted searches for high-value activities
+			const highValueActivities = [
+				'football OR soccer', 'basketball OR basket', 'tennis', 'natation OR swimming',
+				'danse OR dance', 'théâtre OR theater', 'musique OR music',
+				'judo', 'karate OR karaté', 'escrime OR fencing',
+				'gymnastique OR gymnastics', 'escalade OR climbing',
+				'dessin OR drawing', 'peinture OR painting', 'codage OR coding'
+			];
+			
+			for (const activityGroup of highValueActivities) {
+				const query = `${city} ${arrondissement} arrondissement enfants kids (${activityGroup}) -newsletter`;
+				specificQueries.push(query);
+			}
+			
+			// Limit to 15 queries to avoid rate limiting
+			for (const specificQuery of specificQueries.slice(0, 15)) {
 				try {
 					if (this.googleApiKey && this.googleCx) {
 						const specificResults = await this.googleCustomSearch(specificQuery, { ...options, expandGraph: false });
@@ -91,20 +92,28 @@ export class DiscoveryModule {
 							    snippet.includes('newsletter') ||
 							    snippet.includes('lettre d\'information') ||
 							    url.includes('newsletter') ||
-							    title.includes('abonnement') && title.includes('newsletter')) {
+							    (title.includes('abonnement') && title.includes('newsletter'))) {
 								return false;
 							}
 							
-							// Exclude generic Paris city hall pages
-							if (title.includes('mairie de paris') && !title.includes('activité') && !title.includes('association')) {
+							// Exclude generic Paris city hall pages without activity content
+							if (title.includes('mairie de paris') && 
+							    !title.includes('activité') && 
+							    !title.includes('association') &&
+							    !title.includes('club') &&
+							    !snippet.includes('activité') &&
+							    !snippet.includes('association')) {
 								return false;
 							}
 							
 							// Must contain activity-related keywords
 							const activityIndicators = [
-								'activité', 'activités', 'club', 'clubs', 'association', 'associations',
-								'sport', 'théâtre', 'danse', 'musique', 'arts martiaux',
-								'loisir', 'atelier', 'cours', 'cercle', 'enfant', 'enfants'
+								'activité', 'activités', 'activity', 'activities',
+								'club', 'clubs', 'association', 'associations',
+								'sport', 'sports', 'théâtre', 'theater', 'theatre',
+								'danse', 'dance', 'musique', 'music', 'arts martiaux', 'martial arts',
+								'loisir', 'loisirs', 'atelier', 'workshop', 'cours', 'cercle',
+								'enfant', 'enfants', 'kids', 'children'
 							];
 							
 							const hasActivityKeyword = activityIndicators.some(keyword => 
@@ -115,10 +124,10 @@ export class DiscoveryModule {
 						});
 						
 						results.googleResults.push(...filteredResults);
-						console.log(`  🔍 Search "${specificQuery}": ${filteredResults.length} filtered results (${specificResults.length} total)`);
+						console.log(`  🔍 Search "${specificQuery.substring(0, 80)}...": ${filteredResults.length} filtered results (${specificResults.length} total)`);
 					}
 				} catch (error) {
-					console.warn(`Specific search failed for "${specificQuery}":`, error.message);
+					console.warn(`Specific search failed:`, error.message);
 				}
 			}
 		}
@@ -314,38 +323,138 @@ export class DiscoveryModule {
 	}
 
 	/**
-	 * Build optimized search query with activity-specific keywords
+	 * Build optimized search query using template: [city] + [kids/enfant] + [activities with OR]
 	 */
 	buildSearchQuery(baseQuery, options = {}) {
-		const terms = [baseQuery];
+		const arrondissement = options.arrondissement || '';
+		const city = 'Paris';
 		
-		// Add more specific terms for better results
-		if (options.arrondissement) {
-			terms.push(`${options.arrondissement} arrondissement`);
+		// Comprehensive activity keywords in French and English
+		const activityKeywords = this.getActivityKeywords();
+		
+		// Build query using template: [city] + [arrondissement] + [kids/enfant] + [activities with OR]
+		const queryParts = [];
+		
+		// City and location
+		queryParts.push(city);
+		if (arrondissement) {
+			queryParts.push(`${arrondissement} arrondissement`);
 		}
 		
-		// Activity keywords (prioritize most relevant)
-		const activityTerms = [
-			'activité', 'activités', 'club', 'clubs', 'association', 'associations',
-			'sport', 'sports', 'théâtre', 'danse', 'musique', 'arts martiaux',
-			'loisir', 'loisirs', 'atelier', 'ateliers', 'cours', 'cercle'
-		];
+		// Kids/children keywords
+		queryParts.push('enfants', 'kids', 'children');
 		
-		if (options.entityType) {
-			terms.push(options.entityType);
-		} else {
-			// Add top activity keywords
-			terms.push(...activityTerms.slice(0, 5));
-		}
-		
-		// Always include "enfants" and "Paris" for relevance
-		terms.push('enfants', 'Paris');
+		// Activities with OR operators (limit to avoid query too long)
+		// Use top 30 most relevant activities
+		const topActivities = activityKeywords.slice(0, 30);
+		const activityQuery = topActivities.join(' OR ');
+		queryParts.push(`(${activityQuery})`);
 		
 		// Exclude newsletter and generic terms
-		const excludeTerms = ['newsletter', 'lettre d\'information', 'abonnement'];
-		terms.push(...excludeTerms.map(term => `-${term}`)); // Google search exclusion syntax
+		const excludeTerms = ['-newsletter', '-"lettre d\'information"', '-abonnement', '-"Les newsletters"'];
+		queryParts.push(...excludeTerms);
 		
-		return terms.join(' ');
+		return queryParts.join(' ');
+	}
+
+	/**
+	 * Get comprehensive list of activity keywords in French and English
+	 */
+	getActivityKeywords() {
+		return [
+			// Core activity terms
+			'activité', 'activités', 'activities', 'activity',
+			'club', 'clubs', 'association', 'associations',
+			'sport', 'sports', 'loisir', 'loisirs', 'leisure',
+			'cours', 'atelier', 'ateliers', 'workshop', 'workshops',
+			
+			// Team Ball Sports
+			'football', 'soccer', 'basketball', 'basket-ball', 'basket',
+			'volleyball', 'volley-ball', 'handball', 'rugby',
+			'baseball', 'cricket', 'ultimate frisbee', 'ultimate',
+			
+			// Combat & Martial Arts
+			'boxe', 'boxing', 'judo', 'karate', 'karaté',
+			'taekwondo', 'tae kwon do', 'kickboxing', 'kick-boxing',
+			'jujitsu', 'jiu-jitsu', 'mma', 'arts martiaux', 'martial arts',
+			'escrime', 'fencing', 'aïkido', 'aikido', 'kendo',
+			'kung fu', 'wrestling', 'lutte',
+			
+			// Water Sports
+			'natation', 'swimming', 'plongée', 'diving',
+			'water polo', 'water-polo', 'kayak', 'kayaking',
+			'canoë', 'canoe', 'canoeing', 'aviron', 'rowing',
+			'surf', 'surfing', 'paddle', 'paddleboarding',
+			
+			// Racquet & Precision Sports
+			'tennis', 'tennis de table', 'ping pong', 'table tennis',
+			'badminton', 'squash', 'racquetball',
+			
+			// Athletics & Endurance
+			'athlétisme', 'athletics', 'course', 'running',
+			'marathon', 'triathlon', 'duathlon', 'biathlon',
+			'orientation', 'orienteering',
+			
+			// Winter & Snow Sports
+			'ski', 'skiing', 'snowboard', 'snowboarding',
+			'hockey sur glace', 'ice hockey', 'patinage', 'skating',
+			'patinage artistique', 'figure skating', 'patinage de vitesse', 'speed skating',
+			'curling',
+			
+			// Cycling & Wheel Sports
+			'cyclisme', 'cycling', 'vélo', 'bike', 'biking',
+			'vtt', 'mountain bike', 'bmx', 'cyclocross',
+			'roller', 'roller skating', 'patin à roulettes',
+			
+			// Gymnastics & Acrobatics
+			'gymnastique', 'gymnastics', 'gymnastique artistique', 'artistic gymnastics',
+			'gymnastique rythmique', 'rhythmic gymnastics',
+			'trampoline', 'trampolining', 'parkour', 'freerunning',
+			'cheerleading', 'acrobatie', 'acrobatics',
+			
+			// Mind & Board Games
+			'échecs', 'chess', 'go', 'bridge',
+			'esport', 'esports', 'gaming', 'jeux vidéo',
+			'rubik\'s cube', 'speedcubing',
+			
+			// Creative & Niche Activities
+			'dessin', 'drawing', 'peinture', 'painting',
+			'manga', 'bande dessinée', 'comics',
+			'codage', 'coding', 'programmation', 'programming',
+			'théâtre', 'theater', 'theatre', 'drama',
+			'danse', 'dance', 'ballet', 'hip-hop', 'hip hop',
+			'salsa', 'photographie', 'photography',
+			'écriture', 'writing', 'poésie', 'poetry',
+			'musique', 'music', 'chorale', 'choir', 'orchestre', 'orchestra',
+			'guitare', 'guitar', 'piano', 'violon', 'violin',
+			'cosplay', 'modélisme', 'model building',
+			
+			// Extreme & Adventure
+			'escalade', 'climbing', 'grimpe', 'bouldering',
+			'alpinisme', 'mountaineering', 'parapente', 'paragliding',
+			
+			// Equestrian & Animal Sports
+			'équitation', 'horseback riding', 'équitation', 'equestrian',
+			'saut d\'obstacles', 'show jumping', 'dressage',
+			'agility', 'agility canine',
+			
+			// Shooting & Archery
+			'tir à l\'arc', 'archery', 'tir', 'shooting',
+			
+			// Motorsports
+			'karting', 'go-kart', 'moto', 'motocross',
+			
+			// Alternative Sports
+			'ultimate frisbee', 'disc golf', 'geocaching',
+			'football américain', 'american football',
+			
+			// Additional relevant terms
+			'cercle', 'académie', 'academy', 'école', 'school',
+			'centre', 'center', 'centre de loisirs', 'leisure center',
+			'périscolaire', 'extracurricular', 'extracurriculaire',
+			'jeunesse', 'youth', 'adolescent', 'teenager',
+			'initiation', 'débutant', 'beginner'
+		];
 	}
 
 	/**

@@ -25,6 +25,10 @@ export default function AdminPanel() {
 	const [cleanupError, setCleanupError] = useState('');
 	const [sandboxStatus, setSandboxStatus] = useState(null);
 	const [activeTab, setActiveTab] = useState('analytics'); // 'analytics' or 'crawler'
+	const [enhancedCrawlerLoading, setEnhancedCrawlerLoading] = useState(false);
+	const [enhancedCrawlerResults, setEnhancedCrawlerResults] = useState(null);
+	const [enhancedCrawlerError, setEnhancedCrawlerError] = useState('');
+	const [comparisonData, setComparisonData] = useState(null);
 
 	useEffect(() => {
 		// First, ensure we have a CSRF token by making a GET request
@@ -280,6 +284,87 @@ export default function AdminPanel() {
 
 	const run20eTest = async () => {
 		await runArrondissementCrawler(['20e']);
+	};
+
+	const runEnhanced20eTest = async () => {
+		setEnhancedCrawlerLoading(true);
+		setEnhancedCrawlerError('');
+		setEnhancedCrawlerResults(null);
+		setComparisonData(null);
+
+		try {
+			await api('/me');
+			await new Promise(resolve => setTimeout(resolve, 100));
+			
+			// Run enhanced crawler
+			const crawlerResult = await api('/arrondissement-crawler/search-enhanced', {
+				method: 'POST',
+				body: {
+					arrondissements: ['20e']
+				}
+			});
+
+			setEnhancedCrawlerResults(crawlerResult);
+
+			// Get existing activities for comparison
+			const existingActivities = await api('/activities?neighborhood=20e&limit=1000');
+			
+			// Compare results
+			const comparison = compareResults(
+				crawlerResult.entities || [],
+				existingActivities || []
+			);
+
+			setComparisonData(comparison);
+			
+			// Refresh pending activities
+			setTimeout(() => {
+				loadPendingActivities();
+			}, 2000);
+		} catch (err) {
+			setEnhancedCrawlerError(err.message || 'Failed to run enhanced crawler');
+			console.error('Enhanced crawler error:', err);
+		} finally {
+			setEnhancedCrawlerLoading(false);
+		}
+	};
+
+	const compareResults = (crawlerEntities, existingActivities) => {
+		const crawlerNames = new Set(
+			crawlerEntities.map(e => {
+				const name = e.data?.name || e.data?.title || e.name || e.title || '';
+				return typeof name === 'string' ? name.toLowerCase().trim() : '';
+			}).filter(Boolean)
+		);
+
+		const existingNames = new Set(
+			existingActivities.map(a => {
+				const name = a.title?.en || a.title?.fr || a.title || '';
+				return typeof name === 'string' ? name.toLowerCase().trim() : '';
+			}).filter(Boolean)
+		);
+
+		// Find new entities (in crawler but not in existing)
+		const newEntities = crawlerEntities.filter(e => {
+			const name = (e.data?.name || e.data?.title || e.name || e.title || '').toLowerCase().trim();
+			return name && !existingNames.has(name);
+		});
+
+		// Find missing entities (in existing but not in crawler)
+		const missingEntities = existingActivities.filter(a => {
+			const name = (a.title?.en || a.title?.fr || a.title || '').toLowerCase().trim();
+			return name && !crawlerNames.has(name);
+		});
+
+		return {
+			crawlerCount: crawlerEntities.length,
+			existingCount: existingActivities.length,
+			newCount: newEntities.length,
+			missingCount: missingEntities.length,
+			overlapCount: crawlerEntities.length - newEntities.length,
+			newEntities: newEntities.slice(0, 20), // Limit to 20 for display
+			missingEntities: missingEntities.slice(0, 20) // Limit to 20 for display
+		};
 	};
 
 	const loadPendingActivities = async () => {
@@ -839,7 +924,7 @@ export default function AdminPanel() {
 							<li>Save activities with pending status (requires approval)</li>
 						</ul>
 						
-						{/* Test Button for 20e */}
+						{/* Test Buttons for 20e */}
 						<div style={{ marginBottom: 16, padding: 12, background: '#fff3cd', borderRadius: 4, border: '1px solid #ffc107' }}>
 							<p style={{ margin: '0 0 8px 0', fontWeight: 'bold', color: '#856404' }}>
 								🧪 Test: 20th Arrondissement (20e)
@@ -847,34 +932,64 @@ export default function AdminPanel() {
 							<p style={{ margin: '0 0 12px 0', fontSize: 14, color: '#856404' }}>
 								Test the crawler on 20e to compare with existing manually extracted activities and identify gaps.
 							</p>
-							<button
-								onClick={run20eTest}
-								disabled={arrondissementCrawlerLoading}
-								style={{
-									padding: '10px 20px',
-									background: arrondissementCrawlerLoading ? '#6c757d' : '#ffc107',
-									color: arrondissementCrawlerLoading ? '#fff' : '#000',
-									border: 'none',
-									borderRadius: 4,
-									cursor: arrondissementCrawlerLoading ? 'not-allowed' : 'pointer',
-									fontSize: 14,
-									fontWeight: 'bold',
-									display: 'flex',
-									alignItems: 'center',
-									gap: 8
-								}}
-							>
-								{arrondissementCrawlerLoading ? (
-									<>
-										<span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid currentColor', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
-										Crawling 20e...
-									</>
-								) : (
-									<>
-										🧪 Test Crawler for 20e
-									</>
-								)}
-							</button>
+							<div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+								<button
+									onClick={run20eTest}
+									disabled={arrondissementCrawlerLoading || enhancedCrawlerLoading}
+									style={{
+										padding: '10px 20px',
+										background: arrondissementCrawlerLoading ? '#6c757d' : '#ffc107',
+										color: arrondissementCrawlerLoading ? '#fff' : '#000',
+										border: 'none',
+										borderRadius: 4,
+										cursor: arrondissementCrawlerLoading ? 'not-allowed' : 'pointer',
+										fontSize: 14,
+										fontWeight: 'bold',
+										display: 'flex',
+										alignItems: 'center',
+										gap: 8
+									}}
+								>
+									{arrondissementCrawlerLoading ? (
+										<>
+											<span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid currentColor', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
+											Crawling 20e...
+										</>
+									) : (
+										<>
+											🧪 Test Crawler for 20e
+										</>
+									)}
+								</button>
+								<button
+									onClick={runEnhanced20eTest}
+									disabled={arrondissementCrawlerLoading || enhancedCrawlerLoading}
+									style={{
+										padding: '10px 20px',
+										background: enhancedCrawlerLoading ? '#6c757d' : '#28a745',
+										color: 'white',
+										border: 'none',
+										borderRadius: 4,
+										cursor: enhancedCrawlerLoading ? 'not-allowed' : 'pointer',
+										fontSize: 14,
+										fontWeight: 'bold',
+										display: 'flex',
+										alignItems: 'center',
+										gap: 8
+									}}
+								>
+									{enhancedCrawlerLoading ? (
+										<>
+											<span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid currentColor', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
+											Running Enhanced Crawler...
+										</>
+									) : (
+										<>
+											✨ Enhanced Crawler for 20e
+										</>
+									)}
+								</button>
+							</div>
 						</div>
 
 						{/* All Arrondissements Button */}
@@ -918,6 +1033,122 @@ export default function AdminPanel() {
 								border: '1px solid #f5c6cb'
 							}}>
 								<strong>Error:</strong> {arrondissementCrawlerError}
+							</div>
+						)}
+						{enhancedCrawlerError && (
+							<div style={{
+								marginTop: 16,
+								padding: 12,
+								background: '#f8d7da',
+								color: '#721c24',
+								borderRadius: 4,
+								border: '1px solid #f5c6cb'
+							}}>
+								<strong>Enhanced Crawler Error:</strong> {enhancedCrawlerError}
+							</div>
+						)}
+						{enhancedCrawlerResults && (
+							<div style={{
+								marginTop: 16,
+								padding: 16,
+								background: '#d1ecf1',
+								borderRadius: 4,
+								border: '1px solid #bee5eb'
+							}}>
+								<h4 style={{ marginTop: 0, color: '#0c5460' }}>✨ Enhanced Crawler Completed!</h4>
+								<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
+									<div>
+										<strong style={{ color: '#0c5460' }}>Entities Found:</strong> {enhancedCrawlerResults.summary?.entities || 0}
+									</div>
+									<div>
+										<strong style={{ color: '#0c5460' }}>Sources Searched:</strong> {enhancedCrawlerResults.summary?.arrondissements || 0}
+									</div>
+									<div>
+										<strong style={{ color: '#856404' }}>Errors:</strong> {enhancedCrawlerResults.summary?.errors || 0}
+									</div>
+								</div>
+								{enhancedCrawlerResults.saveResult && (
+									<div style={{ marginTop: 12, padding: 12, background: '#fff', borderRadius: 4, border: '1px solid #bee5eb' }}>
+										<strong style={{ color: '#0c5460' }}>📋 Results saved to Google Sheets:</strong>
+										<div style={{ marginTop: 8, fontSize: 14 }}>
+											<div><strong>Tab name:</strong> {enhancedCrawlerResults.saveResult.tabName}</div>
+											{enhancedCrawlerResults.saveResult.sheetUrl && (
+												<div style={{ marginTop: 4 }}>
+													<strong>Sheet URL:</strong>{' '}
+													<a href={enhancedCrawlerResults.saveResult.sheetUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#007bff', textDecoration: 'underline' }}>
+														{enhancedCrawlerResults.saveResult.sheetUrl}
+													</a>
+												</div>
+											)}
+										</div>
+									</div>
+								)}
+							</div>
+						)}
+						{comparisonData && (
+							<div style={{
+								marginTop: 16,
+								padding: 16,
+								background: '#e7f3ff',
+								borderRadius: 4,
+								border: '1px solid #b3d9ff'
+							}}>
+								<h4 style={{ marginTop: 0, color: '#004085' }}>📊 Comparison with Existing Data</h4>
+								<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
+									<div>
+										<strong style={{ color: '#004085' }}>Crawler Found:</strong> {comparisonData.crawlerCount}
+									</div>
+									<div>
+										<strong style={{ color: '#004085' }}>Existing Data:</strong> {comparisonData.existingCount}
+									</div>
+									<div style={{ background: '#d4edda', padding: 8, borderRadius: 4 }}>
+										<strong style={{ color: '#155724' }}>New Entities:</strong> {comparisonData.newCount}
+									</div>
+									<div style={{ background: '#fff3cd', padding: 8, borderRadius: 4 }}>
+										<strong style={{ color: '#856404' }}>Missing in Crawler:</strong> {comparisonData.missingCount}
+									</div>
+									<div>
+										<strong style={{ color: '#004085' }}>Overlap:</strong> {comparisonData.overlapCount}
+									</div>
+								</div>
+								{comparisonData.newEntities && comparisonData.newEntities.length > 0 && (
+									<div style={{ marginTop: 16 }}>
+										<strong style={{ color: '#155724' }}>✅ New Entities Found by Crawler ({comparisonData.newEntities.length} shown):</strong>
+										<div style={{ marginTop: 8, maxHeight: 200, overflowY: 'auto', background: 'white', padding: 12, borderRadius: 4 }}>
+											{comparisonData.newEntities.map((entity, idx) => (
+												<div key={idx} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: idx < comparisonData.newEntities.length - 1 ? '1px solid #e0e0e0' : 'none' }}>
+													<div style={{ fontSize: 13, fontWeight: 'bold' }}>
+														{entity.data?.name || entity.data?.title || entity.name || entity.title || 'Untitled'}
+													</div>
+													{entity.data?.website && (
+														<div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+															🔗 {entity.data.website}
+														</div>
+													)}
+												</div>
+											))}
+										</div>
+									</div>
+								)}
+								{comparisonData.missingEntities && comparisonData.missingEntities.length > 0 && (
+									<div style={{ marginTop: 16 }}>
+										<strong style={{ color: '#856404' }}>⚠️ Entities in Existing Data but Not Found by Crawler ({comparisonData.missingEntities.length} shown):</strong>
+										<div style={{ marginTop: 8, maxHeight: 200, overflowY: 'auto', background: 'white', padding: 12, borderRadius: 4 }}>
+											{comparisonData.missingEntities.map((activity, idx) => (
+												<div key={activity.id || idx} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: idx < comparisonData.missingEntities.length - 1 ? '1px solid #e0e0e0' : 'none' }}>
+													<div style={{ fontSize: 13, fontWeight: 'bold' }}>
+														{activity.title?.en || activity.title?.fr || activity.title || 'Untitled'}
+													</div>
+													{activity.websiteLink && (
+														<div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+															🔗 {activity.websiteLink}
+														</div>
+													)}
+												</div>
+											))}
+										</div>
+									</div>
+								)}
 							</div>
 						)}
 						{arrondissementCrawlerResults && (

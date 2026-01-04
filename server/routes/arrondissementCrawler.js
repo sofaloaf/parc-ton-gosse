@@ -1019,7 +1019,8 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 				arrondissement,
 				postalCode,
 				entities: crawlResults.entities || [],
-				stats: crawlResults.stats
+				stats: crawlResults.stats,
+				saveResult: crawlResults.saveResult || null
 			});
 
 			allErrors.push(...(crawlResults.errors || []));
@@ -1028,7 +1029,8 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 		}
 
 		// Aggregate results
-		const totalEntities = allResults.reduce((sum, r) => sum + (r.entities?.length || 0), 0);
+		const allEntities = allResults.flatMap(r => r.entities || []);
+		const totalEntities = allEntities.length;
 		const totalStats = orchestrator.getStats();
 
 		res.json({
@@ -1039,9 +1041,11 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 				entities: totalEntities,
 				errors: allErrors.length
 			},
-			results: allResults,
+			entities: allEntities, // Flattened list of all entities
+			results: allResults, // Per-arrondissement results
 			errors: allErrors,
 			stats: totalStats,
+			saveResult: allResults.length > 0 && allResults[0].saveResult ? allResults[0].saveResult : null,
 			message: `Enhanced crawler found ${totalEntities} entities across ${arrondissementsToSearch.length} arrondissement(s)`
 		});
 

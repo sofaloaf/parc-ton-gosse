@@ -156,88 +156,101 @@ async function searchMairieActivities(arrondissement, postalCode) {
 				const document = dom.window.document;
 
 				const baseUrl = `https://mairie${arrNum}.paris.fr`;
+				const pageActivityLinks = new Set(); // Collect links from this URL
 
-		// Find activity links - try multiple selectors
-		const activitySelectors = [
-			'a[href*="/activites/"]',
-			'a[href*="/activite/"]',
-			'a[href*="activites"]',
-			'a[href*="activite"]',
-			'article a',
-			'.result-item a',
-			'.activity-item a',
-			'.search-result a',
-			'[class*="result"] a',
-			'[class*="activity"] a',
-			'[class*="activite"] a',
-			'.card a',
-			'.item a',
-			'li a[href*="activite"]'
-		];
-		
-		for (const selector of activitySelectors) {
-			try {
-				const links = document.querySelectorAll(selector);
-				for (const link of links) {
-					const href = link.getAttribute('href');
-					if (!href) continue;
-					
-					const isActivityLink = href.includes('activite') || 
-					                     href.includes('activites') ||
-					                     link.textContent?.toLowerCase().includes('activité') ||
-					                     link.textContent?.toLowerCase().includes('activite');
-					
-					if (isActivityLink) {
-						let fullUrl = href;
-						if (href.startsWith('/')) {
-							fullUrl = `${baseUrl}${href}`;
-						} else if (!href.startsWith('http')) {
-							fullUrl = `${baseUrl}/${href}`;
-						}
-					if (fullUrl.startsWith('http') && !pageActivityLinks.has(fullUrl)) {
-						pageActivityLinks.add(fullUrl);
-					}
-					}
-				}
-			} catch (e) {
-				// Skip selector errors
-			}
-		}
-
-		// Also search for URLs in page text
-		const activityUrlPattern = /https?:\/\/mairie\d+\.paris\.fr\/[^"'\s<>]*activit[^"'\s<>]*/gi;
-		const urlMatches = html.match(activityUrlPattern);
-		if (urlMatches) {
-			urlMatches.forEach(url => activityLinks.add(url));
-		}
-
-		// Parse JSON-LD structured data
-		const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
-		for (const script of jsonLdScripts) {
-			try {
-				const jsonLd = JSON.parse(script.textContent);
-				const extractUrls = (obj) => {
-					if (typeof obj !== 'object' || obj === null) return;
-					if (Array.isArray(obj)) {
-						obj.forEach(extractUrls);
-					} else {
-						for (const [key, value] of Object.entries(obj)) {
-							if (key === 'url' && typeof value === 'string' && value.includes('activite')) {
-								activityLinks.add(value);
-							} else if (typeof value === 'object') {
-								extractUrls(value);
+				// Find activity links - try multiple selectors
+				const activitySelectors = [
+					'a[href*="/activites/"]',
+					'a[href*="/activite/"]',
+					'a[href*="activites"]',
+					'a[href*="activite"]',
+					'article a',
+					'.result-item a',
+					'.activity-item a',
+					'.search-result a',
+					'[class*="result"] a',
+					'[class*="activity"] a',
+					'[class*="activite"] a',
+					'.card a',
+					'.item a',
+					'li a[href*="activite"]'
+				];
+				
+				for (const selector of activitySelectors) {
+					try {
+						const links = document.querySelectorAll(selector);
+						for (const link of links) {
+							const href = link.getAttribute('href');
+							if (!href) continue;
+							
+							const isActivityLink = href.includes('activite') || 
+							                     href.includes('activites') ||
+							                     link.textContent?.toLowerCase().includes('activité') ||
+							                     link.textContent?.toLowerCase().includes('activite');
+							
+							if (isActivityLink) {
+								let fullUrl = href;
+								if (href.startsWith('/')) {
+									fullUrl = `${baseUrl}${href}`;
+								} else if (!href.startsWith('http')) {
+									fullUrl = `${baseUrl}/${href}`;
+								}
+								if (fullUrl.startsWith('http') && !pageActivityLinks.has(fullUrl)) {
+									pageActivityLinks.add(fullUrl);
+								}
 							}
 						}
+					} catch (e) {
+						// Skip selector errors
 					}
-				};
-				extractUrls(jsonLd);
-			} catch (e) {
-				// Invalid JSON-LD, skip
+				}
+
+				// Also search for URLs in page text
+				const activityUrlPattern = /https?:\/\/mairie\d+\.paris\.fr\/[^"'\s<>]*activit[^"'\s<>]*/gi;
+				const urlMatches = html.match(activityUrlPattern);
+				if (urlMatches) {
+					urlMatches.forEach(url => pageActivityLinks.add(url));
+				}
+
+				// Parse JSON-LD structured data
+				const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+				for (const script of jsonLdScripts) {
+					try {
+						const jsonLd = JSON.parse(script.textContent);
+						const extractUrls = (obj) => {
+							if (typeof obj !== 'object' || obj === null) return;
+							if (Array.isArray(obj)) {
+								obj.forEach(extractUrls);
+							} else {
+								for (const [key, value] of Object.entries(obj)) {
+									if (key === 'url' && typeof value === 'string' && value.includes('activite')) {
+										pageActivityLinks.add(value);
+									} else if (typeof value === 'object') {
+										extractUrls(value);
+									}
+								}
+							}
+						};
+						extractUrls(jsonLd);
+					} catch (e) {
+						// Invalid JSON-LD, skip
+					}
+				}
+
+				// Merge links from this page
+				pageActivityLinks.forEach(link => allActivityLinks.add(link));
+				console.log(`  ✅ Found ${pageActivityLinks.size} links from this URL (total: ${allActivityLinks.size})`);
+				
+				// Rate limiting between URLs
+				await new Promise(resolve => setTimeout(resolve, 1000));
+				
+			} catch (urlError) {
+				console.warn(`  ⚠️  Error with URL ${mairieUrl}:`, urlError.message);
+				continue;
 			}
 		}
 
-				// Collect links from this URL
-				const pageActivityLinks = new Set();
+		console.log(`📋 [${arrondissement}] Found ${allActivityLinks.size} total activity links from all mairie URLs`);
 		
 		console.log(`📋 [${arrondissement}] Processing ${activityArray.length} activity links...`);
 		

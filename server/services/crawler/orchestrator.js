@@ -65,10 +65,30 @@ export class CrawlerOrchestrator {
 			// Stage 2: Extraction
 			console.log('📄 Stage 2: Extraction');
 			const extractedEntities = [];
-			const sourcesToProcess = discoveryResults.allResults.slice(0, options.maxSources || 50);
+			
+			// Prioritize mairie pages - they have proven results
+			const mairieSources = discoveryResults.allResults.filter(s => 
+				s.source === 'mairie_direct' || s.source === 'mairie_activity' || s.url.includes('mairie')
+			);
+			const otherSources = discoveryResults.allResults.filter(s => 
+				s.source !== 'mairie_direct' && s.source !== 'mairie_activity' && !s.url.includes('mairie')
+			);
+			
+			// Process mairie sources first (up to 100), then others (up to 50)
+			const sourcesToProcess = [
+				...mairieSources.slice(0, 100),
+				...otherSources.slice(0, 50)
+			];
+			
+			console.log(`  📋 Processing ${mairieSources.length} mairie sources and ${otherSources.length} other sources`);
 			
 			// First, extract from main sources
 			for (const source of sourcesToProcess) {
+				// Skip if already processed
+				if (this.discovery.hasVisited(source.url)) {
+					continue;
+				}
+				this.discovery.markVisited(source.url);
 				try {
 					// Check robots.txt compliance
 					if (!(await this.compliance.canCrawl(source.url))) {
@@ -84,12 +104,20 @@ export class CrawlerOrchestrator {
 						confidence: source.confidence
 					});
 
-					// Only add if we have meaningful data (name is critical)
+					// Only add if we have meaningful data (name OR contact info is critical)
 					if (extracted.data && Object.keys(extracted.data).length > 0) {
-						// Ensure we have a name field
-						if (!extracted.data.name && !extracted.data.title && !extracted.data.heading) {
-							console.log(`  ⚠️  Skipping ${source.url} - no name/title found`);
+						// More lenient: accept if we have name OR contact info (email/phone/website)
+						const hasName = extracted.data.name || extracted.data.title || extracted.data.heading;
+						const hasContact = extracted.data.email || extracted.data.phone || extracted.data.website;
+						
+						if (!hasName && !hasContact) {
+							console.log(`  ⚠️  Skipping ${source.url} - no name or contact info found`);
 							continue;
+						}
+
+						// Ensure we have at least a name field (use URL as fallback)
+						if (!extracted.data.name) {
+							extracted.data.name = extracted.data.title || extracted.data.heading || 'Organization';
 						}
 
 						extracted.id = extracted.id || uuidv4();
@@ -97,7 +125,7 @@ export class CrawlerOrchestrator {
 						extracted.confidence = extracted.confidence || source.confidence || 0.5;
 						extractedEntities.push(extracted);
 						this.stats.extracted++;
-						console.log(`  ✅ Extracted: ${extracted.data.name || extracted.data.title || extracted.data.heading || 'Unknown'}`);
+						console.log(`  ✅ Extracted: ${extracted.data.name}${extracted.data.website ? ` (${extracted.data.website})` : ''}`);
 					}
 
 					// If this source has links (like mairie pages), also extract from those links
@@ -105,6 +133,8 @@ export class CrawlerOrchestrator {
 						console.log(`  📎 Found ${source.links.length} links from ${source.url}, extracting from activity pages...`);
 						
 						// Process links (limit to avoid too many requests)
+						// For mairie pages, process more links (they're proven to work)
+						const maxLinks = source.url.includes('mairie') ? 50 : 30;
 						const linksToProcess = source.links
 							.filter(link => {
 								// Filter for activity-related links - be more inclusive
@@ -115,7 +145,7 @@ export class CrawlerOrchestrator {
 								       url.includes('loisir') || url.includes('enfant') ||
 								       (!url.includes('mairie') && !url.includes('paris.fr')); // External links are likely organizations
 							})
-							.slice(0, 30); // Increase to 30 links per source
+							.slice(0, maxLinks);
 						
 						for (const link of linksToProcess) {
 							try {
@@ -134,16 +164,24 @@ export class CrawlerOrchestrator {
 									confidence: 0.8
 								});
 
-								// Only add if we have a name
-								if (linkExtracted.data && (linkExtracted.data.name || linkExtracted.data.title || linkExtracted.data.heading)) {
+								// More lenient: accept if we have name OR contact info
+								const hasName = linkExtracted.data?.name || linkExtracted.data?.title || linkExtracted.data?.heading;
+								const hasContact = linkExtracted.data?.email || linkExtracted.data?.phone || linkExtracted.data?.website;
+								
+								if (linkExtracted.data && (hasName || hasContact)) {
+									// Ensure we have at least a name field
+									if (!linkExtracted.data.name) {
+										linkExtracted.data.name = linkExtracted.data.title || linkExtracted.data.heading || 'Organization';
+									}
+									
 									linkExtracted.id = linkExtracted.id || uuidv4();
 									linkExtracted.sources = [link, source.url];
 									linkExtracted.confidence = linkExtracted.confidence || 0.8;
 									extractedEntities.push(linkExtracted);
 									this.stats.extracted++;
-									console.log(`    ✅ Extracted: ${linkExtracted.data.name || linkExtracted.data.title || linkExtracted.data.heading || 'Unknown'}`);
+									console.log(`    ✅ Extracted: ${linkExtracted.data.name}${linkExtracted.data.website ? ` (${linkExtracted.data.website})` : ''}`);
 								} else {
-									console.log(`    ⚠️  Skipping ${link} - no name found`);
+									console.log(`    ⚠️  Skipping ${link} - no name or contact info found`);
 								}
 							} catch (error) {
 								console.error(`    ❌ Error extracting from ${link}:`, error.message);

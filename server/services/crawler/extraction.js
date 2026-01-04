@@ -15,6 +15,17 @@ export class ExtractionModule {
 	constructor(options = {}) {
 		this.timeout = options.timeout || 20000;
 		this.maxRetries = options.maxRetries || 3;
+		this.userAgents = [
+			'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+			'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+			'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+			'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+			'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'
+		];
+	}
+
+	getRandomUserAgent() {
+		return this.userAgents[Math.floor(Math.random() * this.userAgents.length)];
 	}
 
 	/**
@@ -49,6 +60,7 @@ export class ExtractionModule {
 
 	/**
 	 * Extract data from HTML page
+	 * Uses adaptive extraction similar to AI-powered crawlers
 	 */
 	async extractFromHTML(url, options = {}) {
 		const result = {
@@ -60,13 +72,24 @@ export class ExtractionModule {
 		};
 
 		try {
+			// Try with retries and better headers (anti-detection)
+			const headers = {
+				'User-Agent': this.getRandomUserAgent(),
+				'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+				'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+				'Accept-Encoding': 'gzip, deflate, br',
+				'Connection': 'keep-alive',
+				'Upgrade-Insecure-Requests': '1',
+				'Sec-Fetch-Dest': 'document',
+				'Sec-Fetch-Mode': 'navigate',
+				'Sec-Fetch-Site': 'none',
+				'Cache-Control': 'max-age=0'
+			};
+
 			const response = await fetch(url, {
-				headers: {
-					'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-					'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-					'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
-				},
-				timeout: this.timeout
+				headers,
+				timeout: this.timeout,
+				redirect: 'follow'
 			});
 
 			if (!response.ok) {
@@ -75,37 +98,53 @@ export class ExtractionModule {
 			}
 
 			const html = await response.text();
-			const dom = new JSDOM(html);
+			const dom = new JSDOM(html, {
+				url: url,
+				referrer: url,
+				contentType: 'text/html',
+				includeNodeLocations: false,
+				storageQuota: 10000000
+			});
 			const document = dom.window.document;
 
-			// Extract using multiple strategies
+			// Extract using multiple strategies - prioritize proven approaches
 			const structuredData = this.extractStructuredData(document);
 			const metaData = this.extractMetaData(document);
 			const contentData = this.extractContentData(document);
 			const contactData = this.extractContactInfo(html);
+			
+			// Use proven extraction approach from working crawler (for mairie pages)
+			const provenExtraction = this.extractUsingProvenApproach(document, html, url);
 
-			// Merge all extracted data
+			// Merge all extracted data - prioritize proven extraction
 			result.data = {
 				...structuredData,
 				...metaData,
 				...contentData,
-				...contactData
+				...contactData,
+				...provenExtraction // Proven approach takes precedence
 			};
 
 			// Ensure we have a name field (critical for organization identification)
-			if (!result.data.name && contentData.name) {
-				result.data.name = contentData.name;
+			// Try proven extraction first, then fallback
+			if (!result.data.name) {
+				result.data.name = provenExtraction.name || contentData.name || metaData.title || contentData.heading;
 			}
-			if (!result.data.name && metaData.title) {
-				result.data.name = metaData.title;
-			}
-			if (!result.data.name && contentData.heading) {
-				result.data.name = contentData.heading;
-			}
-
+			
 			// Extract website from page if not already found
 			if (!result.data.website) {
-				result.data.website = this.extractWebsiteFromPage(document, url);
+				result.data.website = provenExtraction.website || this.extractWebsiteFromPage(document, url);
+			}
+			
+			// Merge contact info from proven extraction
+			if (provenExtraction.email && !result.data.email) {
+				result.data.email = provenExtraction.email;
+			}
+			if (provenExtraction.phone && !result.data.phone) {
+				result.data.phone = provenExtraction.phone;
+			}
+			if (provenExtraction.address && !result.data.address) {
+				result.data.address = provenExtraction.address;
 			}
 
 			// Calculate confidence based on data completeness
@@ -476,6 +515,128 @@ export class ExtractionModule {
 		if (addressObj.addressCountry) parts.push(addressObj.addressCountry);
 
 		return parts.join(', ');
+	}
+
+	/**
+	 * Extract using proven approach from working arrondissement crawler
+	 */
+	extractUsingProvenApproach(document, html, url) {
+		const data = {};
+		
+		// Extract title (organization name) - same as working crawler
+		const title = document.querySelector('h1')?.textContent?.trim() ||
+		             document.querySelector('.title')?.textContent?.trim() ||
+		             document.querySelector('title')?.textContent?.trim() ||
+		             '';
+		data.name = title;
+
+		// Extract website using proven selectors
+		const websiteSelectors = [
+			'a[href^="http"]:not([href*="mairie"]):not([href*="paris.fr"])',
+			'a[href^="https://"]',
+			'.website',
+			'.site-web',
+			'[class*="website"]',
+			'[class*="site"]',
+			'a[href*="www."]'
+		];
+
+		for (const selector of websiteSelectors) {
+			const links = document.querySelectorAll(selector);
+			for (const link of links) {
+				const href = link.getAttribute('href');
+				if (href && href.startsWith('http') && 
+				    !href.includes('mairie') && 
+				    !href.includes('paris.fr') &&
+				    !href.includes('facebook.com') &&
+				    !href.includes('instagram.com') &&
+				    !href.includes('twitter.com') &&
+				    !href.includes('youtube.com') &&
+				    !href.includes('linkedin.com')) {
+					data.website = href;
+					const linkText = link.textContent?.trim();
+					if (linkText && linkText.length > 3 && linkText.length < 50 && !data.name) {
+						data.name = linkText;
+					}
+					break;
+				}
+			}
+			if (data.website) break;
+		}
+
+		// Search in text content for URLs (proven approach)
+		if (!data.website) {
+			const urlPattern = /https?:\/\/[^\s<>"']+[^.,;!?]/g;
+			const matches = html.match(urlPattern);
+			if (matches) {
+				for (const urlMatch of matches) {
+					const cleanUrl = urlMatch.replace(/[.,;!?]+$/, '');
+					if (!cleanUrl.includes('mairie') && 
+					    !cleanUrl.includes('paris.fr') &&
+					    !cleanUrl.includes('facebook.com') &&
+					    !cleanUrl.includes('instagram.com') &&
+					    !cleanUrl.includes('twitter.com') &&
+					    !cleanUrl.includes('youtube.com') &&
+					    !cleanUrl.includes('linkedin.com') &&
+					    cleanUrl.includes('.')) {
+						data.website = cleanUrl;
+						break;
+					}
+				}
+			}
+		}
+
+		// Extract email (proven approach)
+		const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+		const emailMatch = html.match(emailPattern);
+		if (emailMatch) {
+			const email = emailMatch.find(e => 
+				!e.includes('mairie') && 
+				!e.includes('paris.fr') && 
+				!e.includes('noreply') &&
+				!e.includes('no-reply')
+			);
+			if (email) {
+				data.email = email;
+				// If we have email but no website, try to construct website from email domain
+				if (!data.website) {
+					const domain = email.split('@')[1];
+					if (domain && 
+					    !domain.includes('gmail.com') && 
+					    !domain.includes('yahoo.com') && 
+					    !domain.includes('hotmail.com') && 
+					    !domain.includes('outlook.com') &&
+					    !domain.includes('free.fr') &&
+					    !domain.includes('orange.fr')) {
+						data.website = `https://${domain}`;
+					}
+				}
+			}
+		}
+
+		// Extract phone (proven approach)
+		const phonePattern = /(?:\+33|0)[1-9](?:[.\s]?\d{2}){4}/g;
+		const phoneMatch = html.match(phonePattern);
+		if (phoneMatch) {
+			data.phone = phoneMatch[0].trim();
+		}
+
+		// Extract address (proven approach)
+		const addressPatterns = [
+			/\d+\s+[A-Za-zÀ-ÿ\s'-]+(?:rue|avenue|boulevard|place|allée|chemin|impasse|passage)[A-Za-zÀ-ÿ\s,]+(?:Paris|Île-de-France)/gi,
+			/\d{5}\s+Paris/gi,
+			/\d+[,\s]+(?:rue|avenue|boulevard|place|allée|chemin|impasse|passage)[^,\n]{5,80}/gi
+		];
+		
+		for (const pattern of addressPatterns) {
+			const match = html.match(pattern);
+			if (match && match.length > 0) {
+				data.address = match[0].trim();
+				break;
+			}
+		}
+
+		return data;
 	}
 
 	/**

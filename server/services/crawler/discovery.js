@@ -116,13 +116,14 @@ export class DiscoveryModule {
 
 	/**
 	 * Direct lookups on known government and city hall sites
+	 * Uses the proven approach from the existing arrondissement crawler
 	 */
 	async directGovernmentLookup(query, options = {}) {
 		const results = [];
 		const arrondissement = options.arrondissement;
 		const postalCode = options.postalCode;
 
-		// Paris mairie sites
+		// Paris mairie sites - use the same approach as the working crawler
 		if (arrondissement && postalCode) {
 			const arrNum = arrondissement.replace('er', '').replace('e', '');
 			const mairieUrl = `https://mairie${arrNum}.paris.fr/recherche/activites?arrondissements=${postalCode}`;
@@ -130,7 +131,7 @@ export class DiscoveryModule {
 			if (!this.visitedUrls.has(mairieUrl)) {
 				try {
 					await this.applyRateLimit(`mairie${arrNum}.paris.fr`);
-					const result = await this.fetchAndParse(mairieUrl);
+					const result = await this.fetchAndParseMairiePage(mairieUrl, arrondissement);
 					if (result) {
 						// Add the main mairie page
 						results.push({
@@ -149,9 +150,11 @@ export class DiscoveryModule {
 							const activityLinks = result.links
 								.filter(link => {
 									const url = link.toLowerCase();
-									return url.includes('activite') || url.includes('activites') || url.includes('association');
+									return url.includes('activite') || url.includes('activites') || 
+									       url.includes('association') || url.includes('club') ||
+									       url.includes('cercle') || url.includes('sport');
 								})
-								.slice(0, 30); // Limit to 30 links to avoid too many requests
+								.slice(0, 50); // Increase to 50 links
 							
 							for (const link of activityLinks) {
 								if (!this.visitedUrls.has(link)) {
@@ -263,7 +266,121 @@ export class DiscoveryModule {
 	}
 
 	/**
-	 * Fetch and parse a URL
+	 * Fetch and parse a mairie page using proven selectors from existing crawler
+	 */
+	async fetchAndParseMairiePage(url, arrondissement) {
+		try {
+			const response = await fetch(url, {
+				headers: {
+					'User-Agent': this.getRandomUserAgent(),
+					'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+					'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
+				},
+				timeout: 20000
+			});
+
+			if (!response.ok) return null;
+
+			const html = await response.text();
+			const dom = new JSDOM(html);
+			const document = dom.window.document;
+
+			// Use the same proven selectors from the working arrondissement crawler
+			const activitySelectors = [
+				'a[href*="/activites/"]',
+				'a[href*="/activite/"]',
+				'a[href*="activites"]',
+				'a[href*="activite"]',
+				'article a',
+				'.result-item a',
+				'.activity-item a',
+				'.search-result a',
+				'[class*="result"] a',
+				'[class*="activity"] a',
+				'[class*="activite"] a',
+				'.card a',
+				'.item a',
+				'li a[href*="activite"]'
+			];
+
+			const links = new Set();
+			const baseUrl = `https://mairie${arrondissement.replace('er', '').replace('e', '')}.paris.fr`;
+
+			// Extract links using proven selectors
+			for (const selector of activitySelectors) {
+				try {
+					const elements = document.querySelectorAll(selector);
+					for (const link of elements) {
+						const href = link.getAttribute('href');
+						if (!href) continue;
+
+						const isActivityLink = href.includes('activite') || 
+						                     href.includes('activites') ||
+						                     link.textContent?.toLowerCase().includes('activité') ||
+						                     link.textContent?.toLowerCase().includes('activite');
+
+						if (isActivityLink) {
+							let fullUrl = href;
+							if (href.startsWith('/')) {
+								fullUrl = `${baseUrl}${href}`;
+							} else if (!href.startsWith('http')) {
+								fullUrl = `${baseUrl}/${href}`;
+							}
+							if (fullUrl.startsWith('http')) {
+								links.add(fullUrl);
+							}
+						}
+					}
+				} catch (e) {
+					// Skip selector errors
+				}
+			}
+
+			// Also search for URLs in page text (like the working crawler)
+			const activityUrlPattern = /https?:\/\/mairie\d+\.paris\.fr\/[^"'\s<>]*activit[^"'\s<>]*/gi;
+			const urlMatches = html.match(activityUrlPattern);
+			if (urlMatches) {
+				urlMatches.forEach(url => links.add(url));
+			}
+
+			// Parse JSON-LD structured data
+			const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+			for (const script of jsonLdScripts) {
+				try {
+					const jsonLd = JSON.parse(script.textContent);
+					const extractUrls = (obj) => {
+						if (typeof obj !== 'object' || obj === null) return;
+						if (Array.isArray(obj)) {
+							obj.forEach(extractUrls);
+						} else {
+							for (const [key, value] of Object.entries(obj)) {
+								if (key === 'url' && typeof value === 'string' && value.includes('activite')) {
+									links.add(value);
+								} else if (typeof value === 'object') {
+									extractUrls(value);
+								}
+							}
+						}
+					};
+					extractUrls(jsonLd);
+				} catch (e) {
+					// Invalid JSON-LD, skip
+				}
+			}
+
+			return {
+				snippet: document.querySelector('meta[name="description"]')?.content || 
+				         document.querySelector('p')?.textContent?.substring(0, 200) || '',
+				links: Array.from(links)
+			};
+		} catch (error) {
+			console.error(`Failed to fetch mairie page ${url}:`, error.message);
+			return null;
+		}
+	}
+
+	/**
+	 * Fetch and parse a URL (generic)
 	 */
 	async fetchAndParse(url) {
 		try {

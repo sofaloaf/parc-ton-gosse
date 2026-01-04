@@ -11,6 +11,7 @@ import {
 	ACTIVITIES_COLUMN_ORDER 
 } from '../utils/sheetsFormatter.js';
 import { CrawlerOrchestrator } from '../services/crawler/index.js';
+import { AdvancedCrawler } from '../services/crawler/advancedCrawler.js';
 
 export const arrondissementCrawlerRouter = express.Router();
 
@@ -1009,9 +1010,87 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 
 				const arrondissementEntities = [...mairieEntities];
 
-				// STEP 2: Use enhanced crawler for additional sources (Google search, etc.)
-				console.log(`📋 Step 2: Using enhanced crawler for additional sources...`);
+				// STEP 2: Use advanced hybrid crawler for additional sources
+				console.log(`📋 Step 2: Using advanced hybrid crawler for additional sources...`);
 				try {
+					// Strategy 1: Advanced crawler with Playwright for JS-heavy sites
+					const advancedCrawler = new AdvancedCrawler({
+						maxDepth: 2,
+						maxUrls: 50,
+						usePlaywright: true
+					});
+
+					// Build start URLs for advanced crawler
+					const startUrls = [
+						`https://mairie${arrondissement.replace('er', '').replace('e', '')}.paris.fr/recherche/activites?arrondissements=${postalCode}`,
+						`https://www.paris.fr/pages/activites-et-loisirs-${arrondissement}-1234`
+					];
+
+					// Extractor function for advanced crawler
+					const extractorFn = async (document, html, url) => {
+						// Use proven extraction approach
+						const title = document.querySelector('h1')?.textContent?.trim() ||
+						             document.querySelector('.title')?.textContent?.trim() ||
+						             document.querySelector('title')?.textContent?.trim() || '';
+
+						// Extract organization info
+						const websiteSelectors = [
+							'a[href^="http"]:not([href*="mairie"]):not([href*="paris.fr"])',
+							'a[href^="https://"]'
+						];
+
+						let website = null;
+						for (const selector of websiteSelectors) {
+							const links = document.querySelectorAll(selector);
+							for (const link of links) {
+								const href = link.getAttribute('href');
+								if (href && href.startsWith('http') && 
+								    !href.includes('mairie') && 
+								    !href.includes('paris.fr') &&
+								    !href.includes('facebook.com') &&
+								    !href.includes('instagram.com')) {
+									website = href;
+									break;
+								}
+							}
+							if (website) break;
+						}
+
+						// Extract contact info
+						const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+						const emailMatch = html.match(emailPattern);
+						const email = emailMatch ? emailMatch.find(e => !e.includes('mairie') && !e.includes('paris.fr')) : null;
+
+						const phonePattern = /(?:\+33|0)[1-9](?:[.\s]?\d{2}){4}/g;
+						const phoneMatch = html.match(phonePattern);
+						const phone = phoneMatch ? phoneMatch[0].trim() : null;
+
+						if (!title && !website && !email) {
+							return null; // Skip if no useful data
+						}
+
+						return {
+							id: uuidv4(),
+							data: {
+								name: title || 'Organization',
+								title: title || 'Organization',
+								website: website,
+								websiteLink: website,
+								email: email,
+								phone: phone,
+								description: `Activity from ${arrondissement} arrondissement`,
+								neighborhood: arrondissement,
+								arrondissement: arrondissement
+							},
+							sources: [url],
+							confidence: 0.8
+						};
+					};
+
+					const advancedResults = await advancedCrawler.crawl(startUrls, extractorFn);
+					console.log(`✅ Advanced crawler: ${advancedResults.stats.extracted} entities extracted`);
+
+					// Strategy 2: Enhanced orchestrator for Google search
 					const orchestrator = new CrawlerOrchestrator({
 						discovery: {
 							googleApiKey: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY,
@@ -1035,26 +1114,45 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					const crawlResults = await orchestrator.crawl(query, {
 						arrondissement: arrondissement,
 						postalCode: postalCode,
-						maxSources: 30, // Lower limit since we already have mairie results
+						maxSources: 20, // Lower limit since we already have mairie results
 						geocode: true,
 						categorize: true,
-						expandGraph: false, // Disable to speed up
+						expandGraph: false,
 						tabName: generateTabName('pending', 'enhanced-crawler')
 					});
 
-					// Merge enhanced crawler results (avoid duplicates)
+					// Merge all results (avoid duplicates)
 					const existingNames = new Set(mairieEntities.map(e => e.data.name?.toLowerCase()));
-					const newEntities = (crawlResults.entities || []).filter(e => {
-						const name = e.data?.name || e.data?.title || '';
-						return name && !existingNames.has(name.toLowerCase());
+					
+					// Add advanced crawler results
+					const advancedEntities = (advancedResults.results || []).map(r => ({
+						id: r.id || uuidv4(),
+						data: r.data,
+						sources: r.sources || [r.url],
+						confidence: r.confidence || 0.8,
+						extractedAt: r.extractedAt,
+						validation: { valid: true, score: 0.8 }
+					})).filter(e => {
+						const name = e.data.name?.toLowerCase();
+						return name && !existingNames.has(name);
 					});
 
-					arrondissementEntities.push(...newEntities);
+					// Add enhanced crawler results
+					const enhancedEntities = (crawlResults.entities || []).filter(e => {
+						const name = (e.data?.name || e.data?.title || '').toLowerCase();
+						return name && !existingNames.has(name);
+					});
+
+					// Update existing names set
+					advancedEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
+					enhancedEntities.forEach(e => existingNames.add((e.data?.name || e.data?.title || '').toLowerCase()));
+
+					arrondissementEntities.push(...advancedEntities, ...enhancedEntities);
 					allErrors.push(...(crawlResults.errors || []));
-					console.log(`✅ Enhanced crawler found ${newEntities.length} additional entities`);
+					console.log(`✅ Advanced crawler found ${advancedEntities.length} entities, Enhanced crawler found ${enhancedEntities.length} entities`);
 				} catch (enhancedError) {
-					console.error(`⚠️  Enhanced crawler failed (continuing with mairie results):`, enhancedError.message);
-					allErrors.push({ stage: 'enhanced_crawler', error: enhancedError.message });
+					console.error(`⚠️  Advanced crawler failed (continuing with mairie results):`, enhancedError.message);
+					allErrors.push({ stage: 'advanced_crawler', error: enhancedError.message });
 				}
 
 				// STEP 3: Save all entities to Google Sheets using proven approach

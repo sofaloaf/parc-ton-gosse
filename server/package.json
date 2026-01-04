@@ -29,6 +29,7 @@
     "node-fetch": "^3.3.2",
     "nodemailer": "^7.0.10",
     "papaparse": "^5.4.1",
+    "playwright": "^1.57.0",
     "stripe": "^14.24.0",
     "uuid": "^9.0.1"
   }

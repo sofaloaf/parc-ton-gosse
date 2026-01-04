@@ -61,7 +61,10 @@ export class CrawlerOrchestrator {
 			// Stage 2: Extraction
 			console.log('📄 Stage 2: Extraction');
 			const extractedEntities = [];
-			for (const source of discoveryResults.allResults.slice(0, options.maxSources || 50)) {
+			const sourcesToProcess = discoveryResults.allResults.slice(0, options.maxSources || 50);
+			
+			// First, extract from main sources
+			for (const source of sourcesToProcess) {
 				try {
 					// Check robots.txt compliance
 					if (!(await this.compliance.canCrawl(source.url))) {
@@ -77,12 +80,70 @@ export class CrawlerOrchestrator {
 						confidence: source.confidence
 					});
 
+					// Only add if we have meaningful data (name is critical)
 					if (extracted.data && Object.keys(extracted.data).length > 0) {
+						// Ensure we have a name field
+						if (!extracted.data.name && !extracted.data.title && !extracted.data.heading) {
+							console.log(`  ⚠️  Skipping ${source.url} - no name/title found`);
+							continue;
+						}
+
 						extracted.id = extracted.id || uuidv4();
 						extracted.sources = [source.url];
 						extracted.confidence = extracted.confidence || source.confidence || 0.5;
 						extractedEntities.push(extracted);
 						this.stats.extracted++;
+						console.log(`  ✅ Extracted: ${extracted.data.name || extracted.data.title || extracted.data.heading || 'Unknown'}`);
+					}
+
+					// If this source has links (like mairie pages), also extract from those links
+					if (source.links && Array.isArray(source.links) && source.links.length > 0) {
+						console.log(`  📎 Found ${source.links.length} links from ${source.url}, extracting from activity pages...`);
+						
+						// Process links (limit to avoid too many requests)
+						const linksToProcess = source.links
+							.filter(link => {
+								// Filter for activity-related links
+								const url = link.toLowerCase();
+								return url.includes('activite') || url.includes('activites') || 
+								       url.includes('association') || url.includes('club') ||
+								       url.includes('sport') || url.includes('loisir');
+							})
+							.slice(0, 20); // Limit to 20 links per source
+						
+						for (const link of linksToProcess) {
+							try {
+								if (this.discovery.hasVisited(link)) continue;
+								
+								// Check robots.txt
+								if (!(await this.compliance.canCrawl(link))) {
+									continue;
+								}
+
+								await this.compliance.applyRateLimit(link);
+								this.discovery.markVisited(link);
+
+								// Extract from activity page
+								const linkExtracted = await this.extraction.extractFromUrl(link, {
+									confidence: 0.8
+								});
+
+								// Only add if we have a name
+								if (linkExtracted.data && (linkExtracted.data.name || linkExtracted.data.title || linkExtracted.data.heading)) {
+									linkExtracted.id = linkExtracted.id || uuidv4();
+									linkExtracted.sources = [link, source.url];
+									linkExtracted.confidence = linkExtracted.confidence || 0.8;
+									extractedEntities.push(linkExtracted);
+									this.stats.extracted++;
+									console.log(`    ✅ Extracted: ${linkExtracted.data.name || linkExtracted.data.title || linkExtracted.data.heading || 'Unknown'}`);
+								} else {
+									console.log(`    ⚠️  Skipping ${link} - no name found`);
+								}
+							} catch (error) {
+								console.error(`    ❌ Error extracting from ${link}:`, error.message);
+								// Continue with next link
+							}
+						}
 					}
 				} catch (error) {
 					console.error(`❌ Extraction error for ${source.url}:`, error.message);

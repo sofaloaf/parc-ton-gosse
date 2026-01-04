@@ -1001,8 +1001,8 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 
 			console.log(`\n🔍 Starting enhanced crawl for ${arrondissement} (${postalCode})`);
 
-			// Build search query
-			const query = `associations activités enfants ${arrondissement} Paris`;
+			// Build more specific search query
+			const query = `associations clubs activités enfants ${arrondissement} arrondissement Paris`;
 
 			// Run enhanced crawler
 			const crawlResults = await orchestrator.crawl(query, {

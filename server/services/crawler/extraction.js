@@ -92,6 +92,22 @@ export class ExtractionModule {
 				...contactData
 			};
 
+			// Ensure we have a name field (critical for organization identification)
+			if (!result.data.name && contentData.name) {
+				result.data.name = contentData.name;
+			}
+			if (!result.data.name && metaData.title) {
+				result.data.name = metaData.title;
+			}
+			if (!result.data.name && contentData.heading) {
+				result.data.name = contentData.heading;
+			}
+
+			// Extract website from page if not already found
+			if (!result.data.website) {
+				result.data.website = this.extractWebsiteFromPage(document, url);
+			}
+
 			// Calculate confidence based on data completeness
 			result.confidence = this.calculateConfidence(result.data);
 
@@ -219,10 +235,90 @@ export class ExtractionModule {
 			.filter(p => p.length > 20)
 			.slice(0, 5);
 
+		// Extract organization name using multiple strategies
+		const orgName = this.extractOrganizationName(document);
+
 		return {
 			heading: h1,
+			name: orgName || h1, // Use extracted org name or fallback to h1
 			content: paragraphs.join('\n\n')
 		};
+	}
+
+	/**
+	 * Extract organization name from page using multiple heuristics
+	 */
+	extractOrganizationName(document) {
+		// Strategy 1: Look for common organization name patterns in headings
+		const headings = Array.from(document.querySelectorAll('h1, h2, h3'))
+			.map(h => h.textContent?.trim())
+			.filter(h => h && h.length > 3 && h.length < 100);
+
+		// Look for patterns like "Cercle d'escrime", "Association", "Club", etc.
+		const orgKeywords = ['cercle', 'association', 'club', 'fédération', 'ligue', 'société', 'centre', 'école', 'académie', 'escrime', 'sport'];
+		
+		// First, try to find headings with organization keywords
+		for (const heading of headings) {
+			const lowerHeading = heading.toLowerCase();
+			if (orgKeywords.some(keyword => lowerHeading.includes(keyword))) {
+				// Clean up the heading (remove common prefixes/suffixes)
+				let cleanName = heading.trim();
+				// Remove common prefixes
+				cleanName = cleanName.replace(/^(le|la|les|un|une)\s+/i, '');
+				// Remove common suffixes
+				cleanName = cleanName.replace(/\s*-\s*(Paris|France|Île-de-France).*$/i, '');
+				return cleanName.trim();
+			}
+		}
+
+		// If no keyword match, use the first substantial heading
+		if (headings.length > 0) {
+			let firstHeading = headings[0];
+			// Clean up
+			firstHeading = firstHeading.replace(/^(le|la|les|un|une)\s+/i, '');
+			firstHeading = firstHeading.replace(/\s*-\s*(Paris|France|Île-de-France).*$/i, '');
+			if (firstHeading.length > 3 && firstHeading.length < 100) {
+				return firstHeading.trim();
+			}
+		}
+
+		// Strategy 2: Look in structured data (already extracted, but check title/name)
+		// This will be handled by structured data extraction
+
+		// Strategy 3: Look for organization name in meta tags
+		const ogTitle = document.querySelector('meta[property="og:title"]')?.content?.trim();
+		if (ogTitle && ogTitle.length > 3 && ogTitle.length < 100) {
+			return ogTitle;
+		}
+
+		// Strategy 4: Look for organization name in specific class names
+		const orgNameSelectors = [
+			'.organization-name',
+			'.org-name',
+			'.association-name',
+			'[class*="organization"]',
+			'[class*="association"]',
+			'[class*="club"]',
+			'.title-organization',
+			'.nom-association'
+		];
+
+		for (const selector of orgNameSelectors) {
+			const element = document.querySelector(selector);
+			if (element) {
+				const text = element.textContent?.trim();
+				if (text && text.length > 3 && text.length < 100) {
+					return text;
+				}
+			}
+		}
+
+		// Strategy 5: Use h1 if it looks like an organization name
+		if (h1 && h1.length > 3 && h1.length < 100) {
+			return h1;
+		}
+
+		return null;
 	}
 
 	/**
@@ -338,6 +434,42 @@ export class ExtractionModule {
 	}
 
 	/**
+	 * Extract website URL from page
+	 */
+	extractWebsiteFromPage(document, currentUrl) {
+		// Look for external links that might be the organization's website
+		const links = Array.from(document.querySelectorAll('a[href]'));
+		for (const link of links) {
+			const href = link.getAttribute('href');
+			if (!href) continue;
+
+			try {
+				const linkUrl = new URL(href, currentUrl);
+				const currentDomain = new URL(currentUrl).hostname;
+
+				// Skip if it's the same domain or social media
+				if (linkUrl.hostname === currentDomain ||
+				    linkUrl.hostname.includes('facebook.com') ||
+				    linkUrl.hostname.includes('instagram.com') ||
+				    linkUrl.hostname.includes('twitter.com') ||
+				    linkUrl.hostname.includes('youtube.com') ||
+				    linkUrl.hostname.includes('linkedin.com')) {
+					continue;
+				}
+
+				// If it's an external link and looks like a main website
+				if (linkUrl.hostname && !linkUrl.hostname.includes('mairie') && !linkUrl.hostname.includes('paris.fr')) {
+					return linkUrl.href;
+				}
+			} catch {
+				// Invalid URL, skip
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * Calculate extraction confidence based on data completeness
 	 */
 	calculateConfidence(data) {
@@ -349,14 +481,14 @@ export class ExtractionModule {
 
 		// Required fields (higher weight)
 		requiredFields.forEach(field => {
-			if (data[field] && data[field].trim().length > 0) {
+			if (data[field] && String(data[field]).trim().length > 0) {
 				score += 2;
 			}
 		});
 
 		// Optional fields
 		optionalFields.forEach(field => {
-			if (data[field] && data[field].trim().length > 0) {
+			if (data[field] && String(data[field]).trim().length > 0) {
 				score += 1;
 			}
 		});

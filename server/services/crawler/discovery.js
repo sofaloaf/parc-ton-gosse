@@ -40,6 +40,26 @@ export class DiscoveryModule {
 			}
 		}
 
+		// 1.5. Specific searches for common organization types in the arrondissement
+		if (options.arrondissement) {
+			const specificQueries = [
+				`cercle escrime ${options.arrondissement} Paris`,
+				`associations sport ${options.arrondissement} Paris`,
+				`clubs enfants ${options.arrondissement} Paris`
+			];
+
+			for (const specificQuery of specificQueries) {
+				try {
+					if (this.googleApiKey && this.googleCx) {
+						const specificResults = await this.googleCustomSearch(specificQuery, { ...options, expandGraph: false });
+						results.googleResults.push(...specificResults);
+					}
+				} catch (error) {
+					console.warn(`Specific search failed for "${specificQuery}":`, error.message);
+				}
+			}
+		}
+
 		// 2. Direct lookups on known government sites
 		results.directResults = await this.directGovernmentLookup(query, options);
 
@@ -109,6 +129,7 @@ export class DiscoveryModule {
 					await this.applyRateLimit(`mairie${arrNum}.paris.fr`);
 					const result = await this.fetchAndParse(mairieUrl);
 					if (result) {
+						// Add the main mairie page
 						results.push({
 							url: mairieUrl,
 							title: `Mairie ${arrondissement} - Activités`,
@@ -118,6 +139,31 @@ export class DiscoveryModule {
 							discoveredAt: new Date().toISOString(),
 							links: result.links || []
 						});
+						
+						// Also add individual activity links from the mairie page
+						// These are more likely to contain organization information
+						if (result.links && result.links.length > 0) {
+							const activityLinks = result.links
+								.filter(link => {
+									const url = link.toLowerCase();
+									return url.includes('activite') || url.includes('activites') || url.includes('association');
+								})
+								.slice(0, 30); // Limit to 30 links to avoid too many requests
+							
+							for (const link of activityLinks) {
+								if (!this.visitedUrls.has(link)) {
+									results.push({
+										url: link,
+										title: `Activity from Mairie ${arrondissement}`,
+										snippet: '',
+										source: 'mairie_activity',
+										confidence: 0.85,
+										discoveredAt: new Date().toISOString()
+									});
+								}
+							}
+						}
+						
 						this.visitedUrls.add(mairieUrl);
 					}
 				} catch (error) {
@@ -196,12 +242,16 @@ export class DiscoveryModule {
 	buildSearchQuery(baseQuery, options = {}) {
 		const terms = [baseQuery];
 		
+		// Add more specific terms for better results
 		if (options.arrondissement) {
-			terms.push(`arrondissement ${options.arrondissement}`);
+			terms.push(`${options.arrondissement} arrondissement`);
 		}
 		
 		if (options.entityType) {
 			terms.push(options.entityType); // e.g., "association", "club", "nonprofit"
+		} else {
+			// Add common organization types
+			terms.push('association', 'club', 'cercle');
 		}
 		
 		terms.push('activités enfants Paris');

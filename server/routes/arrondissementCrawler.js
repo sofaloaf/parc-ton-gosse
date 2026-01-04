@@ -900,10 +900,14 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 				// The main Activities sheet should remain untouched
 				console.log(`\n✅ Saved ${pendingActivities.length} activities to pending sheet "${finalSheetName}"`);
 				console.log(`📋 These activities are NOT in the main Activities sheet - they will only appear after approval`);
+				console.log(`📊 Google Sheet URL: https://docs.google.com/spreadsheets/d/${sheetId}/edit`);
+				console.log(`📋 Tab name: "${finalSheetName}"`);
 
 				res.json({
 					success: true,
 					pendingSheet: finalSheetName,
+					sheetUrl: `https://docs.google.com/spreadsheets/d/${sheetId}/edit`,
+					sheetId: sheetId,
 					summary: {
 						total: results.length,
 						successful: results.filter(r => r.status === 'success').length,
@@ -972,6 +976,14 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 		
 		console.log(`📋 Found ${pendingSheets.length} pending sheets:`, pendingSheets);
 		
+		if (pendingSheets.length === 0) {
+			console.log('⚠️  No pending sheets found. Make sure crawler has run and saved data.');
+			return res.json({
+				total: 0,
+				activities: []
+			});
+		}
+		
 		// Read activities from all pending sheets
 		const allPendingActivities = [];
 		
@@ -983,9 +995,13 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 				});
 				
 				const rows = response.data.values || [];
-				if (rows.length <= 1) continue; // Skip if only headers
+				if (rows.length <= 1) {
+					console.log(`⚠️  Sheet "${sheetName}" has no data rows (only headers)`);
+					continue; // Skip if only headers
+				}
 				
 				const headers = rows[0];
+				console.log(`📋 Reading "${sheetName}": ${rows.length - 1} data rows, ${headers.length} columns`);
 				
 				// Convert rows to activity objects
 				for (let i = 1; i < rows.length; i++) {
@@ -1009,9 +1025,11 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 					});
 					
 					// Convert to app format
-					if (activity.id || activity.ID) {
+					// Check for ID in various column name formats
+					const activityId = activity.id || activity.ID || activity['ID (UUID)'] || activity['Id (UUID)'] || activity['id (uuid)'];
+					if (activityId) {
 						const appActivity = {
-							id: activity.id || activity.ID || uuidv4(),
+							id: activityId,
 							title: {
 								en: activity['Title (English)'] || activity['title_en'] || activity.title?.en || activity.title || '',
 								fr: activity['Title (French)'] || activity['title_fr'] || activity.title?.fr || activity.title || ''
@@ -1044,10 +1062,15 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 						};
 						
 						allPendingActivities.push(appActivity);
+						console.log(`  ✅ Loaded activity: ${appActivity.title?.en || appActivity.title?.fr || appActivity.id}`);
+					} else {
+						console.log(`  ⚠️  Row ${i + 1} in "${sheetName}" has no ID, skipping`);
 					}
 				}
+				console.log(`✅ Loaded ${allPendingActivities.length - (allPendingActivities.length - (i - 1))} activities from "${sheetName}"`);
 			} catch (error) {
 				console.error(`❌ Error reading pending sheet ${sheetName}:`, error.message);
+				console.error(`   Stack:`, error.stack);
 				continue;
 			}
 		}

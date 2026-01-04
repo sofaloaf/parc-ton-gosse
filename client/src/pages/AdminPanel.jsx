@@ -264,8 +264,10 @@ export default function AdminPanel() {
 
 			setArrondissementCrawlerResults(result);
 			setArrondissementCrawlerError('');
-			// Refresh pending activities
-			loadPendingActivities();
+			// Refresh pending activities after a short delay to allow sheet write to complete
+			setTimeout(() => {
+				loadPendingActivities();
+			}, 2000);
 		} catch (err) {
 			setArrondissementCrawlerError(err.message || 'Failed to run arrondissement crawler');
 			setArrondissementCrawlerResults(null);
@@ -297,8 +299,10 @@ export default function AdminPanel() {
 				method: 'POST',
 				body: { activityId, action }
 			});
-			// Refresh pending activities
-			loadPendingActivities();
+			// Refresh pending activities after a short delay
+			setTimeout(() => {
+				loadPendingActivities();
+			}, 500);
 		} catch (err) {
 			console.error('Failed to approve/reject activity:', err);
 			alert(err.message || 'Failed to update activity');
@@ -311,8 +315,10 @@ export default function AdminPanel() {
 				method: 'POST',
 				body: { activityIds, action }
 			});
-			// Refresh pending activities
-			loadPendingActivities();
+			// Refresh pending activities after a short delay
+			setTimeout(() => {
+				loadPendingActivities();
+			}, 1000);
 		} catch (err) {
 			console.error('Failed to batch approve/reject:', err);
 			alert(err.message || 'Failed to update activities');
@@ -845,8 +851,25 @@ export default function AdminPanel() {
 										<strong style={{ color: '#155724' }}>Pending:</strong> {arrondissementCrawlerResults.summary?.pendingActivities || 0}
 									</div>
 								</div>
+								{arrondissementCrawlerResults.pendingSheet && (
+									<div style={{ marginTop: 12, padding: 12, background: '#fff', borderRadius: 4, border: '1px solid #c3e6cb' }}>
+										<strong style={{ color: '#155724' }}>📋 Results saved to Google Sheets:</strong>
+										<div style={{ marginTop: 8, fontSize: 14 }}>
+											<div><strong>Tab name:</strong> {arrondissementCrawlerResults.pendingSheet}</div>
+											{arrondissementCrawlerResults.sheetUrl && (
+												<div style={{ marginTop: 4 }}>
+													<strong>Sheet URL:</strong>{' '}
+													<a href={arrondissementCrawlerResults.sheetUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#007bff', textDecoration: 'underline' }}>
+														{arrondissementCrawlerResults.sheetUrl}
+													</a>
+												</div>
+											)}
+										</div>
+									</div>
+								)}
 								<div style={{ marginTop: 12, fontSize: 14, color: '#155724' }}>
-									✅ {arrondissementCrawlerResults.summary?.pendingActivities || 0} activities are pending approval. Review them below.
+									✅ {arrondissementCrawlerResults.summary?.pendingActivities || 0} activities are pending approval. 
+									Click "🔄 Refresh Pending Activities" below to see them.
 								</div>
 							</div>
 						)}

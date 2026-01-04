@@ -1065,8 +1065,14 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 							updatedAt: activity['Updated At'] || activity.updatedAt || new Date().toISOString()
 						};
 						
-						allPendingActivities.push(appActivity);
-						console.log(`  ✅ Loaded activity: ${appActivity.title?.en || appActivity.title?.fr || appActivity.id}`);
+						// Only include activities that are still pending (not approved or rejected)
+						const status = appActivity.approvalStatus?.toLowerCase() || 'pending';
+						if (status === 'pending') {
+							allPendingActivities.push(appActivity);
+							console.log(`  ✅ Loaded pending activity: ${appActivity.title?.en || appActivity.title?.fr || appActivity.id}`);
+						} else {
+							console.log(`  ⏭️  Skipped ${status} activity: ${appActivity.title?.en || appActivity.title?.fr || appActivity.id}`);
+						}
 					} else {
 						console.log(`  ⚠️  Row ${i + 1} in "${sheetName}" has no ID, skipping`);
 					}

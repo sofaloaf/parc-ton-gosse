@@ -296,33 +296,57 @@ export default function AdminPanel() {
 
 	const approveActivity = async (activityId, action) => {
 		try {
-			await api('/arrondissement-crawler/approve', {
+			const result = await api('/arrondissement-crawler/approve', {
 				method: 'POST',
 				body: { activityId, action }
 			});
-			// Refresh pending activities after a short delay
-			setTimeout(() => {
-				loadPendingActivities();
-			}, 500);
-		} catch (err) {
-			console.error('Failed to approve/reject activity:', err);
-			alert(err.message || 'Failed to update activity');
-		}
-	};
-
-	const batchApprove = async (activityIds, action) => {
-		try {
-			await api('/arrondissement-crawler/batch-approve', {
-				method: 'POST',
-				body: { activityIds, action }
-			});
-			// Refresh pending activities after a short delay
+			
+			// Show success message
+			const actionText = action === 'approve' ? 'approved' : 'rejected';
+			console.log(`✅ Activity ${actionText}:`, result);
+			
+			// Remove the activity from the list immediately for better UX
+			setPendingActivities(prev => prev.filter(a => a.id !== activityId));
+			
+			// Refresh pending activities after a short delay to ensure sync
 			setTimeout(() => {
 				loadPendingActivities();
 			}, 1000);
 		} catch (err) {
+			console.error('Failed to approve/reject activity:', err);
+			alert(`Failed to ${action} activity: ${err.message || 'Unknown error'}`);
+		}
+	};
+
+	const batchApprove = async (activityIds, action) => {
+		if (!activityIds || activityIds.length === 0) {
+			alert('No activities selected');
+			return;
+		}
+		
+		if (!confirm(`Are you sure you want to ${action} ${activityIds.length} activit${activityIds.length === 1 ? 'y' : 'ies'}?`)) {
+			return;
+		}
+		
+		try {
+			const result = await api('/arrondissement-crawler/batch-approve', {
+				method: 'POST',
+				body: { activityIds, action }
+			});
+			
+			const actionText = action === 'approve' ? 'approved' : 'rejected';
+			console.log(`✅ Batch ${actionText} ${result.results?.length || activityIds.length} activities:`, result);
+			
+			// Remove approved/rejected activities from the list immediately
+			setPendingActivities(prev => prev.filter(a => !activityIds.includes(a.id)));
+			
+			// Refresh pending activities after a short delay
+			setTimeout(() => {
+				loadPendingActivities();
+			}, 1500);
+		} catch (err) {
 			console.error('Failed to batch approve/reject:', err);
-			alert(err.message || 'Failed to update activities');
+			alert(`Failed to ${action} activities: ${err.message || 'Unknown error'}`);
 		}
 	};
 

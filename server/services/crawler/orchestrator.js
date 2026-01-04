@@ -103,13 +103,15 @@ export class CrawlerOrchestrator {
 						// Process links (limit to avoid too many requests)
 						const linksToProcess = source.links
 							.filter(link => {
-								// Filter for activity-related links
+								// Filter for activity-related links - be more inclusive
 								const url = link.toLowerCase();
 								return url.includes('activite') || url.includes('activites') || 
 								       url.includes('association') || url.includes('club') ||
-								       url.includes('sport') || url.includes('loisir');
+								       url.includes('cercle') || url.includes('sport') || 
+								       url.includes('loisir') || url.includes('enfant') ||
+								       (!url.includes('mairie') && !url.includes('paris.fr')); // External links are likely organizations
 							})
-							.slice(0, 20); // Limit to 20 links per source
+							.slice(0, 30); // Increase to 30 links per source
 						
 						for (const link of linksToProcess) {
 							try {

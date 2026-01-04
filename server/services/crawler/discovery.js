@@ -279,22 +279,62 @@ export class DiscoveryModule {
 			const dom = new JSDOM(html);
 			const document = dom.window.document;
 
-			// Extract links
-			const links = Array.from(document.querySelectorAll('a[href]'))
-				.map(a => {
-					const href = a.getAttribute('href');
-					try {
-						return new URL(href, url).href;
-					} catch {
-						return null;
+			// Extract links - be more aggressive in finding activity/organization links
+			const allLinks = Array.from(document.querySelectorAll('a[href]'));
+			const links = [];
+			const linkSet = new Set(); // Avoid duplicates
+
+			for (const a of allLinks) {
+				const href = a.getAttribute('href');
+				if (!href) continue;
+
+				try {
+					const fullUrl = new URL(href, url).href;
+					
+					// Skip if already seen
+					if (linkSet.has(fullUrl)) continue;
+					
+					// Skip social media and common non-organization links
+					if (fullUrl.includes('facebook.com') || 
+					    fullUrl.includes('instagram.com') || 
+					    fullUrl.includes('twitter.com') ||
+					    fullUrl.includes('youtube.com') ||
+					    fullUrl.includes('linkedin.com') ||
+					    fullUrl.includes('mailto:') ||
+					    fullUrl.includes('tel:') ||
+					    fullUrl.includes('#') ||
+					    fullUrl.includes('javascript:')) {
+						continue;
 					}
-				})
-				.filter(Boolean);
+
+					// Prioritize links that look like activity/organization pages
+					const urlLower = fullUrl.toLowerCase();
+					const linkText = a.textContent?.trim().toLowerCase() || '';
+					
+					const isActivityLink = urlLower.includes('activite') || 
+					                      urlLower.includes('activites') ||
+					                      urlLower.includes('association') ||
+					                      urlLower.includes('club') ||
+					                      urlLower.includes('cercle') ||
+					                      urlLower.includes('sport') ||
+					                      linkText.includes('activité') ||
+					                      linkText.includes('association') ||
+					                      linkText.includes('club') ||
+					                      linkText.includes('cercle');
+
+					if (isActivityLink || !urlLower.includes('mairie')) {
+						links.push(fullUrl);
+						linkSet.add(fullUrl);
+					}
+				} catch {
+					// Invalid URL, skip
+				}
+			}
 
 			return {
 				snippet: document.querySelector('meta[name="description"]')?.content || 
 				         document.querySelector('p')?.textContent?.substring(0, 200) || '',
-				links
+				links: links.slice(0, 50) // Limit to 50 links
 			};
 		} catch (error) {
 			console.error(`Failed to fetch ${url}:`, error.message);

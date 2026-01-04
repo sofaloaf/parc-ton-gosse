@@ -155,40 +155,108 @@ export class DiscoveryModule {
 	}
 
 	/**
-	 * Google Custom Search API
+	 * Fetch with timeout helper
+	 */
+	async fetchWithTimeout(url, options = {}) {
+		const timeout = options.timeout || 30000; // 30 second default timeout
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+		try {
+			const response = await fetch(url, {
+				...options,
+				signal: controller.signal
+			});
+			clearTimeout(timeoutId);
+			return response;
+		} catch (error) {
+			clearTimeout(timeoutId);
+			if (error.name === 'AbortError') {
+				throw new Error(`Request timeout after ${timeout}ms`);
+			}
+			throw error;
+		}
+	}
+
+	/**
+	 * Google Custom Search API with timeout and retry logic
 	 */
 	async googleCustomSearch(query, options = {}) {
 		const searchQuery = this.buildSearchQuery(query, options);
 		const url = `https://www.googleapis.com/customsearch/v1?key=${this.googleApiKey}&cx=${this.googleCx}&q=${encodeURIComponent(searchQuery)}&num=10`;
 		
-		try {
-			await this.applyRateLimit('googleapis.com');
-			const response = await fetch(url);
-			
-			if (!response.ok) {
-				throw new Error(`Google Search API error: ${response.status}`);
+		const maxRetries = 3;
+		let lastError = null;
+
+		for (let attempt = 1; attempt <= maxRetries; attempt++) {
+			try {
+				await this.applyRateLimit('googleapis.com');
+				
+				const response = await this.fetchWithTimeout(url, {
+					timeout: 30000, // 30 second timeout
+					headers: {
+						'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+					}
+				});
+				
+				if (!response.ok) {
+					// Check for rate limiting
+					if (response.status === 429) {
+						const retryAfter = response.headers.get('Retry-After') || 60;
+						console.warn(`⚠️  Google API rate limit hit. Waiting ${retryAfter} seconds...`);
+						await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+						continue; // Retry
+					}
+					throw new Error(`Google Search API error: ${response.status} ${response.statusText}`);
+				}
+
+				const data = await response.json();
+				
+				// Check for API errors in response
+				if (data.error) {
+					throw new Error(`Google Search API error: ${data.error.message || JSON.stringify(data.error)}`);
+				}
+
+				const results = (data.items || []).map(item => ({
+					url: item.link,
+					title: item.title,
+					snippet: item.snippet,
+					source: 'google_custom_search',
+					confidence: 0.7,
+					discoveredAt: new Date().toISOString()
+				}));
+
+				// Track discovered entities
+				results.forEach(result => {
+					this.trackDiscoveredEntity(result);
+				});
+
+				return results;
+			} catch (error) {
+				lastError = error;
+				const isNetworkError = error.message.includes('timeout') || 
+				                      error.message.includes('NetworkError') ||
+				                      error.message.includes('fetch failed') ||
+				                      error.message.includes('ECONNRESET') ||
+				                      error.message.includes('ETIMEDOUT');
+				
+				if (attempt < maxRetries && isNetworkError) {
+					const backoffDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+					console.warn(`⚠️  Google Search attempt ${attempt} failed (${error.message}), retrying in ${backoffDelay}ms...`);
+					await new Promise(resolve => setTimeout(resolve, backoffDelay));
+					continue;
+				}
+				
+				// Last attempt or non-retryable error
+				console.error(`Google Custom Search error (attempt ${attempt}/${maxRetries}):`, error.message);
+				if (attempt === maxRetries) {
+					break; // Return empty array after all retries
+				}
 			}
-
-			const data = await response.json();
-			const results = (data.items || []).map(item => ({
-				url: item.link,
-				title: item.title,
-				snippet: item.snippet,
-				source: 'google_custom_search',
-				confidence: 0.7,
-				discoveredAt: new Date().toISOString()
-			}));
-
-			// Track discovered entities
-			results.forEach(result => {
-				this.trackDiscoveredEntity(result);
-			});
-
-			return results;
-		} catch (error) {
-			console.error('Google Custom Search error:', error);
-			return [];
 		}
+
+		// Return empty array on all failures
+		return [];
 	}
 
 	/**

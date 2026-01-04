@@ -308,15 +308,16 @@ export default function AdminPanel() {
 		setComparisonData(null);
 
 		try {
-			await api('/me');
+			await api('/me', { timeout: 15000 });
 			await new Promise(resolve => setTimeout(resolve, 100));
 			
-			// Run enhanced crawler
+			// Run enhanced crawler with extended timeout (crawler can take several minutes)
 			const crawlerResult = await api('/arrondissement-crawler/search-enhanced', {
 				method: 'POST',
 				body: {
 					arrondissements: ['20e']
-				}
+				},
+				timeout: 300000 // 5 minutes timeout for crawler
 			});
 
 			setEnhancedCrawlerResults(crawlerResult);

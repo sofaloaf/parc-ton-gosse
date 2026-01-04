@@ -365,10 +365,27 @@ export class ExtractionModule {
 		const phones = html.match(phonePattern) || [];
 		data.phone = phones[0] || null;
 
-		// Address patterns
-		const addressPattern = /\d+[,\s]+(?:rue|avenue|boulevard|place|allée|chemin|impasse)[^,\n]{5,50}/gi;
-		const addresses = html.match(addressPattern) || [];
-		data.address = addresses[0] || null;
+		// Address patterns (more comprehensive)
+		const addressPatterns = [
+			/\d+[,\s]+(?:rue|avenue|boulevard|place|allée|chemin|impasse|passage)[^,\n]{5,80}/gi,
+			/\d{1,3}\s+[A-Za-zÀ-ÿ\s'-]+(?:rue|avenue|boulevard|place|allée|chemin|impasse|passage)[^,\n]{5,80}/gi,
+			/(?:rue|avenue|boulevard|place|allée|chemin|impasse|passage)\s+[A-Za-zÀ-ÿ\s'-]+\s+\d{5}\s+Paris/gi
+		];
+		
+		for (const pattern of addressPatterns) {
+			const matches = html.match(pattern);
+			if (matches && matches.length > 0) {
+				data.address = matches[0].trim();
+				break;
+			}
+		}
+
+		// Extract neighborhood/arrondissement from address or content
+		const arrondissementPattern = /(?:arrondissement|arr\.?)\s*(\d{1,2}(?:er|e)?)/gi;
+		const arrMatch = html.match(arrondissementPattern);
+		if (arrMatch) {
+			data.neighborhood = arrMatch[0].replace(/arrondissement|arr\.?/gi, '').trim();
+		}
 
 		return data;
 	}

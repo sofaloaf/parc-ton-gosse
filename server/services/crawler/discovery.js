@@ -43,9 +43,11 @@ export class DiscoveryModule {
 		// 1.5. Specific searches for common organization types in the arrondissement
 		if (options.arrondissement) {
 			const specificQueries = [
-				`cercle escrime ${options.arrondissement} Paris`,
+				`"cercle escrime" ${options.arrondissement} Paris`,
+				`cercle escrime André Gardère ${options.arrondissement}`,
 				`associations sport ${options.arrondissement} Paris`,
-				`clubs enfants ${options.arrondissement} Paris`
+				`clubs enfants ${options.arrondissement} Paris`,
+				`associations ${options.arrondissement} arrondissement Paris`
 			];
 
 			for (const specificQuery of specificQueries) {
@@ -53,6 +55,7 @@ export class DiscoveryModule {
 					if (this.googleApiKey && this.googleCx) {
 						const specificResults = await this.googleCustomSearch(specificQuery, { ...options, expandGraph: false });
 						results.googleResults.push(...specificResults);
+						console.log(`  🔍 Specific search "${specificQuery}": ${specificResults.length} results`);
 					}
 				} catch (error) {
 					console.warn(`Specific search failed for "${specificQuery}":`, error.message);

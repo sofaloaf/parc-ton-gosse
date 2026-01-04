@@ -66,18 +66,19 @@ export class CrawlerOrchestrator {
 			console.log('📄 Stage 2: Extraction');
 			const extractedEntities = [];
 			
-			// Prioritize mairie pages - they have proven results
+			// PRIORITIZE web search results first, then city hall pages
+			const webSources = discoveryResults.allResults.filter(s => 
+				s.source === 'google_custom_search' || s.source === 'google' || 
+				(s.source !== 'mairie_direct' && s.source !== 'mairie_activity' && !s.url.includes('mairie'))
+			);
 			const mairieSources = discoveryResults.allResults.filter(s => 
 				s.source === 'mairie_direct' || s.source === 'mairie_activity' || s.url.includes('mairie')
 			);
-			const otherSources = discoveryResults.allResults.filter(s => 
-				s.source !== 'mairie_direct' && s.source !== 'mairie_activity' && !s.url.includes('mairie')
-			);
 			
-			// Process mairie sources first (up to 100), then others (up to 50)
+			// Process web search sources FIRST (up to 150), then city hall sources (up to 100)
 			const sourcesToProcess = [
-				...mairieSources.slice(0, 100),
-				...otherSources.slice(0, 50)
+				...webSources.slice(0, 150),
+				...mairieSources.slice(0, 100)
 			];
 			
 			console.log(`  📋 Processing ${mairieSources.length} mairie sources and ${otherSources.length} other sources`);

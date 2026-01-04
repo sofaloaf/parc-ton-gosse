@@ -22,7 +22,7 @@ export class DiscoveryModule {
 	}
 
 	/**
-	 * Hybrid search combining Google Custom Search and direct lookups
+	 * Hybrid search - PRIORITIZE general web search first, then direct lookups
 	 */
 	async hybridSearch(query, options = {}) {
 		const results = {
@@ -31,17 +31,10 @@ export class DiscoveryModule {
 			expandedResults: []
 		};
 
-		// 1. Google Custom Search (if configured)
-		if (this.googleApiKey && this.googleCx) {
-			try {
-				results.googleResults = await this.googleCustomSearch(query, options);
-			} catch (error) {
-				console.warn('Google Custom Search failed:', error.message);
-			}
-		}
-
-		// 1.5. Comprehensive activity-specific searches using template: [city] + [kids] + [activities with OR]
-		if (options.arrondissement) {
+		// STEP 1: Comprehensive web searches FIRST (exhaust full keyword list)
+		console.log('🌐 Step 1: Starting comprehensive web searches...');
+		
+		if (options.arrondissement && this.googleApiKey && this.googleCx) {
 			const activityKeywords = this.getActivityKeywords();
 			const arrondissement = options.arrondissement;
 			const city = 'Paris';
@@ -60,7 +53,7 @@ export class DiscoveryModule {
 				specificQueries.push(query);
 			}
 			
-			// Also add some specific targeted searches for high-value activities
+			// Also add specific targeted searches for high-value activities
 			const highValueActivities = [
 				'football OR soccer', 'basketball OR basket', 'tennis', 'natation OR swimming',
 				'danse OR dance', 'théâtre OR theater', 'musique OR music',
@@ -74,80 +67,89 @@ export class DiscoveryModule {
 				specificQueries.push(query);
 			}
 			
-			// Limit to 15 queries to avoid rate limiting
-			for (const specificQuery of specificQueries.slice(0, 15)) {
+			// Execute ALL web searches first (limit to 20 to avoid rate limiting, but process all)
+			console.log(`  📋 Executing ${specificQueries.length} web search queries...`);
+			for (let i = 0; i < Math.min(specificQueries.length, 20); i++) {
+				const specificQuery = specificQueries[i];
 				try {
-					if (this.googleApiKey && this.googleCx) {
-						const specificResults = await this.googleCustomSearch(specificQuery, { ...options, expandGraph: false });
+					const specificResults = await this.googleCustomSearch(specificQuery, { ...options, expandGraph: false });
+					
+					// Filter out newsletter and non-activity results
+					const filteredResults = specificResults.filter(result => {
+						const title = (result.title || '').toLowerCase();
+						const snippet = (result.snippet || '').toLowerCase();
+						const url = (result.url || '').toLowerCase();
 						
-						// Filter out newsletter and non-activity results
-						const filteredResults = specificResults.filter(result => {
-							const title = (result.title || '').toLowerCase();
-							const snippet = (result.snippet || '').toLowerCase();
-							const url = (result.url || '').toLowerCase();
-							
-							// Exclude newsletter results
-							if (title.includes('newsletter') || 
-							    title.includes('lettre d\'information') ||
-							    snippet.includes('newsletter') ||
-							    snippet.includes('lettre d\'information') ||
-							    url.includes('newsletter') ||
-							    (title.includes('abonnement') && title.includes('newsletter'))) {
-								return false;
-							}
-							
-							// Exclude generic Paris city hall pages without activity content
-							if (title.includes('mairie de paris') && 
-							    !title.includes('activité') && 
-							    !title.includes('association') &&
-							    !title.includes('club') &&
-							    !snippet.includes('activité') &&
-							    !snippet.includes('association')) {
-								return false;
-							}
-							
-							// Must contain activity-related keywords
-							const activityIndicators = [
-								'activité', 'activités', 'activity', 'activities',
-								'club', 'clubs', 'association', 'associations',
-								'sport', 'sports', 'théâtre', 'theater', 'theatre',
-								'danse', 'dance', 'musique', 'music', 'arts martiaux', 'martial arts',
-								'loisir', 'loisirs', 'atelier', 'workshop', 'cours', 'cercle',
-								'enfant', 'enfants', 'kids', 'children'
-							];
-							
-							const hasActivityKeyword = activityIndicators.some(keyword => 
-								title.includes(keyword) || snippet.includes(keyword) || url.includes(keyword)
-							);
-							
-							return hasActivityKeyword;
-						});
+						// Exclude newsletter results
+						if (title.includes('newsletter') || 
+						    title.includes('lettre d\'information') ||
+						    snippet.includes('newsletter') ||
+						    snippet.includes('lettre d\'information') ||
+						    url.includes('newsletter') ||
+						    (title.includes('abonnement') && title.includes('newsletter'))) {
+							return false;
+						}
 						
-						results.googleResults.push(...filteredResults);
-						console.log(`  🔍 Search "${specificQuery.substring(0, 80)}...": ${filteredResults.length} filtered results (${specificResults.length} total)`);
-					}
+						// Exclude generic Paris city hall pages without activity content
+						if (title.includes('mairie de paris') && 
+						    !title.includes('activité') && 
+						    !title.includes('association') &&
+						    !title.includes('club') &&
+						    !snippet.includes('activité') &&
+						    !snippet.includes('association')) {
+							return false;
+						}
+						
+						// Must contain activity-related keywords
+						const activityIndicators = [
+							'activité', 'activités', 'activity', 'activities',
+							'club', 'clubs', 'association', 'associations',
+							'sport', 'sports', 'théâtre', 'theater', 'theatre',
+							'danse', 'dance', 'musique', 'music', 'arts martiaux', 'martial arts',
+							'loisir', 'loisirs', 'atelier', 'workshop', 'cours', 'cercle',
+							'enfant', 'enfants', 'kids', 'children'
+						];
+						
+						const hasActivityKeyword = activityIndicators.some(keyword => 
+							title.includes(keyword) || snippet.includes(keyword) || url.includes(keyword)
+						);
+						
+						return hasActivityKeyword;
+					});
+					
+					results.googleResults.push(...filteredResults);
+					console.log(`  🔍 [${i + 1}/${Math.min(specificQueries.length, 20)}] Search: ${filteredResults.length} results`);
+					
+					// Rate limiting between searches
+					await new Promise(resolve => setTimeout(resolve, this.minDelay));
 				} catch (error) {
-					console.warn(`Specific search failed:`, error.message);
+					console.warn(`  ⚠️  Search ${i + 1} failed:`, error.message);
 				}
 			}
+			
+			console.log(`✅ Web searches complete: ${results.googleResults.length} total results`);
 		}
 
-		// 2. Direct lookups on known government sites
+		// STEP 2: Direct lookups on city hall websites (ONLY AFTER web searches are exhausted)
+		console.log('🏛️  Step 2: Starting city hall direct lookups...');
 		results.directResults = await this.directGovernmentLookup(query, options);
+		console.log(`✅ City hall lookups complete: ${results.directResults.length} results`);
 
-		// 3. Graph expansion from discovered entities
-		if (options.expandGraph !== false) {
-			results.expandedResults = await this.expandGraph(results.googleResults.concat(results.directResults));
+		// STEP 3: Graph expansion from discovered entities (optional)
+		if (options.expandGraph !== false && results.googleResults.length > 0) {
+			console.log('🔗 Step 3: Expanding graph from discovered entities...');
+			results.expandedResults = await this.expandGraph(results.googleResults);
+			console.log(`✅ Graph expansion complete: ${results.expandedResults.length} results`);
 		}
 
-		// Aggregate all results - prioritize direct results (mairie pages) first
+		// Aggregate all results - PRIORITIZE web search results first
 		results.allResults = [
-			...results.directResults, // Mairie pages first (proven to work)
-			...results.googleResults,
-			...results.expandedResults
+			...results.googleResults, // Web search results FIRST
+			...results.directResults, // City hall pages second
+			...results.expandedResults // Expanded results last
 		];
 
-		console.log(`  📊 Discovery summary: ${results.directResults.length} direct, ${results.googleResults.length} Google, ${results.expandedResults.length} expanded, ${results.allResults.length} total`);
+		console.log(`  📊 Discovery summary: ${results.googleResults.length} web search, ${results.directResults.length} city hall, ${results.expandedResults.length} expanded, ${results.allResults.length} total`);
 
 		return results;
 	}

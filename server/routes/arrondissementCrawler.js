@@ -909,8 +909,7 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 						successful: results.filter(r => r.status === 'success').length,
 						partial: results.filter(r => r.status === 'partial').length,
 						errors: results.filter(r => r.status === 'error').length,
-						pendingActivities: pendingActivities.length,
-						savedToDatastore: savedCount
+						pendingActivities: pendingActivities.length
 					},
 					results: results.slice(0, 50),
 					message: `Found ${pendingActivities.length} organizations. Review and approve in admin panel.`

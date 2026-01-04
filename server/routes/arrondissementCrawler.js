@@ -962,76 +962,194 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 		return res.status(400).json({ error: 'GS_SHEET_ID not configured' });
 	}
 
-	try {
-		// Initialize enhanced crawler orchestrator
-		const orchestrator = new CrawlerOrchestrator({
-			discovery: {
-				googleApiKey: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY,
-				googleCx: process.env.GOOGLE_CUSTOM_SEARCH_CX,
-				minDelay: 1000,
-				maxDelay: 3000
-			},
-			enrichment: {
-				googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY
-			},
-			storage: {
-				sheetId: sheetId
-			},
-			compliance: {
-				minDelay: 1000,
-				maxDelay: 3000
+		try {
+			// Get arrondissements to search
+			const arrondissementsToSearch = arrondissements && Array.isArray(arrondissements) 
+				? arrondissements 
+				: ['20e']; // Default to 20e for testing
+
+			const allResults = [];
+			const allErrors = [];
+			const allEntities = [];
+
+			// HYBRID APPROACH: Use proven working crawler + enhanced features
+			for (const arrondissement of arrondissementsToSearch) {
+				const postalCode = ARRONDISSEMENT_TO_POSTAL[arrondissement];
+				if (!postalCode) {
+					console.warn(`⚠️  No postal code for ${arrondissement}, skipping`);
+					continue;
+				}
+
+				console.log(`\n🔍 Starting HYBRID crawl for ${arrondissement} (${postalCode})`);
+
+				// STEP 1: Use proven working crawler approach (this works!)
+				console.log(`📋 Step 1: Using proven mairie crawler...`);
+				const mairieActivities = await searchMairieActivities(arrondissement, postalCode);
+				console.log(`✅ Found ${mairieActivities.length} activities from mairie pages`);
+
+				// Convert to enhanced crawler format
+				const mairieEntities = mairieActivities.map(activity => ({
+					id: uuidv4(),
+					data: {
+						name: activity.name,
+						title: activity.name,
+						website: activity.website,
+						websiteLink: activity.website,
+						email: activity.email,
+						phone: activity.phone,
+						address: activity.address,
+						description: `Activity from ${arrondissement} arrondissement`,
+						neighborhood: arrondissement,
+						arrondissement: arrondissement
+					},
+					sources: [activity.sourceUrl || 'mairie'],
+					confidence: 0.9,
+					extractedAt: new Date().toISOString(),
+					validation: { valid: true, score: 0.9 }
+				}));
+
+				allEntities.push(...mairieEntities);
+
+				// STEP 2: Use enhanced crawler for additional sources (Google search, etc.)
+				console.log(`📋 Step 2: Using enhanced crawler for additional sources...`);
+				try {
+					const orchestrator = new CrawlerOrchestrator({
+						discovery: {
+							googleApiKey: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY,
+							googleCx: process.env.GOOGLE_CUSTOM_SEARCH_CX,
+							minDelay: 1000,
+							maxDelay: 3000
+						},
+						enrichment: {
+							googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY
+						},
+						storage: {
+							sheetId: sheetId
+						},
+						compliance: {
+							minDelay: 1000,
+							maxDelay: 3000
+						}
+					});
+
+					const query = `associations clubs activités enfants ${arrondissement} arrondissement Paris`;
+					const crawlResults = await orchestrator.crawl(query, {
+						arrondissement: arrondissement,
+						postalCode: postalCode,
+						maxSources: 30, // Lower limit since we already have mairie results
+						geocode: true,
+						categorize: true,
+						expandGraph: false, // Disable to speed up
+						tabName: generateTabName('pending', 'enhanced-crawler')
+					});
+
+					// Merge enhanced crawler results (avoid duplicates)
+					const existingNames = new Set(mairieEntities.map(e => e.data.name?.toLowerCase()));
+					const newEntities = (crawlResults.entities || []).filter(e => {
+						const name = e.data?.name || e.data?.title || '';
+						return name && !existingNames.has(name.toLowerCase());
+					});
+
+					allEntities.push(...newEntities);
+					allErrors.push(...(crawlResults.errors || []));
+					console.log(`✅ Enhanced crawler found ${newEntities.length} additional entities`);
+				} catch (enhancedError) {
+					console.error(`⚠️  Enhanced crawler failed (continuing with mairie results):`, enhancedError.message);
+					allErrors.push({ stage: 'enhanced_crawler', error: enhancedError.message });
+				}
+
+				// STEP 3: Save all entities to Google Sheets using proven approach
+				console.log(`📋 Step 3: Saving ${allEntities.length} entities to Google Sheets...`);
+				let saveResult = null;
+				if (allEntities.length > 0) {
+					try {
+						const sheets = getSheetsClient();
+						const finalSheetName = generateTabName('pending', 'hybrid-crawler');
+						
+						// Convert entities to sheet rows using proven format
+						const rowsToSave = allEntities.map(e => {
+							const activity = {
+								id: e.id || uuidv4(),
+								title: { en: e.data.name || e.data.title || 'Organization', fr: e.data.name || e.data.title || 'Organization' },
+								description: { en: e.data.description || '', fr: e.data.description || '' },
+								websiteLink: e.data.website || e.data.websiteLink || null,
+								email: e.data.email || null,
+								phone: e.data.phone || null,
+								address: e.data.address || null,
+								neighborhood: arrondissement,
+								categories: [],
+								ageMin: 0,
+								ageMax: 99,
+								price: { amount: 0, currency: 'eur' },
+								images: [],
+								schedule: [],
+								providerId: '',
+								approvalStatus: 'pending',
+								sourceUrl: e.sources?.[0] || 'unknown',
+								createdAt: new Date().toISOString(),
+								updatedAt: new Date().toISOString()
+							};
+							return activityToSheetRow(activity, ACTIVITIES_COLUMN_ORDER);
+						});
+
+						// Get or create sheet
+						const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
+						let sheet = spreadsheet.data.sheets.find(s => s.properties.title === finalSheetName);
+						
+						if (!sheet) {
+							await sheets.spreadsheets.batchUpdate({
+								spreadsheetId: sheetId,
+								requestBody: {
+									requests: [{
+										addSheet: {
+											properties: {
+												title: finalSheetName,
+												gridProperties: { rowCount: 1000, columnCount: 30 }
+											}
+										}
+									}]
+								}
+							});
+							// Write headers
+							await sheets.spreadsheets.values.update({
+								spreadsheetId: sheetId,
+								range: `${finalSheetName}!A1`,
+								valueInputOption: 'RAW',
+								requestBody: { values: [getHeaders(ACTIVITIES_COLUMN_ORDER)] }
+							});
+						}
+
+						// Append rows
+						await sheets.spreadsheets.values.append({
+							spreadsheetId: sheetId,
+							range: `${finalSheetName}!A2`,
+							valueInputOption: 'RAW',
+							requestBody: { values: rowsToSave }
+						});
+
+						saveResult = { savedCount: rowsToSave.length, sheetName: finalSheetName };
+						console.log(`✅ Saved ${rowsToSave.length} entities to Google Sheets (${finalSheetName})`);
+					} catch (saveError) {
+						console.error(`❌ Failed to save entities:`, saveError.message);
+						allErrors.push({ stage: 'storage', error: saveError.message });
+					}
+				}
+
+				allResults.push({
+					arrondissement,
+					postalCode,
+					entities: allEntities,
+					mairieCount: mairieEntities.length,
+					enhancedCount: allEntities.length - mairieEntities.length,
+					saveResult: saveResult
+				});
+
+				console.log(`✅ Hybrid crawl completed for ${arrondissement}: ${allEntities.length} total entities (${mairieEntities.length} from mairie, ${allEntities.length - mairieEntities.length} from enhanced)`);
 			}
-		});
-
-		// Get arrondissements to search
-		const arrondissementsToSearch = arrondissements && Array.isArray(arrondissements) 
-			? arrondissements 
-			: ['20e']; // Default to 20e for testing
-
-		const allResults = [];
-		const allErrors = [];
-
-		// Search each arrondissement
-		for (const arrondissement of arrondissementsToSearch) {
-			const postalCode = ARRONDISSEMENT_TO_POSTAL[arrondissement];
-			if (!postalCode) {
-				console.warn(`⚠️  No postal code for ${arrondissement}, skipping`);
-				continue;
-			}
-
-			console.log(`\n🔍 Starting enhanced crawl for ${arrondissement} (${postalCode})`);
-
-			// Build more specific search query
-			const query = `associations clubs activités enfants ${arrondissement} arrondissement Paris`;
-
-			// Run enhanced crawler
-			const crawlResults = await orchestrator.crawl(query, {
-				arrondissement: arrondissement,
-				postalCode: postalCode,
-				maxSources: 50,
-				geocode: true,
-				categorize: true,
-				expandGraph: true,
-				tabName: generateTabName('pending', 'enhanced-crawler')
-			});
-
-			allResults.push({
-				arrondissement,
-				postalCode,
-				entities: crawlResults.entities || [],
-				stats: crawlResults.stats,
-				saveResult: crawlResults.saveResult || null
-			});
-
-			allErrors.push(...(crawlResults.errors || []));
-
-			console.log(`✅ Enhanced crawl completed for ${arrondissement}: ${crawlResults.entities?.length || 0} entities`);
-		}
 
 		// Aggregate results
 		const allEntities = allResults.flatMap(r => r.entities || []);
 		const totalEntities = allEntities.length;
-		const totalStats = orchestrator.getStats();
 
 		res.json({
 			success: true,
@@ -1044,9 +1162,13 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 			entities: allEntities, // Flattened list of all entities
 			results: allResults, // Per-arrondissement results
 			errors: allErrors,
-			stats: totalStats,
+			stats: {
+				total: totalEntities,
+				mairie: allResults.reduce((sum, r) => sum + (r.mairieCount || 0), 0),
+				enhanced: allResults.reduce((sum, r) => sum + (r.enhancedCount || 0), 0)
+			},
 			saveResult: allResults.length > 0 && allResults[0].saveResult ? allResults[0].saveResult : null,
-			message: `Enhanced crawler found ${totalEntities} entities across ${arrondissementsToSearch.length} arrondissement(s)`
+			message: `Hybrid crawler found ${totalEntities} entities across ${arrondissementsToSearch.length} arrondissement(s)`
 		});
 
 	} catch (error) {

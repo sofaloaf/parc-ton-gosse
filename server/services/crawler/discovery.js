@@ -17,8 +17,8 @@ export class DiscoveryModule {
 		this.visitedUrls = new Set();
 		this.discoveredEntities = new Map(); // entity name -> metadata
 		this.rateLimiter = new Map(); // domain -> last request time
-		this.minDelay = options.minDelay || 1000;
-		this.maxDelay = options.maxDelay || 3000;
+		this.minDelay = options.minDelay || 500; // Reduced from 1000ms to 500ms
+		this.maxDelay = options.maxDelay || 2000; // Reduced from 3000ms to 2000ms
 	}
 
 	/**
@@ -67,10 +67,11 @@ export class DiscoveryModule {
 				specificQueries.push(query);
 			}
 			
-			// Execute ALL web searches first (limit to 20 to avoid rate limiting, but process all)
-			console.log(`  📋 Executing ${specificQueries.length} web search queries...`);
-			// Limit to 10 queries to avoid Railway timeout (Railway has ~60s timeout)
-			for (let i = 0; i < Math.min(specificQueries.length, 10); i++) {
+			// Execute web searches with strict limits to avoid Railway timeout (60s limit)
+			// Limit to 5 queries max with reduced delays
+			console.log(`  📋 Executing ${specificQueries.length} web search queries (limited to 5 to avoid timeout)...`);
+			const maxQueries = 5;
+			for (let i = 0; i < Math.min(specificQueries.length, maxQueries); i++) {
 				const specificQuery = specificQueries[i];
 				try {
 					const specificResults = await this.googleCustomSearch(specificQuery, { ...options, expandGraph: false });
@@ -119,22 +120,26 @@ export class DiscoveryModule {
 					});
 					
 					results.googleResults.push(...filteredResults);
-					console.log(`  🔍 [${i + 1}/${Math.min(specificQueries.length, 20)}] Search: ${filteredResults.length} results`);
+					console.log(`  🔍 [${i + 1}/${maxQueries}] Search: ${filteredResults.length} results`);
 					
-					// Rate limiting between searches
-					await new Promise(resolve => setTimeout(resolve, this.minDelay));
+					// Reduced rate limiting between searches (500ms instead of 1000ms)
+					if (i < maxQueries - 1) {
+						await new Promise(resolve => setTimeout(resolve, 500));
+					}
 				} catch (error) {
 					console.warn(`  ⚠️  Search ${i + 1} failed:`, error.message);
+					// Continue to next query even if one fails
 				}
 			}
 			
 			console.log(`✅ Web searches complete: ${results.googleResults.length} total results`);
 		}
 
-		// STEP 2: Direct lookups on city hall websites (ONLY AFTER web searches are exhausted)
-		console.log('🏛️  Step 2: Starting city hall direct lookups...');
-		results.directResults = await this.directGovernmentLookup(query, options);
-		console.log(`✅ City hall lookups complete: ${results.directResults.length} results`);
+		// STEP 2: Direct lookups on city hall websites (SKIPPED to avoid timeout - prioritize web searches)
+		// Skip city hall lookups for now to stay within Railway's 60s timeout
+		console.log('🏛️  Step 2: Skipping city hall lookups to avoid timeout (prioritizing web searches)');
+		results.directResults = []; // Skip for now
+		console.log(`✅ City hall lookups skipped`);
 
 		// STEP 3: Graph expansion from discovered entities (optional)
 		if (options.expandGraph !== false && results.googleResults.length > 0) {

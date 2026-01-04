@@ -886,7 +886,8 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 				});
 
 				// Write to pending sheet ONLY - do NOT write to main Activities sheet
-				await sheets.spreadsheets.values.update({
+				console.log(`\n📝 Writing ${rows.length - 1} activities to sheet "${finalSheetName}" (${rows.length} total rows including header)`);
+				const writeResult = await sheets.spreadsheets.values.update({
 					spreadsheetId: sheetId,
 					range: `${finalSheetName}!A1`,
 					valueInputOption: 'RAW',
@@ -894,6 +895,9 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 						values: rows
 					}
 				});
+				
+				console.log(`✅ Write successful! Updated range: ${writeResult.data.updatedRange}`);
+				console.log(`✅ Updated ${writeResult.data.updatedCells || rows.length * rows[0]?.length || 'unknown'} cells`);
 
 				// IMPORTANT: Do NOT save to main Activities sheet via datastore
 				// Pending activities should ONLY be in the pending sheet until approved
@@ -1025,11 +1029,11 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 					});
 					
 					// Convert to app format
-					// Check for ID in various column name formats
-					const activityId = activity.id || activity.ID || activity['ID (UUID)'] || activity['Id (UUID)'] || activity['id (uuid)'];
-					if (activityId) {
+					// Check for ID in various column name formats (header is "ID" from ACTIVITIES_COLUMN_HEADERS)
+					const activityId = activity.id || activity.ID || activity['ID (UUID)'] || activity['Id (UUID)'] || activity['id (uuid)'] || activity['Id'] || activity['id'];
+					if (activityId && activityId.toString().trim() !== '') {
 						const appActivity = {
-							id: activityId,
+							id: activityId.toString().trim(),
 							title: {
 								en: activity['Title (English)'] || activity['title_en'] || activity.title?.en || activity.title || '',
 								fr: activity['Title (French)'] || activity['title_fr'] || activity.title?.fr || activity.title || ''

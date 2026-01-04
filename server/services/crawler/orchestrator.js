@@ -50,6 +50,7 @@ export class CrawlerOrchestrator {
 		try {
 			// Stage 1: Discovery
 			console.log('🔍 Stage 1: Discovery');
+			console.log(`   Query: "${query}"`);
 			const discoveryResults = await this.discovery.hybridSearch(query, {
 				arrondissement: options.arrondissement,
 				postalCode: options.postalCode,
@@ -57,6 +58,9 @@ export class CrawlerOrchestrator {
 			});
 			this.stats.discovered = discoveryResults.allResults.length;
 			console.log(`✅ Discovered ${this.stats.discovered} potential sources`);
+			console.log(`   - Google results: ${discoveryResults.googleResults.length}`);
+			console.log(`   - Direct lookups: ${discoveryResults.directResults.length}`);
+			console.log(`   - Expanded: ${discoveryResults.expandedResults.length}`);
 
 			// Stage 2: Extraction
 			console.log('📄 Stage 2: Extraction');

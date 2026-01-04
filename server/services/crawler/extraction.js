@@ -318,6 +318,34 @@ export class ExtractionModule {
 			return h1;
 		}
 
+		// Strategy 6: Look for organization names in page content using patterns
+		const bodyText = document.body?.textContent || '';
+		const orgPatterns = [
+			/(?:Cercle|Association|Club|Fédération|Ligue|Société|Centre|École|Académie)\s+(?:d['\']|de|du|des|la|le|les)?\s*[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ\s'-]{5,50}/gi,
+			/[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+(?:d['\']|de|du|des|la|le|les))?\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+(?:\s+[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ][a-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+)?/g
+		];
+
+		for (const pattern of orgPatterns) {
+			const matches = bodyText.match(pattern);
+			if (matches && matches.length > 0) {
+				// Filter matches that look like organization names
+				const orgMatches = matches.filter(m => {
+					const lower = m.toLowerCase();
+					return (lower.includes('cercle') || lower.includes('association') || 
+					        lower.includes('club') || lower.includes('escrime') ||
+					        (m.length > 10 && m.length < 80 && /^[A-Z]/.test(m.trim())));
+				});
+				
+				if (orgMatches.length > 0) {
+					// Return the first substantial match
+					const name = orgMatches[0].trim();
+					if (name.length > 5 && name.length < 100) {
+						return name;
+					}
+				}
+			}
+		}
+
 		return null;
 	}
 

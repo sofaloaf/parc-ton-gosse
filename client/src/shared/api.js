@@ -110,7 +110,7 @@ function getCsrfToken() {
 	return null;
 }
 
-export async function api(path, { method = 'GET', body, headers } = {}) {
+export async function api(path, { method = 'GET', body, headers, timeout } = {}) {
 	// Include credentials to send cookies (httpOnly cookies)
 	const csrfToken = getCsrfToken();
 	const baseUrl = resolveBaseUrl();
@@ -140,12 +140,39 @@ export async function api(path, { method = 'GET', body, headers } = {}) {
 		});
 	}
 	
-	const res = await fetch(`${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`, {
+	// Create fetch with timeout if specified
+	const fetchPromise = fetch(`${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`, {
 		method,
 		credentials: 'include', // Include cookies in request
 		headers: requestHeaders,
 		body: body ? JSON.stringify(body) : undefined
 	});
+	
+	let res;
+	if (timeout) {
+		// Use AbortController for timeout
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), timeout);
+		
+		try {
+			res = await Promise.race([
+				fetchPromise,
+				new Promise((_, reject) => 
+					setTimeout(() => reject(new Error(`Request timeout after ${timeout}ms`)), timeout)
+				)
+			]);
+			clearTimeout(timeoutId);
+		} catch (error) {
+			clearTimeout(timeoutId);
+			if (error.name === 'AbortError' || error.message.includes('timeout')) {
+				throw new Error(`Request timeout: The request took longer than ${timeout / 1000} seconds. The crawler may still be running on the server.`);
+			}
+			throw error;
+		}
+	} else {
+		res = await fetchPromise;
+	}
+	
 	if (!res.ok) {
 		const errorText = await res.text();
 		// Try to parse as JSON to get better error message

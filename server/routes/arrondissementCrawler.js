@@ -1028,10 +1028,33 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 
 					// Extractor function for advanced crawler
 					const extractorFn = async (document, html, url) => {
-						// Use proven extraction approach
+						// FILTER OUT NEWSLETTERS FIRST
+						const pageText = (document.body?.textContent || html).toLowerCase();
 						const title = document.querySelector('h1')?.textContent?.trim() ||
 						             document.querySelector('.title')?.textContent?.trim() ||
 						             document.querySelector('title')?.textContent?.trim() || '';
+						const titleLower = title.toLowerCase();
+						
+						// Skip newsletter pages
+						if (titleLower.includes('newsletter') || 
+						    titleLower.includes('lettre d\'information') ||
+						    pageText.includes('abonnez-vous à la newsletter') ||
+						    pageText.includes('inscription newsletter') ||
+						    url.toLowerCase().includes('newsletter') ||
+						    (titleLower.includes('abonnement') && titleLower.includes('newsletter'))) {
+							console.log(`  ⏭️  Skipping newsletter page: ${url}`);
+							return null;
+						}
+						
+						// Skip generic Paris city hall pages without activity content
+						if (titleLower.includes('mairie de paris') && 
+						    !titleLower.includes('activité') && 
+						    !titleLower.includes('association') &&
+						    !pageText.includes('activité') &&
+						    !pageText.includes('association')) {
+							console.log(`  ⏭️  Skipping generic mairie page: ${url}`);
+							return null;
+						}
 
 						// Extract organization info
 						const websiteSelectors = [
@@ -1048,7 +1071,12 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 								    !href.includes('mairie') && 
 								    !href.includes('paris.fr') &&
 								    !href.includes('facebook.com') &&
-								    !href.includes('instagram.com')) {
+								    !href.includes('instagram.com') &&
+								    !href.includes('twitter.com') &&
+								    !href.includes('youtube.com') &&
+								    !href.includes('linkedin.com') &&
+								    !href.includes('cdnjs.cloudflare.com') && // Filter out CDN URLs
+								    !href.includes('cdn')) {
 									website = href;
 									break;
 								}
@@ -1059,11 +1087,27 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						// Extract contact info
 						const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 						const emailMatch = html.match(emailPattern);
-						const email = emailMatch ? emailMatch.find(e => !e.includes('mairie') && !e.includes('paris.fr')) : null;
+						const email = emailMatch ? emailMatch.find(e => !e.includes('mairie') && !e.includes('paris.fr') && !e.includes('noreply')) : null;
 
 						const phonePattern = /(?:\+33|0)[1-9](?:[.\s]?\d{2}){4}/g;
 						const phoneMatch = html.match(phonePattern);
 						const phone = phoneMatch ? phoneMatch[0].trim() : null;
+
+						// Must have activity-related content
+						const activityKeywords = [
+							'activité', 'activités', 'club', 'clubs', 'association', 'associations',
+							'sport', 'sports', 'théâtre', 'danse', 'musique', 'arts martiaux',
+							'loisir', 'loisirs', 'atelier', 'ateliers', 'cours', 'cercle', 'enfant', 'enfants'
+						];
+						
+						const hasActivityKeyword = activityKeywords.some(keyword => 
+							titleLower.includes(keyword) || pageText.includes(keyword) || url.toLowerCase().includes(keyword)
+						);
+						
+						if (!hasActivityKeyword && !website && !email) {
+							console.log(`  ⏭️  Skipping page without activity keywords: ${url}`);
+							return null;
+						}
 
 						if (!title && !website && !email) {
 							return null; // Skip if no useful data

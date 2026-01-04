@@ -69,7 +69,8 @@ export class DiscoveryModule {
 			
 			// Execute ALL web searches first (limit to 20 to avoid rate limiting, but process all)
 			console.log(`  📋 Executing ${specificQueries.length} web search queries...`);
-			for (let i = 0; i < Math.min(specificQueries.length, 20); i++) {
+			// Limit to 10 queries to avoid Railway timeout (Railway has ~60s timeout)
+			for (let i = 0; i < Math.min(specificQueries.length, 10); i++) {
 				const specificQuery = specificQueries[i];
 				try {
 					const specificResults = await this.googleCustomSearch(specificQuery, { ...options, expandGraph: false });

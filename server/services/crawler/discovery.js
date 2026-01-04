@@ -147,15 +147,18 @@ export class DiscoveryModule {
 						// Also add individual activity links from the mairie page
 						// These are more likely to contain organization information
 						if (result.links && result.links.length > 0) {
+							console.log(`  📎 Found ${result.links.length} links on mairie page`);
 							const activityLinks = result.links
 								.filter(link => {
 									const url = link.toLowerCase();
 									return url.includes('activite') || url.includes('activites') || 
 									       url.includes('association') || url.includes('club') ||
-									       url.includes('cercle') || url.includes('sport');
+									       url.includes('cercle') || url.includes('sport') ||
+									       url.includes('loisir') || url.includes('enfant');
 								})
-								.slice(0, 50); // Increase to 50 links
+								.slice(0, 100); // Increase to 100 links for mairie pages
 							
+							console.log(`  ✅ Processing ${activityLinks.length} activity links from mairie page`);
 							for (const link of activityLinks) {
 								if (!this.visitedUrls.has(link)) {
 									results.push({
@@ -168,6 +171,8 @@ export class DiscoveryModule {
 									});
 								}
 							}
+						} else {
+							console.log(`  ⚠️  No links found on mairie page`);
 						}
 						
 						this.visitedUrls.add(mairieUrl);

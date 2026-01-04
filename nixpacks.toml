@@ -2,7 +2,10 @@
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm install --prefix server --omit=dev"]
+cmds = [
+  "npm install --prefix server --omit=dev",
+  "cd server && npx playwright install chromium --with-deps || true"
+]
 
 [start]
 cmd = "cd server && NODE_ENV=production node index.js"

@@ -10,6 +10,7 @@ import {
 	getHeaders, 
 	ACTIVITIES_COLUMN_ORDER 
 } from '../utils/sheetsFormatter.js';
+import { CrawlerOrchestrator } from '../services/crawler/index.js';
 
 export const arrondissementCrawlerRouter = express.Router();
 
@@ -947,6 +948,107 @@ arrondissementCrawlerRouter.post('/search', requireAuth('admin'), async (req, re
 		console.error('Crawler error:', error);
 		res.status(500).json({ 
 			error: 'Crawler failed', 
+			message: error.message 
+		});
+	}
+});
+
+// Enhanced crawler endpoint using new modular architecture
+arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async (req, res) => {
+	const sheetId = process.env.GS_SHEET_ID;
+	const { arrondissements, useEnhanced } = req.body;
+
+	if (!sheetId) {
+		return res.status(400).json({ error: 'GS_SHEET_ID not configured' });
+	}
+
+	try {
+		// Initialize enhanced crawler orchestrator
+		const orchestrator = new CrawlerOrchestrator({
+			discovery: {
+				googleApiKey: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY,
+				googleCx: process.env.GOOGLE_CUSTOM_SEARCH_CX,
+				minDelay: 1000,
+				maxDelay: 3000
+			},
+			enrichment: {
+				googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY
+			},
+			storage: {
+				sheetId: sheetId
+			},
+			compliance: {
+				minDelay: 1000,
+				maxDelay: 3000
+			}
+		});
+
+		// Get arrondissements to search
+		const arrondissementsToSearch = arrondissements && Array.isArray(arrondissements) 
+			? arrondissements 
+			: ['20e']; // Default to 20e for testing
+
+		const allResults = [];
+		const allErrors = [];
+
+		// Search each arrondissement
+		for (const arrondissement of arrondissementsToSearch) {
+			const postalCode = ARRONDISSEMENT_TO_POSTAL[arrondissement];
+			if (!postalCode) {
+				console.warn(`⚠️  No postal code for ${arrondissement}, skipping`);
+				continue;
+			}
+
+			console.log(`\n🔍 Starting enhanced crawl for ${arrondissement} (${postalCode})`);
+
+			// Build search query
+			const query = `associations activités enfants ${arrondissement} Paris`;
+
+			// Run enhanced crawler
+			const crawlResults = await orchestrator.crawl(query, {
+				arrondissement: arrondissement,
+				postalCode: postalCode,
+				maxSources: 50,
+				geocode: true,
+				categorize: true,
+				expandGraph: true,
+				tabName: generateTabName('pending', 'enhanced-crawler')
+			});
+
+			allResults.push({
+				arrondissement,
+				postalCode,
+				entities: crawlResults.entities || [],
+				stats: crawlResults.stats
+			});
+
+			allErrors.push(...(crawlResults.errors || []));
+
+			console.log(`✅ Enhanced crawl completed for ${arrondissement}: ${crawlResults.entities?.length || 0} entities`);
+		}
+
+		// Aggregate results
+		const totalEntities = allResults.reduce((sum, r) => sum + (r.entities?.length || 0), 0);
+		const totalStats = orchestrator.getStats();
+
+		res.json({
+			success: true,
+			summary: {
+				total: totalEntities,
+				arrondissements: arrondissementsToSearch.length,
+				entities: totalEntities,
+				errors: allErrors.length
+			},
+			results: allResults,
+			errors: allErrors,
+			stats: totalStats,
+			message: `Enhanced crawler found ${totalEntities} entities across ${arrondissementsToSearch.length} arrondissement(s)`
+		});
+
+	} catch (error) {
+		console.error('Enhanced crawler error:', error);
+		res.status(500).json({ 
+			error: 'Enhanced crawler failed', 
 			message: error.message 
 		});
 	}

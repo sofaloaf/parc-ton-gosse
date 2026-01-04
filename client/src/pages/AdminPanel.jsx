@@ -307,12 +307,24 @@ export default function AdminPanel() {
 			setEnhancedCrawlerResults(crawlerResult);
 
 			// Get existing activities for comparison
-			const existingActivities = await api('/activities?neighborhood=20e&limit=1000');
+			const existingActivitiesResponse = await api('/activities?neighborhood=20e&limit=1000');
+			
+			// Activities API returns { data: [...], pagination: {...} }
+			const existingActivities = Array.isArray(existingActivitiesResponse) 
+				? existingActivitiesResponse 
+				: (existingActivitiesResponse.data || existingActivitiesResponse.activities || []);
+			
+			// Ensure crawler entities is an array
+			const crawlerEntities = Array.isArray(crawlerResult.entities) 
+				? crawlerResult.entities 
+				: [];
+			
+			console.log('Crawler entities:', crawlerEntities.length, 'Existing activities:', existingActivities.length);
 			
 			// Compare results
 			const comparison = compareResults(
-				crawlerResult.entities || [],
-				existingActivities || []
+				crawlerEntities,
+				existingActivities
 			);
 
 			setComparisonData(comparison);
@@ -330,38 +342,42 @@ export default function AdminPanel() {
 	};
 
 	const compareResults = (crawlerEntities, existingActivities) => {
+		// Ensure both inputs are arrays
+		const crawlerArray = Array.isArray(crawlerEntities) ? crawlerEntities : [];
+		const existingArray = Array.isArray(existingActivities) ? existingActivities : [];
+
 		const crawlerNames = new Set(
-			crawlerEntities.map(e => {
+			crawlerArray.map(e => {
 				const name = e.data?.name || e.data?.title || e.name || e.title || '';
 				return typeof name === 'string' ? name.toLowerCase().trim() : '';
 			}).filter(Boolean)
 		);
 
 		const existingNames = new Set(
-			existingActivities.map(a => {
+			existingArray.map(a => {
 				const name = a.title?.en || a.title?.fr || a.title || '';
 				return typeof name === 'string' ? name.toLowerCase().trim() : '';
 			}).filter(Boolean)
 		);
 
 		// Find new entities (in crawler but not in existing)
-		const newEntities = crawlerEntities.filter(e => {
+		const newEntities = crawlerArray.filter(e => {
 			const name = (e.data?.name || e.data?.title || e.name || e.title || '').toLowerCase().trim();
 			return name && !existingNames.has(name);
 		});
 
 		// Find missing entities (in existing but not in crawler)
-		const missingEntities = existingActivities.filter(a => {
+		const missingEntities = existingArray.filter(a => {
 			const name = (a.title?.en || a.title?.fr || a.title || '').toLowerCase().trim();
 			return name && !crawlerNames.has(name);
 		});
 
 		return {
-			crawlerCount: crawlerEntities.length,
-			existingCount: existingActivities.length,
+			crawlerCount: crawlerArray.length,
+			existingCount: existingArray.length,
 			newCount: newEntities.length,
 			missingCount: missingEntities.length,
-			overlapCount: crawlerEntities.length - newEntities.length,
+			overlapCount: crawlerArray.length - newEntities.length,
 			newEntities: newEntities.slice(0, 20), // Limit to 20 for display
 			missingEntities: missingEntities.slice(0, 20) // Limit to 20 for display
 		};

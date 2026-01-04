@@ -1173,10 +1173,10 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						tabName: generateTabName('pending', 'enhanced-crawler')
 					});
 
-					// Merge all results (avoid duplicates)
+					// Merge all results (avoid duplicates and filter newsletters)
 					const existingNames = new Set(mairieEntities.map(e => e.data.name?.toLowerCase()));
 					
-					// Add advanced crawler results
+					// Add advanced crawler results (with newsletter filtering)
 					const advancedEntities = (advancedResults.results || []).map(r => ({
 						id: r.id || uuidv4(),
 						data: r.data,
@@ -1185,13 +1185,37 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						extractedAt: r.extractedAt,
 						validation: { valid: true, score: 0.8 }
 					})).filter(e => {
-						const name = e.data.name?.toLowerCase();
+						const name = (e.data.name || '').toLowerCase();
+						const website = (e.data.website || '').toLowerCase();
+						
+						// Filter out newsletters
+						if (name.includes('newsletter') || 
+						    name.includes('lettre d\'information') ||
+						    website.includes('cdnjs.cloudflare.com') ||
+						    website.includes('cdn')) {
+							console.log(`  ⏭️  Filtered out newsletter/CDN result: ${name}`);
+							return false;
+						}
+						
+						// Filter out duplicates
 						return name && !existingNames.has(name);
 					});
 
-					// Add enhanced crawler results
+					// Add enhanced crawler results (with newsletter filtering)
 					const enhancedEntities = (crawlResults.entities || []).filter(e => {
 						const name = (e.data?.name || e.data?.title || '').toLowerCase();
+						const website = (e.data?.website || e.data?.websiteLink || '').toLowerCase();
+						
+						// Filter out newsletters
+						if (name.includes('newsletter') || 
+						    name.includes('lettre d\'information') ||
+						    website.includes('cdnjs.cloudflare.com') ||
+						    website.includes('cdn')) {
+							console.log(`  ⏭️  Filtered out newsletter/CDN result: ${name}`);
+							return false;
+						}
+						
+						// Filter out duplicates
 						return name && !existingNames.has(name);
 					});
 

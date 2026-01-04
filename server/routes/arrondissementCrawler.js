@@ -1006,8 +1006,9 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 				const mairieActivities = await searchMairieActivities(arrondissement, postalCode);
 				console.log(`✅ Found ${mairieActivities.length} activities from mairie pages`);
 
-				// STEP 1.5: Direct website access for known organizations (NEW APPROACH)
-				console.log(`📋 Step 1.5: Direct website access for known organizations...`);
+				// STEP 1.5: Direct website access for known organizations (SKIPPED to avoid timeout)
+				console.log(`📋 Step 1.5: Skipping direct website access to avoid timeout...`);
+				/* SKIPPED - takes too long
 				try {
 					// Get existing activities to find their websites
 					const store = req.app.get('dataStore');
@@ -1134,6 +1135,7 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 				} catch (directError) {
 					console.error(`  ⚠️  Direct website access failed:`, directError.message);
 				}
+				*/
 
 				// Convert to enhanced crawler format and filter newsletters
 				const mairieEntities = mairieActivities

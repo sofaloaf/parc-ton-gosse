@@ -129,24 +129,33 @@ async function searchMairieActivities(arrondissement, postalCode) {
 	const activities = [];
 	
 	try {
-		// Build mairie activities URL
+		// Build mairie activities URL - try multiple URL patterns
 		const arrNum = arrondissement.replace('er', '').replace('e', '');
-		const mairieUrl = `https://mairie${arrNum}.paris.fr/recherche/activites?arrondissements=${postalCode}`;
-		console.log(`🔍 [${arrondissement}] Searching mairie: ${mairieUrl}`);
+		const mairieUrls = [
+			`https://mairie${arrNum}.paris.fr/recherche/activites?arrondissements=${postalCode}`,
+			`https://mairie${arrNum}.paris.fr/recherche?q=activités&arrondissements=${postalCode}`,
+			`https://mairie${arrNum}.paris.fr/recherche?q=associations&arrondissements=${postalCode}`,
+			`https://mairie${arrNum}.paris.fr/recherche?q=clubs&arrondissements=${postalCode}`
+		];
 		
-		const response = await fetchWithRetry(mairieUrl, { timeout: 20000 });
+		const allActivityLinks = new Set();
+		
+		// Try each URL pattern
+		for (const mairieUrl of mairieUrls) {
+			try {
+				console.log(`🔍 [${arrondissement}] Trying mairie URL: ${mairieUrl}`);
+				const response = await fetchWithRetry(mairieUrl, { timeout: 20000 });
 
-		if (!response.ok) {
-			console.warn(`⚠️ [${arrondissement}] Mairie search failed: HTTP ${response.status}`);
-			return activities;
-		}
+				if (!response.ok) {
+					console.warn(`⚠️ [${arrondissement}] Mairie URL failed: HTTP ${response.status}`);
+					continue;
+				}
 
-		const html = await response.text();
-		const dom = new JSDOM(html);
-		const document = dom.window.document;
+				const html = await response.text();
+				const dom = new JSDOM(html);
+				const document = dom.window.document;
 
-		const activityLinks = new Set();
-		const baseUrl = `https://mairie${arrNum}.paris.fr`;
+				const baseUrl = `https://mairie${arrNum}.paris.fr`;
 
 		// Find activity links - try multiple selectors
 		const activitySelectors = [
@@ -185,9 +194,9 @@ async function searchMairieActivities(arrondissement, postalCode) {
 						} else if (!href.startsWith('http')) {
 							fullUrl = `${baseUrl}/${href}`;
 						}
-						if (fullUrl.startsWith('http') && !activityLinks.has(fullUrl)) {
-							activityLinks.add(fullUrl);
-						}
+					if (fullUrl.startsWith('http') && !pageActivityLinks.has(fullUrl)) {
+						pageActivityLinks.add(fullUrl);
+					}
 					}
 				}
 			} catch (e) {
@@ -227,11 +236,8 @@ async function searchMairieActivities(arrondissement, postalCode) {
 			}
 		}
 
-		console.log(`📋 [${arrondissement}] Found ${activityLinks.size} activity links on mairie page`);
-
-		// Visit each activity page to extract organization info
-		const maxActivitiesPerArrondissement = 200;
-		const activityArray = Array.from(activityLinks).slice(0, maxActivitiesPerArrondissement);
+				// Collect links from this URL
+				const pageActivityLinks = new Set();
 		
 		console.log(`📋 [${arrondissement}] Processing ${activityArray.length} activity links...`);
 		
@@ -1046,19 +1052,58 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 								});
 
 								if (response.ok) {
-									// Website is accessible, add it
-									directExtractions.push({
-										name: org.name,
-										website: websiteUrl,
-										email: null,
-										phone: null,
-										address: null,
-										arrondissement: arrondissement,
-										sourceUrl: websiteUrl,
-										status: 'pending',
-										source: 'direct_website_access'
-									});
-									console.log(`    ✅ ${org.name}: ${websiteUrl}`);
+									// Website is accessible, try to extract data from it
+									try {
+										const fullResponse = await fetch(websiteUrl, {
+											headers: {
+												'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+												'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+											},
+											timeout: 10000
+										});
+
+										if (fullResponse.ok) {
+											const html = await fullResponse.text();
+											const dom = new JSDOM(html);
+											const doc = dom.window.document;
+
+											// Extract contact info
+											const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+											const emailMatch = html.match(emailPattern);
+											const email = emailMatch ? emailMatch.find(e => !e.includes('noreply') && !e.includes('no-reply')) : null;
+
+											const phonePattern = /(?:\+33|0)[1-9](?:[.\s]?\d{2}){4}/g;
+											const phoneMatch = html.match(phonePattern);
+											const phone = phoneMatch ? phoneMatch[0].trim() : null;
+
+											directExtractions.push({
+												name: org.name,
+												website: websiteUrl,
+												email: email,
+												phone: phone,
+												address: null,
+												arrondissement: arrondissement,
+												sourceUrl: websiteUrl,
+												status: 'pending',
+												source: 'direct_website_access'
+											});
+											console.log(`    ✅ ${org.name}: ${websiteUrl}${email ? ` (${email})` : ''}`);
+										}
+									} catch (extractError) {
+										// If extraction fails, still add with basic info
+										directExtractions.push({
+											name: org.name,
+											website: websiteUrl,
+											email: null,
+											phone: null,
+											address: null,
+											arrondissement: arrondissement,
+											sourceUrl: websiteUrl,
+											status: 'pending',
+											source: 'direct_website_access'
+										});
+										console.log(`    ✅ ${org.name}: ${websiteUrl} (basic info only)`);
+									}
 								}
 							} catch (error) {
 								// Website not accessible, skip
@@ -1077,26 +1122,42 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					console.error(`  ⚠️  Direct website access failed:`, directError.message);
 				}
 
-				// Convert to enhanced crawler format
-				const mairieEntities = mairieActivities.map(activity => ({
-					id: uuidv4(),
-					data: {
-						name: activity.name,
-						title: activity.name,
-						website: activity.website,
-						websiteLink: activity.website,
-						email: activity.email,
-						phone: activity.phone,
-						address: activity.address,
-						description: `Activity from ${arrondissement} arrondissement`,
-						neighborhood: arrondissement,
-						arrondissement: arrondissement
-					},
-					sources: [activity.sourceUrl || 'mairie'],
-					confidence: 0.9,
-					extractedAt: new Date().toISOString(),
-					validation: { valid: true, score: 0.9 }
-				}));
+				// Convert to enhanced crawler format and filter newsletters
+				const mairieEntities = mairieActivities
+					.filter(activity => {
+						// Filter out newsletters
+						const name = (activity.name || '').toLowerCase();
+						const website = (activity.website || '').toLowerCase();
+						
+						if (name.includes('newsletter') || 
+						    name.includes('lettre d\'information') ||
+						    website.includes('cdnjs.cloudflare.com') ||
+						    website.includes('cdn') ||
+						    website.includes('font-awesome')) {
+							console.log(`  ⏭️  Filtered out newsletter: ${activity.name}`);
+							return false;
+						}
+						return true;
+					})
+					.map(activity => ({
+						id: uuidv4(),
+						data: {
+							name: activity.name,
+							title: activity.name,
+							website: activity.website,
+							websiteLink: activity.website,
+							email: activity.email,
+							phone: activity.phone,
+							address: activity.address,
+							description: `Activity from ${arrondissement} arrondissement`,
+							neighborhood: arrondissement,
+							arrondissement: arrondissement
+						},
+						sources: [activity.sourceUrl || 'mairie'],
+						confidence: 0.9,
+						extractedAt: new Date().toISOString(),
+						validation: { valid: true, score: 0.9 }
+					}));
 
 				const arrondissementEntities = [...mairieEntities];
 

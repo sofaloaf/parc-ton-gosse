@@ -40,22 +40,82 @@ export class DiscoveryModule {
 			}
 		}
 
-		// 1.5. Specific searches for common organization types in the arrondissement
+		// 1.5. Comprehensive activity-specific searches for the arrondissement
 		if (options.arrondissement) {
-			const specificQueries = [
-				`"cercle escrime" ${options.arrondissement} Paris`,
-				`cercle escrime André Gardère ${options.arrondissement}`,
-				`associations sport ${options.arrondissement} Paris`,
-				`clubs enfants ${options.arrondissement} Paris`,
-				`associations ${options.arrondissement} arrondissement Paris`
+			// Activity keywords in French and English
+			const activityKeywords = [
+				// French
+				'club', 'clubs', 'activité', 'activités', 'association', 'associations',
+				'sport', 'sports', 'théâtre', 'théâtres', 'danse', 'danses',
+				'arts martiaux', 'art martial', 'musique', 'musiques',
+				'extracurriculaire', 'extracurriculaires',
+				// English
+				'organization', 'organizations', 'activity', 'activities',
+				'theater', 'theatre', 'dance', 'dancing', 'martial arts',
+				'music', 'extracurricular',
+				// Additional relevant terms
+				'loisir', 'loisirs', 'atelier', 'ateliers', 'cours', 'cercle',
+				'école', 'écoles', 'académie', 'académies', 'centre', 'centres'
 			];
 
-			for (const specificQuery of specificQueries) {
+			// Build comprehensive search queries
+			const specificQueries = [];
+			
+			// Base queries with arrondissement
+			for (const keyword of activityKeywords.slice(0, 15)) { // Limit to avoid too many API calls
+				specificQueries.push(`${keyword} enfants ${options.arrondissement} Paris`);
+				specificQueries.push(`${keyword} enfants Paris ${options.arrondissement}`);
+			}
+
+			// Specific targeted searches
+			specificQueries.push(`"cercle escrime" ${options.arrondissement} Paris`);
+			specificQueries.push(`associations ${options.arrondissement} arrondissement Paris`);
+			specificQueries.push(`clubs sport ${options.arrondissement} Paris`);
+			specificQueries.push(`activités enfants ${options.arrondissement} arrondissement`);
+
+			// Limit to 20 queries to avoid rate limiting
+			for (const specificQuery of specificQueries.slice(0, 20)) {
 				try {
 					if (this.googleApiKey && this.googleCx) {
 						const specificResults = await this.googleCustomSearch(specificQuery, { ...options, expandGraph: false });
-						results.googleResults.push(...specificResults);
-						console.log(`  🔍 Specific search "${specificQuery}": ${specificResults.length} results`);
+						
+						// Filter out newsletter and non-activity results
+						const filteredResults = specificResults.filter(result => {
+							const title = (result.title || '').toLowerCase();
+							const snippet = (result.snippet || '').toLowerCase();
+							const url = (result.url || '').toLowerCase();
+							
+							// Exclude newsletter results
+							if (title.includes('newsletter') || 
+							    title.includes('lettre d\'information') ||
+							    snippet.includes('newsletter') ||
+							    snippet.includes('lettre d\'information') ||
+							    url.includes('newsletter') ||
+							    title.includes('abonnement') && title.includes('newsletter')) {
+								return false;
+							}
+							
+							// Exclude generic Paris city hall pages
+							if (title.includes('mairie de paris') && !title.includes('activité') && !title.includes('association')) {
+								return false;
+							}
+							
+							// Must contain activity-related keywords
+							const activityIndicators = [
+								'activité', 'activités', 'club', 'clubs', 'association', 'associations',
+								'sport', 'théâtre', 'danse', 'musique', 'arts martiaux',
+								'loisir', 'atelier', 'cours', 'cercle', 'enfant', 'enfants'
+							];
+							
+							const hasActivityKeyword = activityIndicators.some(keyword => 
+								title.includes(keyword) || snippet.includes(keyword) || url.includes(keyword)
+							);
+							
+							return hasActivityKeyword;
+						});
+						
+						results.googleResults.push(...filteredResults);
+						console.log(`  🔍 Search "${specificQuery}": ${filteredResults.length} filtered results (${specificResults.length} total)`);
 					}
 				} catch (error) {
 					console.warn(`Specific search failed for "${specificQuery}":`, error.message);
@@ -254,7 +314,7 @@ export class DiscoveryModule {
 	}
 
 	/**
-	 * Build optimized search query
+	 * Build optimized search query with activity-specific keywords
 	 */
 	buildSearchQuery(baseQuery, options = {}) {
 		const terms = [baseQuery];
@@ -264,14 +324,26 @@ export class DiscoveryModule {
 			terms.push(`${options.arrondissement} arrondissement`);
 		}
 		
+		// Activity keywords (prioritize most relevant)
+		const activityTerms = [
+			'activité', 'activités', 'club', 'clubs', 'association', 'associations',
+			'sport', 'sports', 'théâtre', 'danse', 'musique', 'arts martiaux',
+			'loisir', 'loisirs', 'atelier', 'ateliers', 'cours', 'cercle'
+		];
+		
 		if (options.entityType) {
-			terms.push(options.entityType); // e.g., "association", "club", "nonprofit"
+			terms.push(options.entityType);
 		} else {
-			// Add common organization types
-			terms.push('association', 'club', 'cercle');
+			// Add top activity keywords
+			terms.push(...activityTerms.slice(0, 5));
 		}
 		
-		terms.push('activités enfants Paris');
+		// Always include "enfants" and "Paris" for relevance
+		terms.push('enfants', 'Paris');
+		
+		// Exclude newsletter and generic terms
+		const excludeTerms = ['newsletter', 'lettre d\'information', 'abonnement'];
+		terms.push(...excludeTerms.map(term => `-${term}`)); // Google search exclusion syntax
 		
 		return terms.join(' ');
 	}

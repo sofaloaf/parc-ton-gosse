@@ -104,8 +104,28 @@ export class CrawlerOrchestrator {
 						confidence: source.confidence
 					});
 
+					// Skip if extraction was filtered out (e.g., newsletter pages)
+					if (extracted.error && extracted.error.includes('Newsletter')) {
+						console.log(`  ⏭️  Skipping ${source.url} - ${extracted.error}`);
+						this.stats.skipped = (this.stats.skipped || 0) + 1;
+						continue;
+					}
+
 					// Only add if we have meaningful data (name OR contact info is critical)
 					if (extracted.data && Object.keys(extracted.data).length > 0) {
+						// Filter out newsletter and non-activity results
+						const name = (extracted.data.name || extracted.data.title || extracted.data.heading || '').toLowerCase();
+						const description = (extracted.data.description || '').toLowerCase();
+						
+						if (name.includes('newsletter') || 
+						    name.includes('lettre d\'information') ||
+						    description.includes('abonnez-vous à la newsletter') ||
+						    name.includes('abonnement') && name.includes('newsletter')) {
+							console.log(`  ⏭️  Skipping ${source.url} - newsletter result`);
+							this.stats.skipped = (this.stats.skipped || 0) + 1;
+							continue;
+						}
+						
 						// More lenient: accept if we have name OR contact info (email/phone/website)
 						const hasName = extracted.data.name || extracted.data.title || extracted.data.heading;
 						const hasContact = extracted.data.email || extracted.data.phone || extracted.data.website;

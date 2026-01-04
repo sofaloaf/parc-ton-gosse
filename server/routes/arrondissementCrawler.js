@@ -1110,7 +1110,15 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						}
 					});
 
-					const query = `associations clubs activités enfants ${arrondissement} arrondissement Paris`;
+					// Build comprehensive query with activity keywords
+					const activityKeywords = [
+						'club', 'clubs', 'activité', 'activités', 'association', 'associations',
+						'sport', 'sports', 'théâtre', 'danse', 'musique', 'arts martiaux',
+						'loisir', 'loisirs', 'atelier', 'ateliers', 'cours', 'cercle'
+					];
+					
+					// Use top keywords for query
+					const query = `${activityKeywords.slice(0, 5).join(' ')} enfants ${arrondissement} arrondissement Paris -newsletter -"lettre d'information"`;
 					const crawlResults = await orchestrator.crawl(query, {
 						arrondissement: arrondissement,
 						postalCode: postalCode,

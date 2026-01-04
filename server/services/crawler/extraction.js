@@ -107,6 +107,21 @@ export class ExtractionModule {
 			});
 			const document = dom.window.document;
 
+			// Filter out newsletter and non-activity pages early
+			const pageText = (document.body?.textContent || html).toLowerCase();
+			const title = document.querySelector('title')?.textContent?.toLowerCase() || '';
+			
+			// Skip newsletter pages
+			if (title.includes('newsletter') || 
+			    title.includes('lettre d\'information') ||
+			    pageText.includes('abonnez-vous à la newsletter') ||
+			    pageText.includes('inscription newsletter') ||
+			    url.toLowerCase().includes('newsletter')) {
+				result.error = 'Newsletter page - skipped';
+				result.confidence = 0;
+				return result;
+			}
+			
 			// Extract using multiple strategies - prioritize proven approaches
 			const structuredData = this.extractStructuredData(document);
 			const metaData = this.extractMetaData(document);

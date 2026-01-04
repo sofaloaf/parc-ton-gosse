@@ -39,7 +39,8 @@ const ARRONDISSEMENT_TO_POSTAL = {
 	'16e': '75016',
 	'17e': '75017',
 	'18e': '75018',
-	'19e': '75019'
+	'19e': '75019',
+	'20e': '75020'
 };
 
 // Helper function to fetch with timeout and retries

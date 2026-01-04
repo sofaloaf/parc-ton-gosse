@@ -245,7 +245,7 @@ export default function AdminPanel() {
 		}
 	};
 
-	const runArrondissementCrawler = async () => {
+	const runArrondissementCrawler = async (arrondissements = []) => {
 		setArrondissementCrawlerLoading(true);
 		setArrondissementCrawlerError('');
 		setArrondissementCrawlerResults(null);
@@ -257,6 +257,7 @@ export default function AdminPanel() {
 			const result = await api('/arrondissement-crawler/search', {
 				method: 'POST',
 				body: {
+					arrondissements: arrondissements.length > 0 ? arrondissements : undefined, // Empty array means all
 					useTemplate: true
 				}
 			});
@@ -272,6 +273,10 @@ export default function AdminPanel() {
 		} finally {
 			setArrondissementCrawlerLoading(false);
 		}
+	};
+
+	const run20eTest = async () => {
+		await runArrondissementCrawler(['20e']);
 	};
 
 	const loadPendingActivities = async () => {
@@ -728,43 +733,83 @@ export default function AdminPanel() {
 				<ChartCard title="Arrondissement Crawler">
 					<div style={{ marginBottom: 20 }}>
 						<p style={{ color: '#666', marginBottom: 16 }}>
-							Search for activities in all Paris arrondissements (excluding 20e which already has data). 
-							This will:
+							Search for activities in Paris arrondissements. This will:
 						</p>
 						<ul style={{ color: '#666', marginLeft: 20, marginBottom: 16 }}>
-							<li>Search for organizations in all 19 arrondissements</li>
-							<li>Use existing 20e data as a template</li>
+							<li>Search mairie websites for organizations</li>
 							<li>Extract data from organization websites</li>
 							<li>Save activities with pending status (requires approval)</li>
 						</ul>
-						<button
-							onClick={runArrondissementCrawler}
-							disabled={arrondissementCrawlerLoading}
-							style={{
-								padding: '12px 24px',
-								background: arrondissementCrawlerLoading ? '#6c757d' : '#17a2b8',
-								color: 'white',
-								border: 'none',
-								borderRadius: 4,
-								cursor: arrondissementCrawlerLoading ? 'not-allowed' : 'pointer',
-								fontSize: 16,
-								fontWeight: 'bold',
-								display: 'flex',
-								alignItems: 'center',
-								gap: 8
-							}}
-						>
-							{arrondissementCrawlerLoading ? (
-								<>
-									<span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #fff', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
-									Searching Arrondissements...
-								</>
-							) : (
-								<>
-									🔍 Search All Arrondissements
-								</>
-							)}
-						</button>
+						
+						{/* Test Button for 20e */}
+						<div style={{ marginBottom: 16, padding: 12, background: '#fff3cd', borderRadius: 4, border: '1px solid #ffc107' }}>
+							<p style={{ margin: '0 0 8px 0', fontWeight: 'bold', color: '#856404' }}>
+								🧪 Test: 20th Arrondissement (20e)
+							</p>
+							<p style={{ margin: '0 0 12px 0', fontSize: 14, color: '#856404' }}>
+								Test the crawler on 20e to compare with existing manually extracted activities and identify gaps.
+							</p>
+							<button
+								onClick={run20eTest}
+								disabled={arrondissementCrawlerLoading}
+								style={{
+									padding: '10px 20px',
+									background: arrondissementCrawlerLoading ? '#6c757d' : '#ffc107',
+									color: arrondissementCrawlerLoading ? '#fff' : '#000',
+									border: 'none',
+									borderRadius: 4,
+									cursor: arrondissementCrawlerLoading ? 'not-allowed' : 'pointer',
+									fontSize: 14,
+									fontWeight: 'bold',
+									display: 'flex',
+									alignItems: 'center',
+									gap: 8
+								}}
+							>
+								{arrondissementCrawlerLoading ? (
+									<>
+										<span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid currentColor', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
+										Crawling 20e...
+									</>
+								) : (
+									<>
+										🧪 Test Crawler for 20e
+									</>
+								)}
+							</button>
+						</div>
+
+						{/* All Arrondissements Button */}
+						<div style={{ marginBottom: 12 }}>
+							<button
+								onClick={() => runArrondissementCrawler()}
+								disabled={arrondissementCrawlerLoading}
+								style={{
+									padding: '12px 24px',
+									background: arrondissementCrawlerLoading ? '#6c757d' : '#17a2b8',
+									color: 'white',
+									border: 'none',
+									borderRadius: 4,
+									cursor: arrondissementCrawlerLoading ? 'not-allowed' : 'pointer',
+									fontSize: 16,
+									fontWeight: 'bold',
+									display: 'flex',
+									alignItems: 'center',
+									gap: 8
+								}}
+							>
+								{arrondissementCrawlerLoading ? (
+									<>
+										<span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #fff', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
+										Searching Arrondissements...
+									</>
+								) : (
+									<>
+										🔍 Search All Arrondissements
+									</>
+								)}
+							</button>
+						</div>
 						{arrondissementCrawlerError && (
 							<div style={{
 								marginTop: 16,

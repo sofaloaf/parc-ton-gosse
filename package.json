@@ -12,6 +12,8 @@
     "qr": "node generate-qr-code.js"
   },
   "devDependencies": {
+    "dotenv": "^17.2.3",
+    "node-fetch": "^3.3.2",
     "qrcode": "^1.5.4"
   }
 }

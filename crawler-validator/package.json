@@ -12,6 +12,7 @@
     "cleanup-sheet": "node src/cleanup-sheet.js",
     "update-descriptions": "node src/update-descriptions.js",
     "update-addresses": "node src/update-addresses.js",
+    "sync-addresses": "node src/sync-addresses.js",
     "analyze-addresses": "node src/analyze-addresses.js",
     "test": "node --test tests/**/*.test.js"
   },

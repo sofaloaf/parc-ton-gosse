@@ -58,16 +58,43 @@ export async function readActivitiesFromSheet(sheetId, tabName = 'Activities') {
   console.log(`📖 Reading activities from tab: "${tabName}"`);
   
   try {
+    // Try larger range for cleaned sheets
+    const range = tabName.includes('Cleaned') ? `${tabName}!A:ZZ` : `${tabName}!A:Z`;
+    
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      range: `${tabName}!A:Z`
+      range: range
     });
 
     const rows = response.data.values || [];
     if (rows.length === 0) {
       console.log('⚠️  No data found in sheet');
+      console.log(`   Tried range: ${range}`);
+      // Try alternative range
+      try {
+        const altResponse = await sheets.spreadsheets.values.get({
+          spreadsheetId: sheetId,
+          range: `${tabName}!A1:Z200`
+        });
+        const altRows = altResponse.data.values || [];
+        if (altRows.length > 0) {
+          console.log(`   ✅ Found data with alternative range (${altRows.length} rows)`);
+          return processRows(altRows, tabName);
+        }
+      } catch (altError) {
+        console.log(`   Alternative range also failed: ${altError.message}`);
+      }
       return [];
     }
+    
+    return processRows(rows, tabName);
+  } catch (error) {
+    console.error(`❌ Error reading sheet: ${error.message}`);
+    throw error;
+  }
+}
+
+function processRows(rows, tabName) {
 
     // Find first non-empty row as headers
     let headerRowIndex = 0;
@@ -80,6 +107,13 @@ export async function readActivitiesFromSheet(sheetId, tabName = 'Activities') {
 
     const headers = rows[headerRowIndex].map(h => h?.toString().trim() || '');
     console.log(`📋 Found ${headers.length} columns: ${headers.slice(0, 5).join(', ')}...`);
+    
+    // Debug: show first few rows if no data found
+    if (rows.length <= headerRowIndex + 1) {
+      console.log('⚠️  No data rows found after headers');
+      console.log(`   Total rows: ${rows.length}, Header row: ${headerRowIndex}`);
+      return [];
+    }
 
     // Check if this is already a cleaned sheet (has English column names)
     const isCleanedSheet = headers.some(h => 
@@ -123,23 +157,29 @@ export async function readActivitiesFromSheet(sheetId, tabName = 'Activities') {
       headers.forEach((header, colIndex) => {
         if (!header) return;
         const value = row[colIndex]?.toString().trim() || '';
-        if (value || value === '0') { // Include 0 values
+        if (value || value === '0' || colIndex < row.length) { // Include 0 values and empty cells for structure
           // Map French column names to English (only if not cleaned sheet)
           const mappedHeader = columnMap[header] || header;
           
+          // For cleaned sheets, use header as-is if no mapping
+          const finalHeader = isCleanedSheet ? header : mappedHeader;
+          
           // Handle arrays (categories, addresses) - if comma-separated string
-          if ((mappedHeader === 'categories' || mappedHeader === 'addresses') && value.includes(',')) {
-            activity[mappedHeader] = value.split(',').map(v => v.trim()).filter(v => v.length > 0);
+          if ((finalHeader === 'categories' || finalHeader === 'addresses') && value.includes(',') && !value.startsWith('[')) {
+            activity[finalHeader] = value.split(',').map(v => v.trim()).filter(v => v.length > 0);
           }
           // Try to parse JSON if it looks like JSON
           else if (value.startsWith('{') || value.startsWith('[')) {
             try {
-              activity[mappedHeader] = JSON.parse(value);
+              activity[finalHeader] = JSON.parse(value);
             } catch {
-              activity[mappedHeader] = value;
+              activity[finalHeader] = value;
             }
           } else {
-            activity[mappedHeader] = value;
+            // Store value (even if empty, to preserve structure)
+            if (value || finalHeader === 'addresses' || finalHeader === 'addresses_structured' || finalHeader === 'addresses_display' || finalHeader === 'addresses_original') {
+              activity[finalHeader] = value;
+            }
           }
         }
       });
@@ -156,10 +196,6 @@ export async function readActivitiesFromSheet(sheetId, tabName = 'Activities') {
 
     console.log(`✅ Read ${activities.length} activities from sheet`);
     return activities;
-  } catch (error) {
-    console.error(`❌ Error reading sheet: ${error.message}`);
-    throw error;
-  }
 }
 
 /**

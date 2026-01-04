@@ -68,9 +68,9 @@ export class DiscoveryModule {
 			}
 			
 			// Execute web searches with strict limits to avoid Railway timeout (60s limit)
-			// Limit to 5 queries max with reduced delays
-			console.log(`  📋 Executing ${specificQueries.length} web search queries (limited to 5 to avoid timeout)...`);
-			const maxQueries = 5;
+			// Limit to 3 queries max with reduced delays
+			console.log(`  📋 Executing ${specificQueries.length} web search queries (limited to 3 to avoid timeout)...`);
+			const maxQueries = 3;
 			for (let i = 0; i < Math.min(specificQueries.length, maxQueries); i++) {
 				const specificQuery = specificQueries[i];
 				try {

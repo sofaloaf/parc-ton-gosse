@@ -1332,9 +1332,9 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					const crawlResults = await orchestrator.crawl(query, {
 						arrondissement: arrondissement,
 						postalCode: postalCode,
-						maxSources: 20, // Lower limit since we already have mairie results
-						geocode: true,
-						categorize: true,
+						maxSources: 5, // Very low limit to avoid timeout
+						geocode: false, // Skip geocoding to save time
+						categorize: false, // Skip categorization to save time
 						expandGraph: false,
 						tabName: generateTabName('pending', 'enhanced-crawler')
 					});

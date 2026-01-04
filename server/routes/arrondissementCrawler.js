@@ -970,7 +970,6 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 
 			const allResults = [];
 			const allErrors = [];
-			const allEntities = [];
 
 			// HYBRID APPROACH: Use proven working crawler + enhanced features
 			for (const arrondissement of arrondissementsToSearch) {
@@ -1008,7 +1007,7 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					validation: { valid: true, score: 0.9 }
 				}));
 
-				allEntities.push(...mairieEntities);
+				const arrondissementEntities = [...mairieEntities];
 
 				// STEP 2: Use enhanced crawler for additional sources (Google search, etc.)
 				console.log(`📋 Step 2: Using enhanced crawler for additional sources...`);
@@ -1050,7 +1049,7 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						return name && !existingNames.has(name.toLowerCase());
 					});
 
-					allEntities.push(...newEntities);
+					arrondissementEntities.push(...newEntities);
 					allErrors.push(...(crawlResults.errors || []));
 					console.log(`✅ Enhanced crawler found ${newEntities.length} additional entities`);
 				} catch (enhancedError) {
@@ -1059,15 +1058,15 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 				}
 
 				// STEP 3: Save all entities to Google Sheets using proven approach
-				console.log(`📋 Step 3: Saving ${allEntities.length} entities to Google Sheets...`);
+				console.log(`📋 Step 3: Saving ${arrondissementEntities.length} entities to Google Sheets...`);
 				let saveResult = null;
-				if (allEntities.length > 0) {
+				if (arrondissementEntities.length > 0) {
 					try {
 						const sheets = getSheetsClient();
 						const finalSheetName = generateTabName('pending', 'hybrid-crawler');
 						
 						// Convert entities to sheet rows using proven format
-						const rowsToSave = allEntities.map(e => {
+						const rowsToSave = arrondissementEntities.map(e => {
 							const activity = {
 								id: e.id || uuidv4(),
 								title: { en: e.data.name || e.data.title || 'Organization', fr: e.data.name || e.data.title || 'Organization' },
@@ -1138,13 +1137,13 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 				allResults.push({
 					arrondissement,
 					postalCode,
-					entities: allEntities,
+					entities: arrondissementEntities,
 					mairieCount: mairieEntities.length,
-					enhancedCount: allEntities.length - mairieEntities.length,
+					enhancedCount: arrondissementEntities.length - mairieEntities.length,
 					saveResult: saveResult
 				});
 
-				console.log(`✅ Hybrid crawl completed for ${arrondissement}: ${allEntities.length} total entities (${mairieEntities.length} from mairie, ${allEntities.length - mairieEntities.length} from enhanced)`);
+				console.log(`✅ Hybrid crawl completed for ${arrondissement}: ${arrondissementEntities.length} total entities (${mairieEntities.length} from mairie, ${arrondissementEntities.length - mairieEntities.length} from enhanced)`);
 			}
 
 		// Aggregate results

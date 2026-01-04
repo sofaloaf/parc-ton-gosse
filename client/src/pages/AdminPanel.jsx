@@ -33,7 +33,14 @@ export default function AdminPanel() {
 	useEffect(() => {
 		// First, ensure we have a CSRF token by making a GET request
 		// This will set the CSRF token cookie if it doesn't exist
-		api('/me')
+		const timeoutPromise = new Promise((_, reject) => 
+			setTimeout(() => reject(new Error('Authentication timeout')), 15000)
+		);
+		
+		Promise.race([
+			api('/me'),
+			timeoutPromise
+		])
 			.then(data => {
 				if (data.user?.role === 'admin') {
 					setIsAuthenticated(true);
@@ -50,7 +57,8 @@ export default function AdminPanel() {
 					}, 100);
 				}
 			})
-			.catch(() => {
+			.catch((err) => {
+				console.error('Auth check failed:', err);
 				setIsAuthenticated(false);
 				setLoading(false);
 				// Initialize Google Sign-In after ensuring CSRF token is set
@@ -168,7 +176,14 @@ export default function AdminPanel() {
 	const loadMetrics = async () => {
 		try {
 			setLoading(true);
-			const data = await api('/metrics/dashboard');
+			// Add timeout to prevent hanging
+			const timeoutPromise = new Promise((_, reject) => 
+				setTimeout(() => reject(new Error('Request timeout')), 30000)
+			);
+			const data = await Promise.race([
+				api('/metrics/dashboard'),
+				timeoutPromise
+			]);
 			setMetrics(data);
 			setError('');
 		} catch (err) {
@@ -386,10 +401,19 @@ export default function AdminPanel() {
 	const loadPendingActivities = async () => {
 		setPendingLoading(true);
 		try {
-			const result = await api('/arrondissement-crawler/pending');
+			// Add timeout to prevent hanging
+			const timeoutPromise = new Promise((_, reject) => 
+				setTimeout(() => reject(new Error('Request timeout')), 30000)
+			);
+			const result = await Promise.race([
+				api('/arrondissement-crawler/pending'),
+				timeoutPromise
+			]);
 			setPendingActivities(result.activities || []);
 		} catch (err) {
 			console.error('Failed to load pending activities:', err);
+			// Don't show error to user, just log it
+			setPendingActivities([]);
 		} finally {
 			setPendingLoading(false);
 		}
@@ -461,10 +485,18 @@ export default function AdminPanel() {
 	
 	const checkSandboxStatus = async () => {
 		try {
-			const status = await api('/sandbox/cleanup/status');
+			// Add timeout to prevent hanging
+			const timeoutPromise = new Promise((_, reject) => 
+				setTimeout(() => reject(new Error('Request timeout')), 10000)
+			);
+			const status = await Promise.race([
+				api('/sandbox/cleanup/status'),
+				timeoutPromise
+			]);
 			setSandboxStatus(status);
 		} catch (err) {
 			console.error('Failed to check sandbox status:', err);
+			// Don't show error, just log it
 		}
 	};
 

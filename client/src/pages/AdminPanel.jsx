@@ -24,6 +24,7 @@ export default function AdminPanel() {
 	const [cleanupResults, setCleanupResults] = useState(null);
 	const [cleanupError, setCleanupError] = useState('');
 	const [sandboxStatus, setSandboxStatus] = useState(null);
+	const [activeTab, setActiveTab] = useState('analytics'); // 'analytics' or 'crawler'
 
 	useEffect(() => {
 		// First, ensure we have a CSRF token by making a GET request
@@ -435,7 +436,7 @@ export default function AdminPanel() {
 				}
 			`}</style>
 			<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 }}>
-				<h1>Admin Dashboard - KPI Overview</h1>
+				<h1>Admin Dashboard</h1>
 				<button
 					onClick={async () => {
 						try {
@@ -459,14 +460,60 @@ export default function AdminPanel() {
 				</button>
 			</div>
 
-			{/* KPI Cards */}
+			{/* Navigation Tabs */}
 			<div style={{ 
-				display: 'grid', 
-				gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-				gap: 20, 
-				marginBottom: 30 
+				display: 'flex', 
+				gap: 8, 
+				marginBottom: 30,
+				borderBottom: '2px solid #e0e0e0'
 			}}>
-				<KPICard title="Total Users" value={summary.totalUsers} subtitle={`${summary.uniqueUsers} unique`} />
+				<button
+					onClick={() => setActiveTab('analytics')}
+					style={{
+						padding: '12px 24px',
+						background: activeTab === 'analytics' ? '#007bff' : 'transparent',
+						color: activeTab === 'analytics' ? 'white' : '#666',
+						border: 'none',
+						borderBottom: activeTab === 'analytics' ? '3px solid #007bff' : '3px solid transparent',
+						borderRadius: '4px 4px 0 0',
+						cursor: 'pointer',
+						fontSize: 16,
+						fontWeight: activeTab === 'analytics' ? 'bold' : 'normal',
+						transition: 'all 0.2s'
+					}}
+				>
+					📊 Analytics
+				</button>
+				<button
+					onClick={() => setActiveTab('crawler')}
+					style={{
+						padding: '12px 24px',
+						background: activeTab === 'crawler' ? '#007bff' : 'transparent',
+						color: activeTab === 'crawler' ? 'white' : '#666',
+						border: 'none',
+						borderBottom: activeTab === 'crawler' ? '3px solid #007bff' : '3px solid transparent',
+						borderRadius: '4px 4px 0 0',
+						cursor: 'pointer',
+						fontSize: 16,
+						fontWeight: activeTab === 'crawler' ? 'bold' : 'normal',
+						transition: 'all 0.2s'
+					}}
+				>
+					🔍 Crawler & Data Tools
+				</button>
+			</div>
+
+			{/* Analytics Section */}
+			{activeTab === 'analytics' && (
+				<div>
+					{/* KPI Cards */}
+					<div style={{ 
+				display: 'grid', 
+					gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+					gap: 20, 
+					marginBottom: 30 
+				}}>
+					<KPICard title="Total Users" value={summary.totalUsers} subtitle={`${summary.uniqueUsers} unique`} />
 				<KPICard title="Total Logins" value={summary.totalLogins} subtitle={`${summary.uniqueLoginUsers} users`} />
 				<KPICard title="Total Sessions" value={summary.totalSessions} subtitle={`${summary.activeSessions} active`} />
 				<KPICard title="Avg Session Duration" value={formatDuration(summary.avgSessionDuration)} subtitle="per session" />
@@ -476,12 +523,12 @@ export default function AdminPanel() {
 				<KPICard title="Total Feedback" value={summary.totalFeedback || 0} subtitle="submissions" />
 				<KPICard title="Active Trials" value={summary.activeTrials || 0} subtitle={`${summary.expiredTrials || 0} expired`} color="#FFBB28" />
 				<KPICard title="Total Commitments" value={summary.totalCommitments || 0} subtitle={`€${summary.commitmentRevenue || 0}`} color="#10b981" />
-				<KPICard title="Conversion Rate" value={`${(summary.conversionRate || 0).toFixed(1)}%`} subtitle="trial to paid" color="#3b82f6" />
-			</div>
+					<KPICard title="Conversion Rate" value={`${(summary.conversionRate || 0).toFixed(1)}%`} subtitle="trial to paid" color="#3b82f6" />
+				</div>
 
-			{/* Conversion Funnel */}
-			{conversionFunnel && (
-				<div style={{ 
+				{/* Conversion Funnel */}
+				{conversionFunnel && (
+					<div style={{ 
 					background: 'white', 
 					padding: 24, 
 					borderRadius: 8, 
@@ -546,26 +593,26 @@ export default function AdminPanel() {
 							</div>
 						</div>
 					)}
+					</div>
+				)}
+
+				{/* Recent Activity (7 days) */}
+				<div style={{ 
+					display: 'grid', 
+					gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+					gap: 20, 
+					marginBottom: 30 
+				}}>
+					<h2 style={{ gridColumn: '1 / -1', margin: 0 }}>Recent Activity (Last 7 Days)</h2>
+					<KPICard title="Recent Logins" value={recent.logins} color="#0088FE" />
+					<KPICard title="Recent Sessions" value={recent.sessions} color="#00C49F" />
+					<KPICard title="Recent Registrations" value={recent.registrations} color="#FFBB28" />
 				</div>
-			)}
 
-			{/* Recent Activity (7 days) */}
-			<div style={{ 
-				display: 'grid', 
-				gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-				gap: 20, 
-				marginBottom: 30 
-			}}>
-				<h2 style={{ gridColumn: '1 / -1', margin: 0 }}>Recent Activity (Last 7 Days)</h2>
-				<KPICard title="Recent Logins" value={recent.logins} color="#0088FE" />
-				<KPICard title="Recent Sessions" value={recent.sessions} color="#00C49F" />
-				<KPICard title="Recent Registrations" value={recent.registrations} color="#FFBB28" />
-			</div>
-
-			{/* Charts */}
-			<div style={{ display: 'grid', gap: 30, marginBottom: 30 }}>
-				{/* User Growth Over Time */}
-				<ChartCard title="User Growth Over Time">
+				{/* Charts */}
+				<div style={{ display: 'grid', gap: 30, marginBottom: 30 }}>
+					{/* User Growth Over Time */}
+					<ChartCard title="User Growth Over Time">
 					<ResponsiveContainer width="100%" height={300}>
 						<AreaChart data={userGrowth}>
 							<CartesianGrid strokeDasharray="3 3" />
@@ -575,11 +622,11 @@ export default function AdminPanel() {
 							<Legend />
 							<Area type="monotone" dataKey="count" stroke="#0088FE" fill="#0088FE" fillOpacity={0.6} />
 						</AreaChart>
-					</ResponsiveContainer>
-				</ChartCard>
+						</ResponsiveContainer>
+					</ChartCard>
 
-				{/* Login Activity Over Time */}
-				<ChartCard title="Login Activity Over Time">
+					{/* Login Activity Over Time */}
+					<ChartCard title="Login Activity Over Time">
 					<ResponsiveContainer width="100%" height={300}>
 						<LineChart data={loginActivity}>
 							<CartesianGrid strokeDasharray="3 3" />
@@ -589,11 +636,11 @@ export default function AdminPanel() {
 							<Legend />
 							<Line type="monotone" dataKey="count" stroke="#00C49F" strokeWidth={2} />
 						</LineChart>
-					</ResponsiveContainer>
-				</ChartCard>
+						</ResponsiveContainer>
+					</ChartCard>
 
-				{/* Page Views Over Time */}
-				<ChartCard title="Page Views Over Time">
+					{/* Page Views Over Time */}
+					<ChartCard title="Page Views Over Time">
 					<ResponsiveContainer width="100%" height={300}>
 						<BarChart data={pageViews}>
 							<CartesianGrid strokeDasharray="3 3" />
@@ -603,11 +650,11 @@ export default function AdminPanel() {
 							<Legend />
 							<Bar dataKey="views" fill="#FFBB28" />
 						</BarChart>
-					</ResponsiveContainer>
-				</ChartCard>
+						</ResponsiveContainer>
+					</ChartCard>
 
-				{/* User Roles Breakdown */}
-				<ChartCard title="User Roles Distribution">
+					{/* User Roles Breakdown */}
+					<ChartCard title="User Roles Distribution">
 					<ResponsiveContainer width="100%" height={300}>
 						<PieChart>
 							<Pie
@@ -626,11 +673,32 @@ export default function AdminPanel() {
 							</Pie>
 							<Tooltip />
 						</PieChart>
-					</ResponsiveContainer>
-				</ChartCard>
+						</ResponsiveContainer>
+					</ChartCard>
+				</div>
 
-				{/* Data Validator/Crawler Section */}
-				<ChartCard title="Data Validator / Crawler">
+				<button
+						onClick={loadMetrics}
+						style={{
+							padding: '10px 20px',
+							background: '#007bff',
+							color: 'white',
+							border: 'none',
+							borderRadius: 4,
+							cursor: 'pointer',
+							marginTop: 20
+						}}
+					>
+						Refresh Metrics
+					</button>
+				</div>
+			)}
+
+			{/* Crawler & Data Tools Section */}
+			{activeTab === 'crawler' && (
+				<div>
+					{/* Data Validator/Crawler Section */}
+					<ChartCard title="Data Validator / Crawler">
 					<div style={{ marginBottom: 20 }}>
 						<p style={{ color: '#666', marginBottom: 16 }}>
 							Validate and update activity data by crawling websites. This will:
@@ -1025,11 +1093,10 @@ export default function AdminPanel() {
 						)}
 					</div>
 				</ChartCard>
-			</div>
 
-			{/* Sandbox Cleanup Section */}
-			<ChartCard title="Sandbox Cleanup & Formatting">
-				<div style={{ marginBottom: 20 }}>
+				{/* Sandbox Cleanup Section */}
+				<ChartCard title="Sandbox Cleanup & Formatting">
+					<div style={{ marginBottom: 20 }}>
 					{sandboxStatus && (
 						<div style={{
 							marginBottom: 16,
@@ -1143,23 +1210,10 @@ export default function AdminPanel() {
 							</div>
 						</div>
 					)}
+					</div>
+				</ChartCard>
 				</div>
-			</ChartCard>
-
-			<button
-				onClick={loadMetrics}
-				style={{
-					padding: '10px 20px',
-					background: '#007bff',
-					color: 'white',
-					border: 'none',
-					borderRadius: 4,
-					cursor: 'pointer',
-					marginTop: 20
-				}}
-			>
-				Refresh Metrics
-			</button>
+			)}
 		</div>
 	);
 }

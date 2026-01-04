@@ -937,7 +937,9 @@ export default function AdminPanel() {
 											<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 12 }}>
 												<div style={{ flex: 1 }}>
 													<h4 style={{ margin: '0 0 8px 0', color: '#333' }}>
-														{activity.title?.en || activity.title?.fr || activity.title || 'Untitled Activity'}
+														{typeof activity.title === 'string' 
+															? activity.title 
+															: (activity.title?.en || activity.title?.fr || 'Untitled Activity')}
 													</h4>
 													<div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
 														<strong>Arrondissement:</strong> {activity.neighborhood || 'N/A'} | 
@@ -946,7 +948,9 @@ export default function AdminPanel() {
 													</div>
 													{activity.description && (
 														<p style={{ fontSize: 13, color: '#555', margin: '8px 0', maxHeight: 60, overflow: 'hidden' }}>
-															{activity.description?.en || activity.description?.fr || activity.description || ''}
+															{typeof activity.description === 'string' 
+																? activity.description 
+																: (activity.description?.en || activity.description?.fr || '')}
 														</p>
 													)}
 													{activity.websiteLink && (

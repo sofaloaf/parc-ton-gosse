@@ -42,35 +42,21 @@ export class DiscoveryModule {
 			// Build queries using template: [city] + [arrondissement] + [kids/enfant] + [activities with OR]
 			const specificQueries = [];
 			
-			// Group activities into chunks to create multiple targeted queries
-			const chunkSize = 20; // 20 activities per query
-			for (let i = 0; i < activityKeywords.length; i += chunkSize) {
-				const activityChunk = activityKeywords.slice(i, i + chunkSize);
-				const activityQuery = activityChunk.join(' OR ');
-				
-				// Build query: Paris [arrondissement] arrondissement enfants kids (activity1 OR activity2 OR ...)
-				const query = `${city} ${arrondissement} arrondissement enfants kids (${activityQuery}) -newsletter -"lettre d'information"`;
-				specificQueries.push(query);
-			}
+			// Create ONE comprehensive query with top activities (to stay under 60s Railway timeout)
+			// Use top 30 activities in a single query instead of multiple queries
+			const topActivities = activityKeywords.slice(0, 30);
+			const activityQuery = topActivities.join(' OR ');
 			
-			// Also add specific targeted searches for high-value activities
-			const highValueActivities = [
-				'football OR soccer', 'basketball OR basket', 'tennis', 'natation OR swimming',
-				'danse OR dance', 'théâtre OR theater', 'musique OR music',
-				'judo', 'karate OR karaté', 'escrime OR fencing',
-				'gymnastique OR gymnastics', 'escalade OR climbing',
-				'dessin OR drawing', 'peinture OR painting', 'codage OR coding'
-			];
+			// Build single comprehensive query: Paris [arrondissement] arrondissement enfants kids (activity1 OR activity2 OR ...)
+			const comprehensiveQuery = `${city} ${arrondissement} arrondissement enfants kids (${activityQuery}) -newsletter -"lettre d'information"`;
+			specificQueries.push(comprehensiveQuery);
 			
-			for (const activityGroup of highValueActivities) {
-				const query = `${city} ${arrondissement} arrondissement enfants kids (${activityGroup}) -newsletter`;
-				specificQueries.push(query);
-			}
+			// Skip individual high-value activity searches to save time
 			
 			// Execute web searches with strict limits to avoid Railway timeout (60s limit)
-			// Limit to 3 queries max with reduced delays
-			console.log(`  📋 Executing ${specificQueries.length} web search queries (limited to 3 to avoid timeout)...`);
-			const maxQueries = 3;
+			// Limit to 1 query max to ensure we stay well under 60 seconds
+			console.log(`  📋 Executing ${specificQueries.length} web search queries (limited to 1 to avoid Railway timeout)...`);
+			const maxQueries = 1; // Single query to stay well under 60s Railway timeout
 			for (let i = 0; i < Math.min(specificQueries.length, maxQueries); i++) {
 				const specificQuery = specificQueries[i];
 				try {

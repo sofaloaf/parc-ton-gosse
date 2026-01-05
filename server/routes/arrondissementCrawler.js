@@ -1444,7 +1444,7 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					// Update existing names set
 					filteredIntelligentEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
 
-					// Add advanced crawler results (with newsletter filtering)
+					// Add advanced crawler results (with newsletter + rejected filtering)
 					const advancedEntities = (advancedResults?.results || []).map(r => ({
 						id: r.id || uuidv4(),
 						data: r.data,
@@ -1453,8 +1453,22 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						extractedAt: r.extractedAt,
 						validation: { valid: true, score: 0.8 }
 					})).filter(e => {
-						const name = (e.data.name || '').toLowerCase();
+						const name = (e.data.name || '').toLowerCase().trim();
 						const website = (e.data.website || '').toLowerCase();
+						
+						// Check if rejected
+						if (rejected.names.has(name)) {
+							console.log(`  ⏭️  Skipping rejected organization (by name): ${name}`);
+							return false;
+						}
+						
+						if (website) {
+							const normalizedWebsite = website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+							if (rejected.websites.has(normalizedWebsite)) {
+								console.log(`  ⏭️  Skipping rejected organization (by website): ${name}`);
+								return false;
+							}
+						}
 						
 						// Filter out newsletters
 						if (name.includes('newsletter') || 
@@ -1471,10 +1485,24 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					// Update existing names set
 					advancedEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
 
-					// Add enhanced crawler results (with newsletter filtering)
+					// Add enhanced crawler results (with newsletter + rejected filtering)
 					const enhancedEntities = (crawlResults?.entities || []).filter(e => {
-						const name = (e.data?.name || e.data?.title || '').toLowerCase();
+						const name = (e.data?.name || e.data?.title || '').toLowerCase().trim();
 						const website = (e.data?.website || e.data?.websiteLink || '').toLowerCase();
+						
+						// Check if rejected
+						if (rejected.names.has(name)) {
+							console.log(`  ⏭️  Skipping rejected organization (by name): ${name}`);
+							return false;
+						}
+						
+						if (website) {
+							const normalizedWebsite = website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+							if (rejected.websites.has(normalizedWebsite)) {
+								console.log(`  ⏭️  Skipping rejected organization (by website): ${name}`);
+								return false;
+							}
+						}
 						
 						// Filter out newsletters
 						if (name.includes('newsletter') || 
@@ -1967,8 +1995,60 @@ arrondissementCrawlerRouter.post('/approve', requireAuth('admin'), async (req, r
 			await store.activities.create(foundActivity);
 			console.log(`✅ Approved activity ${activityId} - added to main Activities sheet`);
 		} else {
-			// Just update the pending sheet to mark as rejected
-			// Update the approval status in the pending sheet
+			// Save to Rejected Organizations sheet to prevent re-crawling
+			const rejectedSheetName = 'Rejected Organizations';
+			
+			// Get or create rejected organizations sheet
+			const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
+			let rejectedSheet = spreadsheet.data.sheets.find(s => s.properties.title === rejectedSheetName);
+			
+			if (!rejectedSheet) {
+				// Create the sheet
+				await sheets.spreadsheets.batchUpdate({
+					spreadsheetId: sheetId,
+					requestBody: {
+						requests: [{
+							addSheet: {
+								properties: {
+									title: rejectedSheetName,
+									gridProperties: { rowCount: 1000, columnCount: 10 }
+								}
+							}
+						}]
+					}
+				});
+				
+				// Write headers
+				const headers = ['ID', 'Name', 'Website', 'Email', 'Phone', 'Rejected At', 'Rejected By', 'Source URL', 'Reason'];
+				await sheets.spreadsheets.values.update({
+					spreadsheetId: sheetId,
+					range: `${rejectedSheetName}!A1`,
+					valueInputOption: 'RAW',
+					requestBody: { values: [headers] }
+				});
+			}
+			
+			// Append rejected organization to the sheet
+			const rejectedRow = [
+				foundActivity.id,
+				foundActivity.title?.en || foundActivity.title?.fr || 'Unknown',
+				foundActivity.websiteLink || '',
+				foundActivity.contactEmail || '',
+				foundActivity.contactPhone || '',
+				new Date().toISOString(),
+				req.user.email || 'admin',
+				foundActivity.sourceUrl || '',
+				'rejected_by_admin'
+			];
+			
+			await sheets.spreadsheets.values.append({
+				spreadsheetId: sheetId,
+				range: `${rejectedSheetName}!A2`,
+				valueInputOption: 'RAW',
+				requestBody: { values: [rejectedRow] }
+			});
+			
+			// Also update the pending sheet to mark as rejected
 			const response = await sheets.spreadsheets.values.get({
 				spreadsheetId: sheetId,
 				range: `${foundSheet}!A:Z`
@@ -2012,7 +2092,7 @@ arrondissementCrawlerRouter.post('/approve', requireAuth('admin'), async (req, r
 				requestBody: { values: rows }
 			});
 			
-			console.log(`❌ Rejected activity ${activityId} - marked in pending sheet`);
+			console.log(`❌ Rejected activity ${activityId} - saved to Rejected Organizations sheet and marked in pending sheet`);
 		}
 		
 		res.json({

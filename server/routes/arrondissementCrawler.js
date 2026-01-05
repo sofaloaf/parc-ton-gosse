@@ -1125,16 +1125,23 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 			console.log(`\n🔍 Starting LOCALITY-FIRST crawl for ${arrondissement} (${postalCode})`);
 
 			// STEP 0: Use locality-first crawler (NEW - prioritizes precision)
+			// NOTE: Railway has 60-second request timeout, so we need to be fast
 			console.log(`📋 Step 0: Using locality-first crawler (municipal sources first)...`);
 			let localityEntities = [];
 			try {
 				const localityCrawler = new LocalityFirstCrawler({
-					timeout: 30000,
-					minDelay: 1000,
-					maxDelay: 2000
+					timeout: 15000, // Reduced to 15 seconds per source to stay under Railway's 60s limit
+					minDelay: 500,  // Reduced delays
+					maxDelay: 1000
 				});
 				
-				const localityResults = await localityCrawler.crawl(arrondissement, postalCode);
+				// Use Promise.race to enforce overall timeout
+				const localityPromise = localityCrawler.crawl(arrondissement, postalCode);
+				const timeoutPromise = new Promise((_, reject) => 
+					setTimeout(() => reject(new Error('Locality-first crawler timeout (45s)')), 45000)
+				);
+				
+				const localityResults = await Promise.race([localityPromise, timeoutPromise]);
 				console.log(`✅ Locality-first crawler: ${localityResults.stats.entitiesValidated} validated entities from ${localityResults.stats.sourcesCrawled} municipal sources`);
 				
 				// Convert locality-first results to entity format
@@ -1357,24 +1364,26 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 
 				// arrondissementEntities will be initialized after locality-first results are filtered
 
-				// STEP 2: Use intelligent crawler with seed sources and AI-assisted extraction
-				console.log(`📋 Step 2: Using intelligent crawler with seed sources...`);
-				let intelligentEntities = [];
-				let intelligentResults = { entities: [], errors: [], stats: {} };
-				try {
-					// Strategy 1: Intelligent crawler with seed sources (Wikidata, registries, etc.)
-					console.log(`  🧠 Initializing Intelligent Crawler...`);
-					const intelligentCrawler = new IntelligentCrawler({
-						googleApiKey: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY,
-						googleCx: process.env.GOOGLE_CUSTOM_SEARCH_CX,
-						minDelay: 1000,
-						maxDelay: 2000
-					});
+			// STEP 2: Use intelligent crawler with seed sources and AI-assisted extraction
+			// SKIP intelligent crawler to stay under Railway's 60s timeout - focus on locality-first only
+			console.log(`📋 Step 2: Skipping intelligent crawler to stay under Railway's 60s timeout...`);
+			let intelligentEntities = [];
+			let intelligentResults = { entities: [], errors: [], stats: {} };
+			/* SKIPPED - takes too long for Railway's 60s timeout
+			try {
+				// Strategy 1: Intelligent crawler with seed sources (Wikidata, registries, etc.)
+				console.log(`  🧠 Initializing Intelligent Crawler...`);
+				const intelligentCrawler = new IntelligentCrawler({
+					googleApiKey: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY,
+					googleCx: process.env.GOOGLE_CUSTOM_SEARCH_CX,
+					minDelay: 1000,
+					maxDelay: 2000
+				});
 
-					console.log(`  🔍 Starting intelligent crawl for ${arrondissement} (${postalCode})...`);
-					const intelligentResults = await intelligentCrawler.crawl(arrondissement, postalCode, {
-						maxPages: 20 // Limit to stay within timeout
-					});
+				console.log(`  🔍 Starting intelligent crawl for ${arrondissement} (${postalCode})...`);
+				const intelligentResults = await intelligentCrawler.crawl(arrondissement, postalCode, {
+					maxPages: 20 // Limit to stay within timeout
+				});
 
 					console.log(`  ✅ Intelligent crawler completed: ${intelligentResults.entities.length} entities extracted`);
 					console.log(`  📊 Intelligent crawler stats:`, intelligentResults.stats);
@@ -1400,16 +1409,22 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						validation: { valid: true, score: e.confidence || 0.7 }
 					}));
 
-					console.log(`  ✅ Converted ${intelligentEntities.length} intelligent crawler entities to standard format`);
-				} catch (intelligentError) {
-					console.error(`  ❌ Intelligent crawler failed:`, intelligentError.message);
-					console.error(`  Stack:`, intelligentError.stack);
-					allErrors.push({ stage: 'intelligent_crawler', error: intelligentError.message });
-					// Continue with other crawlers even if intelligent crawler fails
-				}
-
-				// Strategy 2: Advanced crawler and Enhanced crawler (wrapped in try-catch)
-				try {
+				console.log(`  ✅ Converted ${intelligentEntities.length} intelligent crawler entities to standard format`);
+			} catch (intelligentError) {
+				console.error(`  ❌ Intelligent crawler failed:`, intelligentError.message);
+				console.error(`  Stack:`, intelligentError.stack);
+				allErrors.push({ stage: 'intelligent_crawler', error: intelligentError.message });
+				// Continue with other crawlers even if intelligent crawler fails
+			}
+			*/
+			
+			// Strategy 2: Advanced crawler and Enhanced crawler (SKIPPED to stay under Railway timeout)
+			// Skip these to prioritize locality-first results and stay under 60s
+			console.log(`📋 Step 2.5: Skipping advanced/enhanced crawlers to stay under Railway's 60s timeout...`);
+			let advancedResults = null;
+			let crawlResults = null;
+			/* SKIPPED - takes too long
+			try {
 					// Strategy 2a: Advanced crawler with Playwright for JS-heavy sites (backup)
 					const advancedCrawler = new AdvancedCrawler({
 						maxDepth: 1, // Reduced depth

@@ -28,7 +28,17 @@ export class EnhancedDiscovery {
 		
 		console.log('📚 Searching official databases and registries...');
 		
-		// 1. Wikidata SPARQL query
+		// 1. Paris Open Data - Liste des associations parisiennes
+		try {
+			console.log('  📊 Fetching from Paris Open Data...');
+			const parisOpenDataResults = await this.fetchParisOpenDataAssociations(arrondissement, postalCode);
+			results.push(...parisOpenDataResults);
+			console.log(`  ✅ Paris Open Data: Found ${parisOpenDataResults.length} relevant associations`);
+		} catch (error) {
+			console.warn(`  ⚠️  Paris Open Data search failed:`, error.message);
+		}
+		
+		// 2. Wikidata SPARQL query
 		try {
 			const wikidataQuery = `
 				SELECT ?item ?itemLabel ?website ?email ?phone ?address WHERE {
@@ -79,7 +89,7 @@ export class EnhancedDiscovery {
 			console.warn(`  ⚠️  Wikidata search failed:`, error.message);
 		}
 		
-		// 2. Search for PDFs on municipal sites
+		// 3. Search for PDFs on municipal sites
 		try {
 			const arrNum = arrondissement.replace('er', '').replace('e', '');
 			const pdfUrls = [
@@ -239,6 +249,290 @@ export class EnhancedDiscovery {
 		return results;
 	}
 
+	/**
+	 * Fetch associations from Paris Open Data portal
+	 * API: https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/liste_des_associations_parisiennes/records
+	 */
+	async fetchParisOpenDataAssociations(arrondissement, postalCode) {
+		const results = [];
+		
+		try {
+			// Paris Open Data uses CKAN-like API
+			// Try multiple API endpoints
+			const apiEndpoints = [
+				// Direct dataset API
+				`https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/liste_des_associations_parisiennes/records?limit=1000&where=code_postal="${postalCode}"`,
+				// Alternative format
+				`https://opendata.paris.fr/api/records/1.0/search/?dataset=liste_des_associations_parisiennes&q=&rows=1000&facet=code_postal&refine.code_postal=${postalCode}`,
+				// CSV download (fallback)
+				`https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/liste_des_associations_parisiennes/exports/csv?where=code_postal="${postalCode}"`
+			];
+			
+			let associations = [];
+			
+			for (const endpoint of apiEndpoints) {
+				try {
+					// Use AbortController for timeout
+					const controller = new AbortController();
+					const timeoutId = setTimeout(() => controller.abort(), 10000);
+					
+					const response = await fetch(endpoint, {
+						headers: {
+							'Accept': 'application/json',
+							'User-Agent': 'Mozilla/5.0 (compatible; ParcTonGosse/1.0)'
+						},
+						signal: controller.signal
+					});
+					
+					clearTimeout(timeoutId);
+					
+					if (!response.ok) continue;
+					
+					const contentType = response.headers.get('content-type') || '';
+					
+					if (contentType.includes('application/json')) {
+						const data = await response.json();
+						
+						// Handle different API response formats
+						if (data.results) {
+							// Format: { results: [{ record: { fields: {...} } }] }
+							associations = data.results.map(r => r.record?.fields || r.fields || r).filter(Boolean);
+						} else if (data.records) {
+							// Format: { records: [{ fields: {...} }] }
+							associations = data.records.map(r => r.fields || r).filter(Boolean);
+						} else if (Array.isArray(data)) {
+							associations = data;
+						} else if (data.data) {
+							associations = Array.isArray(data.data) ? data.data : [];
+						}
+						
+						if (associations.length > 0) {
+							console.log(`  ✅ Successfully fetched ${associations.length} associations from ${endpoint}`);
+							break; // Success, stop trying other endpoints
+						}
+					} else if (contentType.includes('text/csv') || endpoint.includes('.csv')) {
+						// Handle CSV format
+						const csvText = await response.text();
+						associations = this.parseCSV(csvText);
+						if (associations.length > 0) {
+							console.log(`  ✅ Successfully parsed ${associations.length} associations from CSV`);
+							break;
+						}
+					}
+				} catch (error) {
+					console.warn(`  ⚠️  Failed to fetch from ${endpoint}:`, error.message);
+					continue;
+				}
+			}
+			
+			// Process and filter associations
+			for (const assoc of associations) {
+				// Extract fields (handle different field names)
+				const name = assoc.nom || assoc.name || assoc.nom_association || assoc.association || assoc.titre || '';
+				const address = assoc.adresse || assoc.address || assoc.adresse_siege || assoc.siege || '';
+				const postal = assoc.code_postal || assoc.postal_code || assoc.cp || '';
+				const website = assoc.site_web || assoc.website || assoc.url || assoc.lien_site || '';
+				const email = assoc.email || assoc.courriel || assoc.mail || '';
+				const phone = assoc.telephone || assoc.phone || assoc.tel || '';
+				const objet = assoc.objet || assoc.object || assoc.description || assoc.activite || '';
+				
+				// Filter for relevant kids' activities
+				if (!name || name.length < 3) continue;
+				
+				// Check if it's in the target arrondissement
+				if (postal && postal !== postalCode && !postal.startsWith(postalCode.substring(0, 3))) {
+					continue;
+				}
+				
+				// Check if it's a kids' activity
+				const fullText = `${name} ${objet} ${address}`.toLowerCase();
+				if (!this.isKidsActivity(name, website || '', address)) {
+					continue;
+				}
+				
+				// Validate and enrich with website search if missing
+				let validatedWebsite = website;
+				let validatedEmail = email;
+				let validatedPhone = phone;
+				
+				// If website is missing or incomplete, search for it
+				// Only search for a limited number to avoid rate limits
+				if (results.length < 50 && (!validatedWebsite || !validatedWebsite.startsWith('http'))) {
+					try {
+						// Add small delay to avoid rate limiting
+						await new Promise(resolve => setTimeout(resolve, 200));
+						
+						const searchResults = await this.searchOrganizationWebsite(name, address, postal);
+						if (searchResults.website) {
+							validatedWebsite = searchResults.website;
+						}
+						if (searchResults.email && !validatedEmail) {
+							validatedEmail = searchResults.email;
+						}
+						if (searchResults.phone && !validatedPhone) {
+							validatedPhone = searchResults.phone;
+						}
+					} catch (error) {
+						console.warn(`  ⚠️  Website search failed for ${name}:`, error.message);
+					}
+				}
+				
+				// Only include if we have at least name + (website OR email OR phone)
+				if (validatedWebsite || validatedEmail || validatedPhone) {
+					results.push({
+						name: name.trim(),
+						website: validatedWebsite || null,
+						email: validatedEmail || null,
+						phone: validatedPhone || null,
+						address: address || null,
+						postalCode: postal || postalCode,
+						description: objet || null,
+						source: 'paris_opendata',
+						type: 'database',
+						validated: !!(validatedWebsite || validatedEmail || validatedPhone)
+					});
+				}
+			}
+			
+			console.log(`  ✅ Processed ${results.length} validated associations from Paris Open Data`);
+			
+		} catch (error) {
+			console.error(`  ❌ Paris Open Data fetch error:`, error);
+		}
+		
+		return results;
+	}
+	
+	/**
+	 * Parse CSV text into array of objects
+	 * Handles quoted fields and commas within quotes
+	 */
+	parseCSV(csvText) {
+		const lines = csvText.split('\n').filter(line => line.trim());
+		if (lines.length < 2) return [];
+		
+		// Parse header line (handle quoted fields)
+		const parseCSVLine = (line) => {
+			const result = [];
+			let current = '';
+			let inQuotes = false;
+			
+			for (let i = 0; i < line.length; i++) {
+				const char = line[i];
+				
+				if (char === '"') {
+					if (inQuotes && line[i + 1] === '"') {
+						// Escaped quote
+						current += '"';
+						i++;
+					} else {
+						// Toggle quote state
+						inQuotes = !inQuotes;
+					}
+				} else if (char === ',' && !inQuotes) {
+					result.push(current.trim());
+					current = '';
+				} else {
+					current += char;
+				}
+			}
+			result.push(current.trim());
+			return result;
+		};
+		
+		const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, ''));
+		const results = [];
+		
+		for (let i = 1; i < lines.length; i++) {
+			const values = parseCSVLine(lines[i]).map(v => v.replace(/^"|"$/g, ''));
+			if (values.length < headers.length) continue;
+			
+			const obj = {};
+			headers.forEach((header, index) => {
+				obj[header] = values[index] || '';
+			});
+			results.push(obj);
+		}
+		
+		return results;
+	}
+	
+	/**
+	 * Search for organization website using Google Custom Search
+	 */
+	async searchOrganizationWebsite(orgName, address, postalCode) {
+		if (!this.googleApiKey || !this.googleCx) {
+			return { website: null, email: null, phone: null };
+		}
+		
+		try {
+			// Build search query
+			const query = `"${orgName}" ${address ? address.split(' ')[0] : ''} ${postalCode || 'Paris'} site:`;
+			
+			const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${this.googleApiKey}&cx=${this.googleCx}&q=${encodeURIComponent(query)}&num=3`;
+			
+			// Use AbortController for timeout
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), 5000);
+			
+			const response = await fetch(searchUrl, {
+				headers: { 'User-Agent': 'Mozilla/5.0' },
+				signal: controller.signal
+			});
+			
+			clearTimeout(timeoutId);
+			
+			if (!response.ok) {
+				return { website: null, email: null, phone: null };
+			}
+			
+			const data = await response.json();
+			const items = data.items || [];
+			
+			// Find the most relevant result (usually first one)
+			if (items.length > 0) {
+				const topResult = items[0];
+				const website = topResult.link || null;
+				
+				// Try to fetch the website to extract contact info
+				let email = null;
+				let phone = null;
+				
+				if (website) {
+					try {
+						// Use AbortController for timeout
+						const siteController = new AbortController();
+						const siteTimeoutId = setTimeout(() => siteController.abort(), 5000);
+						
+						const siteResponse = await fetch(website, {
+							headers: { 'User-Agent': 'Mozilla/5.0' },
+							signal: siteController.signal
+						});
+						
+						clearTimeout(siteTimeoutId);
+						
+						if (siteResponse.ok) {
+							const html = await siteResponse.text();
+							const emailMatch = html.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+							const phoneMatch = html.match(/(?:\+33|0)[1-9](?:[.\s]?\d{2}){4}/);
+							
+							email = emailMatch ? emailMatch[0] : null;
+							phone = phoneMatch ? phoneMatch[0] : null;
+						}
+					} catch (error) {
+						// Ignore website fetch errors
+					}
+				}
+				
+				return { website, email, phone };
+			}
+		} catch (error) {
+			console.warn(`  ⚠️  Website search error:`, error.message);
+		}
+		
+		return { website: null, email: null, phone: null };
+	}
+	
 	/**
 	 * Check if text is relevant (contains activity keywords)
 	 */

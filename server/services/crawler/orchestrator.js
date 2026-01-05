@@ -100,9 +100,11 @@ export class CrawlerOrchestrator {
 					// Apply rate limiting
 					await this.compliance.applyRateLimit(source.url);
 
-					// Extract data
+					// Extract data (handles HTML, PDF, JSON automatically)
 					const extracted = await this.extraction.extractFromUrl(source.url, {
-						confidence: source.confidence
+						confidence: source.confidence,
+						arrondissement: options.arrondissement,
+						postalCode: options.postalCode
 					});
 
 					// Skip if extraction was filtered out (e.g., newsletter pages)
@@ -110,6 +112,32 @@ export class CrawlerOrchestrator {
 						console.log(`  ⏭️  Skipping ${source.url} - ${extracted.error}`);
 						this.stats.skipped = (this.stats.skipped || 0) + 1;
 						continue;
+					}
+
+					// Handle PDF extraction results (may contain multiple entities)
+					if (extracted.source === 'pdf' && extracted.entities && extracted.entities.length > 0) {
+						for (const pdfEntity of extracted.entities) {
+							const entity = {
+								id: uuidv4(),
+								data: {
+									name: pdfEntity.name || 'Organization',
+									title: pdfEntity.name || 'Organization',
+									website: pdfEntity.website || null,
+									email: pdfEntity.email || null,
+									phone: pdfEntity.phone || null,
+									address: pdfEntity.address || null,
+									description: pdfEntity.description || `Extracted from PDF document`,
+									arrondissement: options.arrondissement || pdfEntity.arrondissement || ''
+								},
+								sources: [source.url],
+								confidence: pdfEntity.confidence || 0.7,
+								extractedAt: new Date().toISOString()
+							};
+							extractedEntities.push(entity);
+							this.stats.extracted++;
+							console.log(`  ✅ Extracted from PDF: ${entity.data.name}${entity.data.website ? ` (${entity.data.website})` : ''}`);
+						}
+						continue; // Skip normal processing for PDFs
 					}
 
 					// Only add if we have meaningful data (name OR contact info is critical)

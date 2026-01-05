@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 // Sheet names
 const SHEETS = {
 	users: 'Users',
-	activities: 'Activities',
+	activities: 'v1763586991792_2025-11-19', // Using the cleaner data tab instead of 'Activities'
 	registrations: 'Registrations',
 	reviews: 'Reviews',
 	i18n: 'i18n',
@@ -743,8 +743,8 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 		
 		const invalidRows = processedRows.length - validRows.length;
 		
-		// Always log results for Activities sheet
-		if (sheetName === 'Activities' || sheetName.includes('Activities')) {
+		// Always log results for Activities sheet (check for both old and new tab names)
+		if (sheetName === 'Activities' || sheetName.includes('Activities') || sheetName === 'v1763586991792_2025-11-19' || sheetName.includes('v1763586991792')) {
 			console.log(`📊 ${sheetName}: Loaded ${validRows.length} activities (${invalidRows} rows skipped)`);
 			if (validRows.length > 0) {
 				console.log(`   Sample activity: ID=${validRows[0].id}, Title=${validRows[0].title?.en || validRows[0].title?.fr || 'N/A'}`);

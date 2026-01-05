@@ -1006,7 +1006,32 @@ async function runCrawlerJob(jobId) {
 			}
 			
 			// Merge all results
-			arrondissementEntities.push(...filteredLocalityEntities, ...filteredIntelligentEntities, ...advancedEntities, ...orchestratorEntities);
+			// Filter advanced and orchestrator entities
+			const filteredAdvancedEntities = advancedEntities.filter(e => {
+				const name = (e.data.name || '').toLowerCase().trim();
+				if (rejectedOrganizations.names.has(name) || existingOrganizations.names.has(name)) return false;
+				if (existingNames.has(name)) return false;
+				existingNames.add(name);
+				return true;
+			});
+			
+			const filteredOrchestratorEntities = orchestratorEntities.filter(e => {
+				const name = (e.data.name || '').toLowerCase().trim();
+				if (rejectedOrganizations.names.has(name) || existingOrganizations.names.has(name)) return false;
+				if (existingNames.has(name)) return false;
+				existingNames.add(name);
+				return true;
+			});
+			
+			// Merge all results
+			arrondissementEntities.push(...filteredLocalityEntities, ...filteredIntelligentEntities, ...filteredAdvancedEntities, ...filteredOrchestratorEntities);
+			
+			console.log(`📊 Total entities from all crawlers: ${arrondissementEntities.length}`);
+			console.log(`   - Mairie: ${mairieEntities.length}`);
+			console.log(`   - Locality-first: ${filteredLocalityEntities.length}`);
+			console.log(`   - Intelligent: ${filteredIntelligentEntities.length}`);
+			console.log(`   - Advanced: ${filteredAdvancedEntities.length}`);
+			console.log(`   - Orchestrator: ${filteredOrchestratorEntities.length}`);
 			
 			// Save to Google Sheets
 			job.progress.message = `Saving results for ${arrondissement}...`;

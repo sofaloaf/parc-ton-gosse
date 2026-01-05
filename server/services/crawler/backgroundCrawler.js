@@ -619,6 +619,39 @@ async function runCrawlerJob(jobId) {
 			
 			const arrondissementEntities = [];
 			
+			// STEP -1: Enhanced Discovery (databases and PDFs) - NEW PRIORITY
+			job.progress.message = `Step -1: Searching official databases and PDFs for ${arrondissement}...`;
+			let databaseEntities = [];
+			if (enhancedDiscovery) {
+				try {
+					const dbResults = await enhancedDiscovery.searchOfficialDatabases(arrondissement, postalCode);
+					console.log(`📚 Enhanced discovery found ${dbResults.length} organizations from databases/PDFs`);
+					
+					// Convert to entity format
+					databaseEntities = dbResults.map(result => ({
+						id: uuidv4(),
+						data: {
+							name: result.name,
+							title: { en: result.name, fr: result.name },
+							email: result.email,
+							phone: result.phone,
+							website: result.website,
+							address: result.address,
+							neighborhood: arrondissement,
+							source: result.source,
+							sourceType: result.type
+						},
+						sources: [result.source]
+					}));
+					
+					arrondissementEntities.push(...databaseEntities);
+					console.log(`✅ Added ${databaseEntities.length} entities from databases/PDFs`);
+				} catch (dbError) {
+					console.error(`  ❌ Enhanced discovery failed:`, dbError.message);
+					allErrors.push({ stage: 'enhanced_discovery', error: dbError.message });
+				}
+			}
+			
 			// STEP 0: Use proven mairie crawler (this works!)
 			job.progress.message = `Step 0: Using proven mairie crawler for ${arrondissement}...`;
 			let mairieEntities = [];

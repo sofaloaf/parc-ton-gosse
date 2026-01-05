@@ -429,7 +429,9 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 					obj[fieldName] = val ? Number(val) : val;
 				}
 				// Handle regular strings (including empty strings)
-				else if (i < row.length) {
+				// Always set the value if we have a field name, even if it's empty
+				// This ensures title_en and title_fr are set even if empty (so we know they exist)
+				if (fieldName && fieldName !== 'id') {
 					obj[fieldName] = val;
 				}
 			});
@@ -454,12 +456,21 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			} else if (obj.title_en !== undefined || obj.title_fr !== undefined) {
 				// New format: separate columns
 				// Convert to strings and trim, but preserve the actual values (even if empty)
-				const titleEn = obj.title_en !== undefined && obj.title_en !== null 
-					? String(obj.title_en).trim() 
+				// Check if values are actually empty strings vs undefined
+				const titleEnRaw = obj.title_en;
+				const titleFrRaw = obj.title_fr;
+				
+				const titleEn = titleEnRaw !== undefined && titleEnRaw !== null 
+					? String(titleEnRaw).trim() 
 					: '';
-				const titleFr = obj.title_fr !== undefined && obj.title_fr !== null 
-					? String(obj.title_fr).trim() 
+				const titleFr = titleFrRaw !== undefined && titleFrRaw !== null 
+					? String(titleFrRaw).trim() 
 					: '';
+				
+				// Debug: Log raw values for first few rows
+				if (rowIndex < 3) {
+					console.log(`  🔍 Row ${rowIndex + 1} title extraction: title_en=${JSON.stringify(titleEnRaw)} → "${titleEn}", title_fr=${JSON.stringify(titleFrRaw)} → "${titleFr}"`);
+				}
 				
 				// If we have at least one non-empty title, use it
 				if (titleEn || titleFr) {
@@ -480,8 +491,8 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 					};
 					
 					// Debug: Log if we got empty titles from title_en/title_fr
-					if (global._titleWarningCount < 3) {
-						console.log(`  ⚠️  Row ${rowIndex + 1} has title_en/title_fr columns but values are empty. title_en="${obj.title_en}", title_fr="${obj.title_fr}", using fallbacks`);
+					if (rowIndex < 3) {
+						console.log(`  ⚠️  Row ${rowIndex + 1} has title_en/title_fr columns but values are empty. Using fallbacks: name="${nameFallback}", title="${titleFallback}"`);
 					}
 				}
 			} else if (obj.title && typeof obj.title === 'string') {

@@ -55,11 +55,15 @@ async function main() {
 		const { createDataStore } = await import('../services/datastore/index.js');
 		const config = {
 			backend: process.env.DATA_BACKEND || 'sheets',
-			sheetId: process.env.GS_SHEET_ID,
-			serviceAccount: process.env.GS_SERVICE_ACCOUNT,
-			privateKey: process.env.GS_PRIVATE_KEY_BASE64 || process.env.GS_PRIVATE_KEY,
-			airtableApiKey: process.env.AIRTABLE_API_KEY,
-			airtableBaseId: process.env.AIRTABLE_BASE_ID
+			sheets: {
+				sheetId: process.env.GS_SHEET_ID,
+				serviceAccount: process.env.GS_SERVICE_ACCOUNT,
+				privateKey: process.env.GS_PRIVATE_KEY_BASE64 || process.env.GS_PRIVATE_KEY
+			},
+			airtable: {
+				apiKey: process.env.AIRTABLE_API_KEY,
+				baseId: process.env.AIRTABLE_BASE_ID
+			}
 		};
 		
 		console.log('📋 Initializing datastore...');

@@ -1138,13 +1138,27 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 				}
 				*/
 
-				// Convert to enhanced crawler format and filter newsletters
+				// Convert to enhanced crawler format and filter newsletters + rejected
 				const mairieEntities = mairieActivities
 					.filter(activity => {
-						// Filter out newsletters
-						const name = (activity.name || '').toLowerCase();
+						const name = (activity.name || '').toLowerCase().trim();
 						const website = (activity.website || '').toLowerCase();
 						
+						// Check if rejected
+						if (rejected.names.has(name)) {
+							console.log(`  ⏭️  Skipping rejected organization (by name): ${activity.name}`);
+							return false;
+						}
+						
+						if (website) {
+							const normalizedWebsite = website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+							if (rejected.websites.has(normalizedWebsite)) {
+								console.log(`  ⏭️  Skipping rejected organization (by website): ${activity.name}`);
+								return false;
+							}
+						}
+						
+						// Filter out newsletters
 						if (name.includes('newsletter') || 
 						    name.includes('lettre d\'information') ||
 						    website.includes('cdnjs.cloudflare.com') ||
@@ -1554,16 +1568,46 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						const finalSheetName = generateTabName('pending', 'arrondissement-crawler');
 						
 						// Convert entities to sheet rows using proven format
-						// FILTER: Only save entities that have meaningful data
+						// FILTER: Only save entities that have meaningful data and are not rejected
 						const validEntities = arrondissementEntities.filter(e => {
 							if (!e.data) return false;
-							const name = (e.data.name || e.data.title || '').trim();
+							const name = (e.data.name || e.data.title || '').toLowerCase().trim();
 							if (!name || name.length === 0) return false;
+							
+							// Check if rejected (final check before saving)
+							if (rejected.names.has(name)) {
+								console.log(`  ⏭️  Skipping rejected organization (final check): ${name}`);
+								return false;
+							}
+							
+							const website = (e.data.website || e.data.websiteLink || '').toLowerCase();
+							if (website) {
+								const normalizedWebsite = website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+								if (rejected.websites.has(normalizedWebsite)) {
+									console.log(`  ⏭️  Skipping rejected organization (final check by website): ${name}`);
+									return false;
+								}
+							}
 							
 							// Must have at least website OR email OR phone
 							const hasContact = e.data.website || e.data.websiteLink || e.data.email || e.data.phone;
 							if (!hasContact) {
 								console.log(`  ⏭️  Skipping entity without contact info: ${name}`);
+								return false;
+							}
+							
+							// STRICT VALIDATION: Must be a real organization (not generic terms)
+							const genericTerms = ['paris', 'mairie', 'ville', 'city', 'municipal', 'municipale', 'newsletter', 'abonnement', 'inscription', 'connexion', 'login', 'sign in', 's\'identifier'];
+							const nameWords = name.split(/\s+/);
+							const isGeneric = nameWords.length <= 2 && genericTerms.some(term => name.includes(term));
+							if (isGeneric) {
+								console.log(`  ⏭️  Skipping generic term: ${name}`);
+								return false;
+							}
+							
+							// Must have at least 3 characters in name
+							if (name.length < 3) {
+								console.log(`  ⏭️  Skipping entity with name too short: ${name}`);
 								return false;
 							}
 							

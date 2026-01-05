@@ -62,52 +62,61 @@ export default function ActivityCard({ activity, locale, onView, rating = { aver
 	// Also handle title_en/title_fr format (legacy support)
 	let title = '';
 	
-	// First, try title_en/title_fr (legacy format that might come through)
-	if (activity.title_en !== undefined || activity.title_fr !== undefined) {
-		title = activity.title_en || activity.title_fr || '';
-	}
-	
-	// Then try title object
-	if (!title && activity.title) {
+	// Priority 1: Try title object first (most common format)
+	if (activity.title) {
 		if (typeof activity.title === 'object' && activity.title !== null && !Array.isArray(activity.title)) {
+			// Bilingual object: use locale-specific version
 			title = activity.title[locale] || activity.title.en || activity.title.fr || '';
 		} else if (typeof activity.title === 'string') {
 			title = activity.title;
 		}
 	}
 	
-	// Fallback to name field if title is empty
+	// Priority 2: Try title_en/title_fr (legacy format)
+	if (!title && (activity.title_en !== undefined || activity.title_fr !== undefined)) {
+		// Use locale-specific version
+		title = locale === 'fr' 
+			? (activity.title_fr || activity.title_en || '')
+			: (activity.title_en || activity.title_fr || '');
+	}
+	
+	// Priority 3: Fallback to name field if title is empty (but NOT providerId)
 	if (!title && activity.name) {
 		if (typeof activity.name === 'object' && activity.name !== null && !Array.isArray(activity.name)) {
 			title = activity.name[locale] || activity.name.en || activity.name.fr || '';
 		} else {
-			title = String(activity.name);
+			const nameStr = String(activity.name);
+			// Don't use providerId as title
+			if (nameStr && !nameStr.toLowerCase().startsWith('provider-') && nameStr !== activity.providerId) {
+				title = nameStr;
+			}
 		}
 	}
 	
-	// Last resort: check organization name (but NOT providerId - that's just an ID)
+	// Priority 4: Last resort: check organization name (but NOT providerId)
 	if (!title) {
-		// Try organizationName but NOT providerId (providerId is just an ID like "Provider-1")
-		if (activity.organizationName && !activity.organizationName.toLowerCase().startsWith('provider-')) {
+		if (activity.organizationName && !String(activity.organizationName).toLowerCase().startsWith('provider-')) {
 			title = String(activity.organizationName);
-		} else if (activity.organization && !activity.organization.toLowerCase().startsWith('provider-')) {
+		} else if (activity.organization && !String(activity.organization).toLowerCase().startsWith('provider-')) {
 			title = String(activity.organization);
 		}
-		// Don't use providerId as it's just an ID, not a name
 	}
 	
-	// Debug in development
-	if (!title) {
-		console.warn('⚠️  ActivityCard: No title found for activity:', {
+	// Debug: Log what we found
+	if (process.env.NODE_ENV === 'development' || !title || title === 'Activity') {
+		console.log('🔍 ActivityCard title extraction:', {
 			id: activity.id,
-			title: activity.title,
+			locale: locale,
+			foundTitle: title,
+			titleObject: activity.title,
 			title_en: activity.title_en,
 			title_fr: activity.title_fr,
 			name: activity.name,
-			allKeys: Object.keys(activity).slice(0, 10) // First 10 keys for debugging
+			providerId: activity.providerId
 		});
 	}
 	
+	// Format the title (capitalize properly)
 	title = formatTitle(title || 'Activity', locale);
 	
 	// Handle description - support both {en, fr} object and string formats

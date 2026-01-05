@@ -16,6 +16,7 @@ import { LocalityFirstCrawler } from './localityFirstCrawler.js';
 import { IntelligentCrawler } from './intelligentCrawler.js';
 import { AdvancedCrawler } from './advancedCrawler.js';
 import { CrawlerOrchestrator } from './orchestrator.js';
+import { MLQualityScorer } from './mlQualityScorer.js';
 import { generateTabName, activityToSheetRow, ACTIVITIES_COLUMN_ORDER, getHeaders } from '../../utils/sheetsFormatter.js';
 
 // In-memory job store (in production, use Redis or database)
@@ -511,7 +512,31 @@ async function runCrawlerJob(jobId) {
 			const sheets = getSheetsClient();
 		
 		// Load existing and rejected organizations
-		job.progress = { stage: 'loading', message: 'Loading existing organizations...', percent: 5 };
+		job.progress = { stage: 'loading', message: 'Loading existing organizations and ML model...', percent: 5 };
+		
+		// Initialize ML Quality Scorer
+		let mlScorer = null;
+		try {
+			mlScorer = new MLQualityScorer();
+			await mlScorer.initialize();
+			// Try to train if no model exists (loads 132 activities and trains)
+			if (!mlScorer.model) {
+				console.log('📚 No ML model found, training on existing activities...');
+				const store = global.app?.get('dataStore');
+				if (store) {
+					const existingActivities = await store.activities.list();
+					if (existingActivities.length > 0) {
+						await mlScorer.train(existingActivities);
+						console.log('✅ ML model trained and ready');
+					}
+				}
+			} else {
+				console.log('✅ ML model loaded and ready');
+			}
+		} catch (mlError) {
+			console.warn('⚠️  ML scorer initialization failed, will use rule-based scoring:', mlError.message);
+			mlScorer = null; // Fallback to rule-based
+		}
 		
 		// Get existing organizations from database
 		const store = global.app?.get('dataStore');
@@ -1041,9 +1066,9 @@ async function runCrawlerJob(jobId) {
 				console.log(`📋 Saving to sheet: "${finalSheetName}"`);
 				
 				// Log all entities before filtering
-				console.log(`📊 Total entities before validation: ${arrondissementEntities.length}`);
+				console.log(`📊 Total entities before validation: ${scoredEntities.length}`);
 				
-				const validEntities = arrondissementEntities.filter(e => {
+				const validEntities = scoredEntities.filter(e => {
 					if (!e.data) {
 						console.log(`  ⏭️  Skipping entity without data`);
 						return false;
@@ -1105,8 +1130,8 @@ async function runCrawlerJob(jobId) {
 						disponibiliteJours: '',
 						disponibiliteDates: '',
 						adults: false,
-						additionalNotes: '',
-						approvalStatus: 'pending',
+						additionalNotes: e.mlScore ? `ML Score: ${e.mlScore.toFixed(2)}/10 (${e.mlMethod})` : '',
+						approvalStatus: e.mlRecommendation === 'accept' ? 'pending' : 'pending', // All go to pending for review
 						crawledAt: new Date().toISOString(),
 						providerId: '',
 						createdAt: new Date().toISOString(),

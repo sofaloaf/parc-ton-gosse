@@ -1228,7 +1228,9 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					// Continue with other crawlers even if intelligent crawler fails
 				}
 
-					// Strategy 2: Advanced crawler with Playwright for JS-heavy sites (backup)
+				// Strategy 2: Advanced crawler and Enhanced crawler (wrapped in try-catch)
+				try {
+					// Strategy 2a: Advanced crawler with Playwright for JS-heavy sites (backup)
 					const advancedCrawler = new AdvancedCrawler({
 						maxDepth: 1, // Reduced depth
 						maxUrls: 20, // Reduced URLs
@@ -1487,8 +1489,9 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					console.log(`  - Enhanced crawler: ${enhancedEntities.length} entities`);
 					console.log(`  - TOTAL: ${arrondissementEntities.length} entities`);
 				} catch (enhancedError) {
-					console.error(`⚠️  Advanced crawler failed (continuing with mairie results):`, enhancedError.message);
-					allErrors.push({ stage: 'advanced_crawler', error: enhancedError.message });
+					console.error(`⚠️  Advanced/Enhanced crawler failed (continuing with mairie and intelligent results):`, enhancedError.message);
+					allErrors.push({ stage: 'advanced_enhanced_crawler', error: enhancedError.message });
+					// Continue with results we have so far (mairie + intelligent)
 				}
 
 				// STEP 3: Save all entities to Google Sheets using proven approach

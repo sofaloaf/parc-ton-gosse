@@ -1359,6 +1359,23 @@ async function runCrawlerJob(jobId) {
 		// Aggregate results
 		const finalAggregatedEntities = allResults.flatMap(r => r.entities || []);
 		
+		// Get adaptive search statistics
+		let adaptiveStats = null;
+		if (adaptiveSearch) {
+			adaptiveStats = adaptiveSearch.getStatistics();
+			console.log('\n📊 Adaptive Search Statistics:');
+			console.log(`   - Total searches: ${adaptiveStats.totalSearches}`);
+			console.log(`   - Approval rate: ${adaptiveStats.approvalRate.toFixed(1)}%`);
+			console.log(`   - Rejected patterns: ${adaptiveStats.rejectedPatterns}`);
+			console.log(`   - Successful patterns: ${adaptiveStats.approvedPatterns}`);
+			if (adaptiveStats.topPatterns.length > 0) {
+				console.log(`   - Top patterns:`);
+				adaptiveStats.topPatterns.forEach((p, i) => {
+					console.log(`     ${i + 1}. ${p.pattern} (${(p.successRate * 100).toFixed(1)}% success)`);
+				});
+			}
+		}
+		
 		job.status = 'completed';
 		job.progress = { stage: 'completed', message: 'Crawl completed successfully', percent: 100 };
 		job.results = {
@@ -1366,8 +1383,15 @@ async function runCrawlerJob(jobId) {
 			errors: allErrors,
 			stats: {
 				total: finalAggregatedEntities.length,
-				arrondissements: arrondissementsToSearch.length
-			}
+				arrondissements: arrondissementsToSearch.length,
+				database: allResults.reduce((sum, r) => sum + (r.databaseCount || 0), 0),
+				mairie: allResults.reduce((sum, r) => sum + (r.mairieCount || 0), 0),
+				locality: allResults.reduce((sum, r) => sum + (r.localityCount || 0), 0),
+				intelligent: allResults.reduce((sum, r) => sum + (r.intelligentCount || 0), 0),
+				advanced: allResults.reduce((sum, r) => sum + (r.advancedCount || 0), 0),
+				orchestrator: allResults.reduce((sum, r) => sum + (r.orchestratorCount || 0), 0)
+			},
+			adaptiveStats: adaptiveStats
 		};
 		job.completedAt = new Date().toISOString();
 		

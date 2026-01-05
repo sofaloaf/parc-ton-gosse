@@ -1058,9 +1058,87 @@ async function runCrawlerJob(jobId) {
 			console.log(`   - Advanced: ${filteredAdvancedEntities.length}`);
 			console.log(`   - Orchestrator: ${filteredOrchestratorEntities.length}`);
 			
+			// ML Quality Scoring: Score all entities
+			job.progress.message = `Scoring entities with ML model for ${arrondissement}...`;
+			let scoredEntities = [];
+			let mlStats = { total: 0, accepted: 0, reviewed: 0, avgScore: 0 };
+			
+			if (mlScorer && arrondissementEntities.length > 0) {
+				console.log(`🧠 Scoring ${arrondissementEntities.length} entities with ML model...`);
+				const scores = [];
+				
+				for (const entity of arrondissementEntities) {
+					try {
+						// Convert entity to organization format for scoring
+						const orgForScoring = {
+							title_en: entity.data?.title_en || entity.data?.title?.en || entity.data?.name || '',
+							title_fr: entity.data?.title_fr || entity.data?.title?.fr || entity.data?.name || '',
+							description_en: entity.data?.description_en || entity.data?.description?.en || '',
+							description_fr: entity.data?.description_fr || entity.data?.description?.fr || '',
+							activityType: entity.data?.activityType || '',
+							categories: entity.data?.categories || [],
+							contactEmail: entity.data?.email || entity.data?.contactEmail || '',
+							contactPhone: entity.data?.phone || entity.data?.contactPhone || '',
+							websiteLink: entity.data?.website || entity.data?.websiteLink || '',
+							registrationLink: entity.data?.registrationLink || '',
+							neighborhood: entity.data?.neighborhood || arrondissement,
+							addresses: entity.data?.address || entity.data?.addresses || '',
+							ageMin: entity.data?.ageMin,
+							ageMax: entity.data?.ageMax,
+							adults: entity.data?.adults || false,
+							price_amount: entity.data?.price?.amount || entity.data?.price_amount || 0,
+							currency: entity.data?.price?.currency || entity.data?.currency || 'eur',
+							disponibiliteJours: entity.data?.disponibiliteJours || '',
+							disponibiliteDates: entity.data?.disponibiliteDates || '',
+							additionalNotes: entity.data?.additionalNotes || '',
+							providerId: entity.data?.providerId || ''
+						};
+						
+						const scoreResult = await mlScorer.score(orgForScoring);
+						
+						// Add ML score to entity
+						entity.mlScore = scoreResult.score;
+						entity.mlConfidence = scoreResult.confidence;
+						entity.mlBreakdown = scoreResult.breakdown;
+						entity.mlRecommendation = scoreResult.recommendation;
+						entity.mlMethod = scoreResult.method;
+						
+						scores.push(scoreResult.score);
+						mlStats.total++;
+						
+						if (scoreResult.recommendation === 'accept') {
+							mlStats.accepted++;
+						} else {
+							mlStats.reviewed++;
+						}
+						
+						// Include all entities (both accepted and reviewed)
+						scoredEntities.push(entity);
+					} catch (scoreError) {
+						console.warn(`  ⚠️  ML scoring failed for entity, including anyway:`, scoreError.message);
+						// Include entity even if scoring fails
+						scoredEntities.push(entity);
+					}
+				}
+				
+				if (scores.length > 0) {
+					mlStats.avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+				}
+				
+				console.log(`📊 ML Scoring Results:`);
+				console.log(`   - Total scored: ${mlStats.total}`);
+				console.log(`   - Average score: ${mlStats.avgScore.toFixed(2)}/10`);
+				console.log(`   - Accepted (score >= 7): ${mlStats.accepted}`);
+				console.log(`   - Needs review (score < 7): ${mlStats.reviewed}`);
+			} else {
+				// No ML scorer, use all entities
+				scoredEntities = arrondissementEntities;
+				console.log('⚠️  ML scorer not available, using all entities without scoring');
+			}
+			
 			// Save to Google Sheets
 			job.progress.message = `Saving results for ${arrondissement}...`;
-			if (arrondissementEntities.length > 0) {
+			if (scoredEntities.length > 0) {
 				// Use the same format as the regular crawler: "Pending - YYYY-MM-DD - Arrondissement Crawler"
 				const finalSheetName = generateTabName('pending', 'arrondissement-crawler');
 				console.log(`📋 Saving to sheet: "${finalSheetName}"`);

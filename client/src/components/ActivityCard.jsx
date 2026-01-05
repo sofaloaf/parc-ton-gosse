@@ -58,8 +58,32 @@ export default function ActivityCard({ activity, locale, onView, rating = { aver
 		};
 	}, [onView]);
 	
-	const title = formatTitle(activity.title, locale);
-	const desc = activity.description?.[locale] || activity.description?.en || activity.description?.fr;
+	// Handle title - support both {en, fr} object and string formats
+	let title = '';
+	if (activity.title) {
+		if (typeof activity.title === 'object' && activity.title !== null) {
+			title = activity.title[locale] || activity.title.en || activity.title.fr || '';
+		} else if (typeof activity.title === 'string') {
+			title = activity.title;
+		}
+	}
+	// Fallback to name field if title is empty
+	if (!title && activity.name) {
+		title = typeof activity.name === 'object' 
+			? (activity.name[locale] || activity.name.en || activity.name.fr || '')
+			: String(activity.name);
+	}
+	title = formatTitle(title || 'Activity', locale);
+	
+	// Handle description - support both {en, fr} object and string formats
+	let desc = '';
+	if (activity.description) {
+		if (typeof activity.description === 'object' && activity.description !== null) {
+			desc = activity.description[locale] || activity.description.en || activity.description.fr || '';
+		} else if (typeof activity.description === 'string') {
+			desc = activity.description;
+		}
+	}
 	const addressStr = activity.addresses || activity.addresse || '';
 	
 	// Parse addresses in new format: "Location: Address - Location: Address"

@@ -409,14 +409,29 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			} else if (obj.title_en || obj.title_fr) {
 				// New format: separate columns
 				obj.title = {
-					en: obj.title_en || obj.title || '',
-					fr: obj.title_fr || obj.title || ''
+					en: (obj.title_en || obj.title || '').trim(),
+					fr: (obj.title_fr || obj.title || '').trim()
 				};
+				// If both are empty, try to use name field as fallback
+				if (!obj.title.en && !obj.title.fr && obj.name) {
+					obj.title = {
+						en: String(obj.name).trim(),
+						fr: String(obj.name).trim()
+					};
+				}
 			} else if (obj.title && typeof obj.title === 'string') {
 				// Single string title - use for both languages
+				const titleStr = obj.title.trim();
 				obj.title = {
-					en: obj.title,
-					fr: obj.title
+					en: titleStr,
+					fr: titleStr
+				};
+			} else if (obj.name && typeof obj.name === 'string') {
+				// Fallback: use name field if title is missing
+				const nameStr = obj.name.trim();
+				obj.title = {
+					en: nameStr,
+					fr: nameStr
 				};
 			} else if (!obj.title) {
 				// No title at all - set empty
@@ -439,14 +454,15 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			} else if (obj.description_en || obj.description_fr) {
 				// New format: separate columns
 				obj.description = {
-					en: obj.description_en || obj.description || '',
-					fr: obj.description_fr || obj.description || ''
+					en: (obj.description_en || obj.description || '').trim(),
+					fr: (obj.description_fr || obj.description || '').trim()
 				};
 			} else if (obj.description && typeof obj.description === 'string') {
 				// Single string description
+				const descStr = obj.description.trim();
 				obj.description = {
-					en: obj.description,
-					fr: obj.description
+					en: descStr,
+					fr: descStr
 				};
 			} else if (!obj.description) {
 				obj.description = { en: '', fr: '' };

@@ -1587,6 +1587,10 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						expandGraph: false,
 						tabName: generateTabName('pending', 'enhanced-crawler')
 					});
+			} catch (advancedError) {
+				console.error(`  ❌ Advanced/enhanced crawler failed:`, advancedError.message);
+			}
+			*/
 
 			// Merge all results (avoid duplicates and filter newsletters)
 			// Start with existing organizations from database and locality-first results

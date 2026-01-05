@@ -1873,25 +1873,41 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 								websiteLink = `https://${websiteLink}`;
 							}
 							
+							// Ensure title is properly formatted - convert to sheet format (separate EN/FR columns)
+							const activityName = e.data.name || e.data.title || 'Organization';
+							const titleObj = typeof activityName === 'string' 
+								? { en: activityName, fr: activityName } 
+								: (activityName || { en: 'Organization', fr: 'Organization' });
+							
+							const descObj = typeof e.data.description === 'string'
+								? { en: e.data.description || '', fr: e.data.description || '' }
+								: (e.data.description || { en: '', fr: '' });
+							
+							// Convert to sheet format (separate columns for EN/FR)
 							const activity = {
 								id: e.id || uuidv4(),
-								title: { en: e.data.name || e.data.title || 'Organization', fr: e.data.name || e.data.title || 'Organization' },
-								description: { en: e.data.description || '', fr: e.data.description || '' },
+								title_en: titleObj.en || titleObj.fr || 'Organization',
+								title_fr: titleObj.fr || titleObj.en || 'Organization',
+								description_en: descObj.en || '',
+								description_fr: descObj.fr || '',
 								websiteLink: websiteLink,
 								contactEmail: e.data.email || null,
 								contactPhone: e.data.phone || null,
 								addresses: e.data.address || null,
 								neighborhood: arrondissement,
-								categories: [],
-								ageMin: 0,
-								ageMax: 99,
-								price: { amount: 0, currency: 'eur' },
-								images: [],
-								schedule: [],
-								providerId: '',
+								categories: e.data.categories || [],
+								ageMin: e.data.ageMin || 0,
+								ageMax: e.data.ageMax || 99,
+								price_amount: e.data.price?.amount || 0,
+								currency: e.data.price?.currency || 'eur',
+								images: e.data.images || [],
+								disponibiliteJours: '',
+								disponibiliteDates: '',
+								adults: false,
+								additionalNotes: '',
 								approvalStatus: 'pending', // CRITICAL: Must be 'pending' for pending endpoint to find it
 								crawledAt: new Date().toISOString(),
-								sourceUrl: e.sources?.[0] || 'unknown',
+								providerId: '',
 								createdAt: new Date().toISOString(),
 								updatedAt: new Date().toISOString()
 							};

@@ -553,16 +553,76 @@ export class EnhancedDiscovery {
 	isKidsActivity(name, website, address) {
 		const text = `${name} ${website} ${address}`.toLowerCase();
 		
-		const kidsKeywords = ['enfant', 'enfants', 'kids', 'children', 'jeune', 'jeunes', 'youth', 'junior'];
-		const activityKeywords = ['activité', 'activités', 'activity', 'activities', 'club', 'sport', 'sports'];
+		// STRICT EXCLUSIONS - These should NEVER be included
+		const excludedDomains = [
+			'youtube.com', 'youtu.be',
+			'mozilla.org', 'firefox',
+			'service-public.fr',
+			'google.com', 'gmail.com',
+			'facebook.com', 'twitter.com', 'instagram.com',
+			'paris.fr', 'mairie', 'ville-de-paris',
+			'prefecture', 'gouv.fr',
+			'play.google.com', 'apps.apple.com',
+			'openstreetmap', 'umap',
+			'acce-o.fr', // Generic service portal
+			'novagouv.fr', // Government portal
+			'demande-logement-social.gouv.fr',
+			'prefecturedepolice.interieur.gouv.fr'
+		];
+		
+		// Check if website is excluded
+		if (website) {
+			const websiteLower = website.toLowerCase();
+			if (excludedDomains.some(domain => websiteLower.includes(domain))) {
+				return false;
+			}
+		}
+		
+		// Exclude generic municipal services
+		const excludedTerms = [
+			'services', 'service', 'municipalité', 'municipal',
+			'prendre rendez-vous', 'demander une place',
+			'horaires et informations pratiques',
+			'mentions légales', 'politique de cookies', 'plan du site',
+			'accessibilité', 'contact', 'accueil',
+			'les marchés de', 'fêtes de fin d\'année',
+			'calendrier de l\'avent', 'remportez des cadeaux',
+			'il était une fois', 'quartier populaire',
+			'newsletter', 'lettre d\'information',
+			'crèche', 'crèches', // Daycare (not activity)
+			'logement social', 'demande de logement'
+		];
+		
+		if (excludedTerms.some(term => text.includes(term))) {
+			return false;
+		}
+		
+		// Must have activity-related keywords
+		const kidsKeywords = ['enfant', 'enfants', 'kids', 'children', 'jeune', 'jeunes', 'youth', 'junior', 'ado', 'adolescent', 'petit', 'petits', 'scolaire', 'extracurriculaire'];
+		const activityKeywords = [
+			'activité', 'activités', 'activity', 'activities',
+			'club', 'clubs', 'sport', 'sports',
+			'association', 'associations',
+			'cours', 'atelier', 'ateliers',
+			'danse', 'dance', 'musique', 'music',
+			'théâtre', 'theatre', 'arts martiaux',
+			'gymnastique', 'natation', 'swimming',
+			'centre de loisirs', 'colonie', 'camp',
+			'école de', 'académie', 'cercle'
+		];
 		
 		const hasKids = kidsKeywords.some(kw => text.includes(kw));
 		const hasActivity = activityKeywords.some(kw => text.includes(kw));
 		
 		// Exclude adult-only
-		const adultOnly = ['senior', 'séniors', 'adulte', 'adultes', 'retraité'].some(kw => text.includes(kw));
+		const adultOnly = ['senior', 'séniors', 'adulte', 'adultes', 'retraité', 'retraités'].some(kw => text.includes(kw));
 		
-		return (hasKids || hasActivity) && !adultOnly;
+		// Must be an actual organization (not just a service page)
+		const isGenericService = ['service', 'services', 'information', 'informations', 'démarche', 'démarches'].some(kw => 
+			text.includes(kw) && !hasActivity && !hasKids
+		);
+		
+		return (hasKids || hasActivity) && !adultOnly && !isGenericService;
 	}
 
 	/**

@@ -648,22 +648,64 @@ async function runCrawlerJob(jobId) {
 					const dbResults = await enhancedDiscovery.searchOfficialDatabases(arrondissement, postalCode);
 					console.log(`📚 Enhanced discovery found ${dbResults.length} organizations from databases/PDFs`);
 					
-					// Convert to entity format
-					databaseEntities = dbResults.map(result => ({
-						id: uuidv4(),
-						data: {
-							name: result.name,
-							title: { en: result.name, fr: result.name },
-							email: result.email,
-							phone: result.phone,
-							website: result.website,
-							address: result.address,
-							neighborhood: arrondissement,
-							source: result.source,
-							sourceType: result.type
-						},
-						sources: [result.source]
-					}));
+					// Convert to entity format and filter strictly
+					databaseEntities = dbResults
+						.filter(result => {
+							// Skip rejected/existing
+							const nameLower = (result.name || '').toLowerCase().trim();
+							if (rejectedOrganizations.names.has(nameLower)) {
+								console.log(`  ⏭️  Skipping rejected organization: ${result.name}`);
+								return false;
+							}
+							if (existingOrganizations.names.has(nameLower)) {
+								return false;
+							}
+							
+							// Skip if website is rejected
+							if (result.website) {
+								const websiteLower = result.website.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+								if (rejectedOrganizations.websites.has(websiteLower)) {
+									console.log(`  ⏭️  Skipping rejected website: ${result.website}`);
+									return false;
+								}
+							}
+							
+							// Additional strict filtering
+							const excludedDomains = ['youtube.com', 'mozilla.org', 'service-public.fr', 'google.com', 'paris.fr', 'mairie', 'gouv.fr', 'play.google.com', 'openstreetmap', 'umap', 'acce-o.fr', 'novagouv.fr'];
+							if (result.website) {
+								const websiteLower = result.website.toLowerCase();
+								if (excludedDomains.some(domain => websiteLower.includes(domain))) {
+									console.log(`  ⏭️  Skipping excluded domain: ${result.website}`);
+									return false;
+								}
+							}
+							
+							// Must be a kids' activity (already filtered in enhancedDiscovery, but double-check)
+							const combined = `${result.name} ${result.website || ''} ${result.description || ''}`.toLowerCase();
+							const excludedTerms = ['services', 'municipalité', 'prendre rendez-vous', 'demander une place', 'mentions légales', 'newsletter', 'crèche'];
+							if (excludedTerms.some(term => combined.includes(term))) {
+								console.log(`  ⏭️  Skipping non-activity: ${result.name}`);
+								return false;
+							}
+							
+							return true;
+						})
+						.map(result => ({
+							id: uuidv4(),
+							data: {
+								name: result.name,
+								title: { en: result.name, fr: result.name },
+								email: result.email,
+								phone: result.phone,
+								website: result.website,
+								websiteLink: result.website,
+								address: result.address,
+								neighborhood: arrondissement,
+								source: result.source,
+								sourceType: result.type
+							},
+							sources: [result.source]
+						}));
 					
 					arrondissementEntities.push(...databaseEntities);
 					console.log(`✅ Added ${databaseEntities.length} entities from databases/PDFs`);
@@ -1107,23 +1149,80 @@ async function runCrawlerJob(jobId) {
 			// Merge all results
 			arrondissementEntities.push(...filteredLocalityEntities, ...filteredIntelligentEntities, ...filteredAdvancedEntities, ...filteredOrchestratorEntities);
 			
+			// FINAL STRICT FILTERING - Remove all non-activity organizations
+			const excludedDomains = [
+				'youtube.com', 'youtu.be', 'mozilla.org', 'firefox', 'service-public.fr',
+				'google.com', 'gmail.com', 'facebook.com', 'twitter.com', 'instagram.com',
+				'paris.fr', 'mairie', 'ville-de-paris', 'prefecture', 'gouv.fr',
+				'play.google.com', 'apps.apple.com', 'openstreetmap', 'umap',
+				'acce-o.fr', 'novagouv.fr', 'demande-logement-social.gouv.fr',
+				'prefecturedepolice.interieur.gouv.fr', 'support.mozilla.org',
+				'en.parisinfo.com', 'arc2.novagouv.fr', 'lagrandecollectesolidairedesjouets.com'
+			];
+			
+			const excludedTerms = [
+				'services', 'service', 'municipalité', 'municipal',
+				'prendre rendez-vous', 'demander une place', 'horaires et informations pratiques',
+				'mentions légales', 'politique de cookies', 'plan du site',
+				'accessibilité', 'contact', 'accueil',
+				'les marchés de', 'fêtes de fin d\'année', 'calendrier de l\'avent',
+				'remportez des cadeaux', 'il était une fois', 'quartier populaire',
+				'newsletter', 'lettre d\'information', 'crèche', 'crèches',
+				'logement social', 'demande de logement'
+			];
+			
+			const finalFilteredEntities = arrondissementEntities.filter(entity => {
+				const name = (entity.data?.name || entity.data?.title || '').toLowerCase().trim();
+				const website = (entity.data?.website || entity.data?.websiteLink || '').toLowerCase();
+				const description = (entity.data?.description || '').toLowerCase();
+				const combined = `${name} ${website} ${description}`;
+				
+				// Exclude by domain
+				if (website && excludedDomains.some(domain => website.includes(domain))) {
+					console.log(`  🚫 Final filter: Excluding domain - ${entity.data?.name || 'Unknown'} (${website})`);
+					return false;
+				}
+				
+				// Exclude by term
+				if (excludedTerms.some(term => combined.includes(term))) {
+					console.log(`  🚫 Final filter: Excluding term - ${entity.data?.name || 'Unknown'}`);
+					return false;
+				}
+				
+				// Must have activity-related content
+				const activityKeywords = ['club', 'sport', 'activité', 'association', 'cours', 'atelier', 'danse', 'musique', 'théâtre', 'arts martiaux', 'gymnastique', 'natation', 'école', 'académie', 'cercle'];
+				const hasActivityKeyword = activityKeywords.some(kw => combined.includes(kw));
+				
+				if (!hasActivityKeyword && name.length < 10) {
+					console.log(`  🚫 Final filter: No activity keyword - ${entity.data?.name || 'Unknown'}`);
+					return false;
+				}
+				
+				return true;
+			});
+			
 			console.log(`📊 Total entities from all crawlers: ${arrondissementEntities.length}`);
+			console.log(`🔍 After final strict filtering: ${finalFilteredEntities.length}`);
+			console.log(`   Removed ${arrondissementEntities.length - finalFilteredEntities.length} non-activity organizations`);
 			console.log(`   - Mairie: ${mairieEntities.length}`);
 			console.log(`   - Locality-first: ${filteredLocalityEntities.length}`);
 			console.log(`   - Intelligent: ${filteredIntelligentEntities.length}`);
 			console.log(`   - Advanced: ${filteredAdvancedEntities.length}`);
 			console.log(`   - Orchestrator: ${filteredOrchestratorEntities.length}`);
 			
-			// ML Quality Scoring: Score all entities
+			// ML Quality Scoring: Score all entities (use finalFilteredEntities)
 			job.progress.message = `Scoring entities with ML model for ${arrondissement}...`;
 			let scoredEntities = [];
 			let mlStats = { total: 0, accepted: 0, reviewed: 0, avgScore: 0 };
 			
-			if (mlScorer && arrondissementEntities.length > 0) {
-				console.log(`🧠 Scoring ${arrondissementEntities.length} entities with ML model...`);
+			// Use finalFilteredEntities for scoring
+			const entitiesToScore = finalFilteredEntities || arrondissementEntities;
+			
+			if (mlScorer && entitiesToScore.length > 0) {
+				console.log(`🧠 Scoring ${entitiesToScore.length} entities with ML model...`);
 				const scores = [];
 				
-				for (const entity of arrondissementEntities) {
+				for (const entity of entitiesToScore) {
 					try {
 						// Convert entity to organization format for scoring
 						const orgForScoring = {
@@ -1201,9 +1300,9 @@ async function runCrawlerJob(jobId) {
 				console.log(`   - Accepted (score >= 7): ${mlStats.accepted}`);
 				console.log(`   - Needs review (score < 7): ${mlStats.reviewed}`);
 			} else {
-				// No ML scorer, use all entities
-				scoredEntities = arrondissementEntities;
-				console.log('⚠️  ML scorer not available, using all entities without scoring');
+				// No ML scorer, use filtered entities
+				scoredEntities = finalFilteredEntities || arrondissementEntities;
+				console.log('⚠️  ML scorer not available, using filtered entities without scoring');
 			}
 			
 			// Save to Google Sheets

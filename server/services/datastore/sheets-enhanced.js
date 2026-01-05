@@ -353,6 +353,11 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			if (!masterColumnOrder.includes(fieldName)) {
 				masterColumnOrder.push(fieldName);
 			}
+			
+			// Debug: Log mapping for title columns
+			if (sheetType === 'activities' && (colName.includes('Nom') || colName.includes('nom') || colName.includes('Title') || colName.includes('title'))) {
+				console.log(`  📌 Column "${colName}" (index ${index}) → field "${fieldName}"`);
+			}
 		});
 		
 		// Log column mapping for debugging (always log for activities to debug title issues)
@@ -390,6 +395,11 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			headerRow.forEach((colName, i) => {
 				const fieldName = columnMap[i];
 				let val = row[i] || '';
+				
+				// Debug: Log title-related values for first row
+				if (sheetType === 'activities' && rowIndex === 0 && (fieldName === 'title_en' || fieldName === 'title_fr' || fieldName === 'title' || fieldName === 'name')) {
+					console.log(`  📝 Row 1, Column "${colName}" (${fieldName}): "${val}"`);
+				}
 				
 				// Handle ID specially - be more lenient
 				if (fieldName === 'id') {

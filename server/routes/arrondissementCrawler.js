@@ -1614,7 +1614,11 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						
 						// Verify approvalStatus is in the data
 						console.log(`  📊 Saving ${rowsToSave.length} rows to sheet "${finalSheetName}"`);
-						console.log(`  📊 First row sample (first 5 columns):`, rowsToSave[0]?.slice(0, 5) || 'N/A');
+						if (rowsToSave.length > 0 && Array.isArray(rowsToSave[0])) {
+							console.log(`  📊 First row sample (first 5 columns):`, rowsToSave[0].slice(0, 5));
+						} else {
+							console.log(`  📊 First row sample:`, rowsToSave[0] || 'N/A');
+						}
 						
 						// Append rows
 						const appendResult = await sheets.spreadsheets.values.append({
@@ -1744,6 +1748,7 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 				console.log(`📋 Reading "${sheetName}": ${rows.length - 1} data rows, ${headers.length} columns`);
 				
 				// Convert rows to activity objects
+				let activitiesLoadedFromThisSheet = 0;
 				for (let i = 1; i < rows.length; i++) {
 					const row = rows[i];
 					const activity = {};
@@ -1805,6 +1810,7 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 						const status = appActivity.approvalStatus?.toLowerCase() || 'pending';
 						if (status === 'pending') {
 							allPendingActivities.push(appActivity);
+							activitiesLoadedFromThisSheet++;
 							console.log(`  ✅ Loaded pending activity: ${appActivity.title?.en || appActivity.title?.fr || appActivity.id}`);
 						} else {
 							console.log(`  ⏭️  Skipped ${status} activity: ${appActivity.title?.en || appActivity.title?.fr || appActivity.id}`);
@@ -1813,7 +1819,7 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 						console.log(`  ⚠️  Row ${i + 1} in "${sheetName}" has no ID, skipping`);
 					}
 				}
-				console.log(`✅ Loaded ${allPendingActivities.length - (allPendingActivities.length - (i - 1))} activities from "${sheetName}"`);
+				console.log(`✅ Loaded ${activitiesLoadedFromThisSheet} pending activities from "${sheetName}"`);
 			} catch (error) {
 				console.error(`❌ Error reading pending sheet ${sheetName}:`, error.message);
 				console.error(`   Stack:`, error.stack);

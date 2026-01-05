@@ -9,7 +9,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { getSheetsClient } from '../datastore/sheets.js';
+import { google } from 'googleapis';
 import { LocalityFirstCrawler } from './localityFirstCrawler.js';
 import { IntelligentCrawler } from './intelligentCrawler.js';
 import { AdvancedCrawler } from './advancedCrawler.js';
@@ -18,6 +18,29 @@ import { generateTabName, activityToSheetRow, ACTIVITIES_COLUMN_ORDER, getHeader
 
 // In-memory job store (in production, use Redis or database)
 const jobs = new Map();
+
+/**
+ * Get Google Sheets client
+ */
+function getSheetsClient() {
+	const serviceAccount = process.env.GS_SERVICE_ACCOUNT;
+	const privateKey = process.env.GS_PRIVATE_KEY_BASE64 
+		? Buffer.from(process.env.GS_PRIVATE_KEY_BASE64, 'base64').toString('utf8')
+		: process.env.GS_PRIVATE_KEY;
+	
+	if (!serviceAccount || !privateKey) {
+		throw new Error('Google Sheets credentials not configured: GS_SERVICE_ACCOUNT and GS_PRIVATE_KEY_BASE64 or GS_PRIVATE_KEY required');
+	}
+	
+	const auth = new google.auth.JWT(
+		serviceAccount,
+		null,
+		privateKey.replace(/\\n/g, '\n'),
+		['https://www.googleapis.com/auth/spreadsheets']
+	);
+	
+	return google.sheets({ version: 'v4', auth });
+}
 
 /**
  * Start a background crawl job
@@ -87,16 +110,17 @@ async function runCrawlerJob(jobId) {
 		throw new Error(`Job ${jobId} not found`);
 	}
 	
-	try {
-		job.status = 'running';
-		job.progress = { stage: 'starting', message: 'Initializing crawlers...', percent: 0 };
-		
-		const sheetId = process.env.GS_SHEET_ID;
-		if (!sheetId) {
-			throw new Error('GS_SHEET_ID not configured');
-		}
-		
-		const sheets = getSheetsClient();
+		try {
+			job.status = 'running';
+			job.progress = { stage: 'starting', message: 'Initializing crawlers...', percent: 0 };
+			
+			const sheetId = process.env.GS_SHEET_ID;
+			if (!sheetId) {
+				throw new Error('GS_SHEET_ID not configured');
+			}
+			
+			// Get sheets client
+			const sheets = getSheetsClient();
 		
 		// Load existing and rejected organizations
 		job.progress = { stage: 'loading', message: 'Loading existing organizations...', percent: 5 };

@@ -21,27 +21,15 @@ import { startBackgroundCrawl, getJobStatus } from '../services/crawler/backgrou
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-dotenv.config({ path: join(__dirname, '../../server/.env') });
+const envPath = join(__dirname, '../.env');
+dotenv.config({ path: envPath });
 
-// Set app reference for background crawler
-global.app = {
-	get: (key) => {
-		if (key === 'dataStore') {
-			// Lazy load datastore
-			return import('../services/datastore/index.js').then(async ({ createDataStore }) => {
-				return await createDataStore({
-					backend: process.env.DATA_BACKEND || 'sheets',
-					sheetId: process.env.GS_SHEET_ID,
-					serviceAccount: process.env.GS_SERVICE_ACCOUNT,
-					privateKey: process.env.GS_PRIVATE_KEY || process.env.GS_PRIVATE_KEY_BASE64,
-					airtableApiKey: process.env.AIRTABLE_API_KEY,
-					airtableBaseId: process.env.AIRTABLE_BASE_ID
-				});
-			});
-		}
-		return null;
-	}
-};
+console.log(`📁 Loading environment from: ${envPath}`);
+console.log(`🔍 Checking environment variables...`);
+console.log(`   GS_SHEET_ID: ${process.env.GS_SHEET_ID ? '✅ Set' : '❌ Missing'}`);
+console.log(`   GS_SERVICE_ACCOUNT: ${process.env.GS_SERVICE_ACCOUNT ? '✅ Set' : '❌ Missing'}`);
+console.log(`   GS_PRIVATE_KEY_BASE64: ${process.env.GS_PRIVATE_KEY_BASE64 ? '✅ Set' : '❌ Missing'}`);
+console.log(`   GS_PRIVATE_KEY: ${process.env.GS_PRIVATE_KEY ? '✅ Set' : '❌ Missing'}`);
 
 async function main() {
 	const arrondissements = process.argv.slice(2).length > 0 
@@ -52,17 +40,34 @@ async function main() {
 	console.log(`⏱️  No time limits - this can run for as long as needed\n`);
 	
 	try {
+		// Check environment variables
+		if (!process.env.GS_SHEET_ID) {
+			throw new Error('GS_SHEET_ID environment variable is required. Make sure server/.env file exists.');
+		}
+		if (!process.env.GS_SERVICE_ACCOUNT) {
+			throw new Error('GS_SERVICE_ACCOUNT environment variable is required. Make sure server/.env file exists.');
+		}
+		if (!process.env.GS_PRIVATE_KEY_BASE64 && !process.env.GS_PRIVATE_KEY) {
+			throw new Error('GS_PRIVATE_KEY_BASE64 or GS_PRIVATE_KEY environment variable is required. Make sure server/.env file exists.');
+		}
+		
 		// Initialize datastore
 		const { createDataStore } = await import('../services/datastore/index.js');
-		const store = await createDataStore({
+		const config = {
 			backend: process.env.DATA_BACKEND || 'sheets',
 			sheetId: process.env.GS_SHEET_ID,
 			serviceAccount: process.env.GS_SERVICE_ACCOUNT,
-			privateKey: process.env.GS_PRIVATE_KEY || process.env.GS_PRIVATE_KEY_BASE64,
+			privateKey: process.env.GS_PRIVATE_KEY_BASE64 || process.env.GS_PRIVATE_KEY,
 			airtableApiKey: process.env.AIRTABLE_API_KEY,
 			airtableBaseId: process.env.AIRTABLE_BASE_ID
-		});
-		global.app.get = (key) => key === 'dataStore' ? store : null;
+		};
+		
+		console.log('📋 Initializing datastore...');
+		const store = await createDataStore(config);
+		global.app = {
+			get: (key) => key === 'dataStore' ? store : null
+		};
+		console.log('✅ Datastore initialized');
 		
 		// Start background crawl
 		const job = await startBackgroundCrawl(arrondissements, {

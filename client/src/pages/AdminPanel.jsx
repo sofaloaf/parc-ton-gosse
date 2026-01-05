@@ -1349,14 +1349,35 @@ export default function AdminPanel() {
 														</p>
 													)}
 													{activity.websiteLink && (
-														<a 
-															href={activity.websiteLink} 
-															target="_blank" 
-															rel="noopener noreferrer"
-															style={{ fontSize: 12, color: '#007bff', textDecoration: 'none' }}
-														>
-															🔗 {activity.websiteLink}
-														</a>
+														<div style={{ marginTop: 4 }}>
+															<a 
+																href={activity.websiteLink.startsWith('http') ? activity.websiteLink : `https://${activity.websiteLink}`}
+																target="_blank" 
+																rel="noopener noreferrer"
+																style={{ 
+																	fontSize: 12, 
+																	color: '#007bff', 
+																	textDecoration: 'underline',
+																	wordBreak: 'break-all'
+																}}
+															>
+																🔗 {activity.websiteLink}
+															</a>
+														</div>
+													)}
+													{activity.contactEmail && (
+														<div style={{ marginTop: 4, fontSize: 12, color: '#666' }}>
+															📧 <a href={`mailto:${activity.contactEmail}`} style={{ color: '#007bff', textDecoration: 'underline' }}>
+																{activity.contactEmail}
+															</a>
+														</div>
+													)}
+													{activity.contactPhone && (
+														<div style={{ marginTop: 4, fontSize: 12, color: '#666' }}>
+															📞 <a href={`tel:${activity.contactPhone}`} style={{ color: '#007bff', textDecoration: 'underline' }}>
+																{activity.contactPhone}
+															</a>
+														</div>
 													)}
 												</div>
 												<div style={{ display: 'flex', gap: 8, marginLeft: 16 }}>

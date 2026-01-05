@@ -1500,18 +1500,25 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 				if (arrondissementEntities.length > 0) {
 					try {
 						const sheets = getSheetsClient();
-						const finalSheetName = generateTabName('pending', 'hybrid-crawler');
+						// Use the same format as the regular crawler: "Pending - YYYY-MM-DD - Arrondissement Crawler"
+						const finalSheetName = generateTabName('pending', 'arrondissement-crawler');
 						
 						// Convert entities to sheet rows using proven format
 						const rowsToSave = arrondissementEntities.map(e => {
+							// Ensure websiteLink has http:// or https:// prefix
+							let websiteLink = e.data.website || e.data.websiteLink || null;
+							if (websiteLink && !websiteLink.startsWith('http://') && !websiteLink.startsWith('https://')) {
+								websiteLink = `https://${websiteLink}`;
+							}
+							
 							const activity = {
 								id: e.id || uuidv4(),
 								title: { en: e.data.name || e.data.title || 'Organization', fr: e.data.name || e.data.title || 'Organization' },
 								description: { en: e.data.description || '', fr: e.data.description || '' },
-								websiteLink: e.data.website || e.data.websiteLink || null,
-								email: e.data.email || null,
-								phone: e.data.phone || null,
-								address: e.data.address || null,
+								websiteLink: websiteLink,
+								contactEmail: e.data.email || null,
+								contactPhone: e.data.phone || null,
+								addresses: e.data.address || null,
 								neighborhood: arrondissement,
 								categories: [],
 								ageMin: 0,
@@ -1521,6 +1528,7 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 								schedule: [],
 								providerId: '',
 								approvalStatus: 'pending',
+								crawledAt: new Date().toISOString(),
 								sourceUrl: e.sources?.[0] || 'unknown',
 								createdAt: new Date().toISOString(),
 								updatedAt: new Date().toISOString()
@@ -1555,16 +1563,26 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 							});
 						}
 
+						// Check if sheet exists and has data
+						const existingData = await sheets.spreadsheets.values.get({
+							spreadsheetId: sheetId,
+							range: `${finalSheetName}!A:Z`
+						}).catch(() => ({ data: { values: [] } }));
+						
+						const existingRows = existingData.data.values || [];
+						const startRow = existingRows.length > 1 ? existingRows.length + 1 : 2; // Start after headers or existing data
+						
 						// Append rows
 						await sheets.spreadsheets.values.append({
 							spreadsheetId: sheetId,
-							range: `${finalSheetName}!A2`,
+							range: `${finalSheetName}!A${startRow}`,
 							valueInputOption: 'RAW',
 							requestBody: { values: rowsToSave }
 						});
 
 						saveResult = { savedCount: rowsToSave.length, sheetName: finalSheetName };
 						console.log(`✅ Saved ${rowsToSave.length} entities to Google Sheets (${finalSheetName})`);
+						console.log(`📋 Sheet URL: https://docs.google.com/spreadsheets/d/${sheetId}/edit#gid=${sheet.properties?.sheetId || ''}`);
 					} catch (saveError) {
 						console.error(`❌ Failed to save entities:`, saveError.message);
 						allErrors.push({ stage: 'storage', error: saveError.message });

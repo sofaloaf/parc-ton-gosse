@@ -356,8 +356,21 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 		});
 		
 		// Log column mapping for debugging
-		if (process.env.NODE_ENV === 'development') {
+		if (process.env.NODE_ENV === 'development' || sheetType === 'activities') {
 			console.log(`📊 Reading ${sheetName}: Found ${headerRow.length} columns, mapped to ${Object.keys(columnMap).length} fields`);
+			// Log title-related columns for activities
+			if (sheetType === 'activities') {
+				const titleColumns = headerRow.map((col, idx) => {
+					const field = columnMap[idx];
+					if (field && (field.includes('title') || field.includes('name') || col.toLowerCase().includes('title') || col.toLowerCase().includes('name') || col.toLowerCase().includes('nom') || col.toLowerCase().includes('activité'))) {
+						return { column: col, field: field, index: idx };
+					}
+					return null;
+				}).filter(Boolean);
+				if (titleColumns.length > 0) {
+					console.log(`📋 Title-related columns found:`, titleColumns);
+				}
+			}
 		}
 		
 		// Process rows

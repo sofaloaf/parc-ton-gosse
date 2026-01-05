@@ -317,7 +317,7 @@ export default function AdminPanel() {
 				body: {
 					arrondissements: ['20e']
 				},
-				timeout: 300000 // 5 minutes timeout for crawler
+				timeout: 600000 // 10 minutes timeout for crawler (increased due to rate limiting delays)
 			});
 
 			setEnhancedCrawlerResults(crawlerResult);

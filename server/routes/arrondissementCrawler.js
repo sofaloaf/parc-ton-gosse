@@ -985,6 +985,71 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 	}
 
 		try {
+			const sheets = getSheetsClient();
+			const store = req.app.get('dataStore');
+			
+			// Load rejected organizations to prevent re-crawling (with retry and rate limiting)
+			let rejected = { names: new Set(), websites: new Set() };
+			try {
+				// Add delay before Google Sheets API call to avoid rate limiting
+				await new Promise(resolve => setTimeout(resolve, 1000));
+				rejected = await getRejectedOrganizations(sheets, sheetId);
+			} catch (error) {
+				if (error.status === 429 || (error.response && error.response.status === 429)) {
+					console.warn(`⚠️  Google Sheets rate limit hit for rejected organizations, retrying after delay...`);
+					await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+					try {
+						rejected = await getRejectedOrganizations(sheets, sheetId);
+					} catch (retryError) {
+						console.warn(`⚠️  Could not load rejected organizations after retry:`, retryError.message);
+					}
+				} else {
+					console.warn(`⚠️  Could not load rejected organizations:`, error.message);
+				}
+			}
+			
+			// Load existing organizations from database to avoid duplicates (with retry)
+			let existingOrganizations = { names: new Set(), websites: new Set() };
+			try {
+				// Add delay before Google Sheets API call to avoid rate limiting
+				await new Promise(resolve => setTimeout(resolve, 1000));
+				const existingActivities = await store.activities.list();
+				existingActivities.forEach(activity => {
+					const name = (activity.title?.en || activity.title?.fr || '').toLowerCase().trim();
+					if (name) existingOrganizations.names.add(name);
+					
+					const website = (activity.websiteLink || '').toLowerCase();
+					if (website) {
+						const normalized = website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+						existingOrganizations.websites.add(normalized);
+					}
+				});
+				console.log(`📋 Loaded ${existingOrganizations.names.size} existing organization names and ${existingOrganizations.websites.size} existing websites from database`);
+			} catch (error) {
+				if (error.status === 429 || (error.response && error.response.status === 429)) {
+					console.warn(`⚠️  Google Sheets rate limit hit for existing activities, retrying after delay...`);
+					await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+					try {
+						const existingActivities = await store.activities.list();
+						existingActivities.forEach(activity => {
+							const name = (activity.title?.en || activity.title?.fr || '').toLowerCase().trim();
+							if (name) existingOrganizations.names.add(name);
+							
+							const website = (activity.websiteLink || '').toLowerCase();
+							if (website) {
+								const normalized = website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+								existingOrganizations.websites.add(normalized);
+							}
+						});
+						console.log(`📋 Loaded ${existingOrganizations.names.size} existing organization names after retry`);
+					} catch (retryError) {
+						console.warn(`⚠️  Could not load existing organizations after retry:`, retryError.message);
+					}
+				} else {
+					console.warn(`⚠️  Could not load existing organizations:`, error.message);
+				}
+			}
+
 			// Get arrondissements to search
 			const arrondissementsToSearch = arrondissements && Array.isArray(arrondissements) 
 				? arrondissements 

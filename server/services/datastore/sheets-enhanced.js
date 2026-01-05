@@ -22,9 +22,9 @@ const SHEETS = {
 const COLUMN_MAPPINGS = {
 	activities: {
 		// Bilingual fields can be named various ways
-		'title': ['title', 'Title', 'Titre', 'Nom'],
-		'title_en': ['title_en', 'title en', 'Title EN', 'Title (English)', 'Titre Anglais', 'Nom EN'],
-		'title_fr': ['title_fr', 'title fr', 'Title FR', 'Title (French)', 'Titre Français', 'Nom FR'],
+		'title': ['title', 'Title', 'Titre', 'Nom', 'Name', 'Activity Name', 'Nom de l\'activité', 'Organization Name', 'Nom de l\'organisation', 'Activity', 'Activité'],
+		'title_en': ['title_en', 'title en', 'Title EN', 'Title (English)', 'Titre Anglais', 'Nom EN', 'Name EN', 'Activity Name EN'],
+		'title_fr': ['title_fr', 'title fr', 'Title FR', 'Title (French)', 'Titre Français', 'Nom FR', 'Name FR', 'Activity Name FR', 'Nom de l\'activité'],
 		'description': ['description', 'Description', 'Desc'],
 		'description_en': ['description_en', 'description en', 'Description EN', 'Description (English)'],
 		'description_fr': ['description_fr', 'description fr', 'Description FR', 'Description (French)'],
@@ -436,17 +436,29 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 					fr: titleStr || (obj.name ? String(obj.name).trim() : '')
 				};
 			} else if (obj.name && typeof obj.name === 'string') {
-				// Fallback: use name field if title is missing
+				// Fallback: use name field if title is missing (but NOT providerId)
 				const nameStr = String(obj.name).trim();
-				obj.title = {
-					en: nameStr,
-					fr: nameStr
-				};
+				// Don't use providerId as title - it's just an ID
+				if (nameStr && !nameStr.toLowerCase().startsWith('provider-') && nameStr !== obj.providerId) {
+					obj.title = {
+						en: nameStr,
+						fr: nameStr
+					};
+				} else {
+					obj.title = { en: '', fr: '' };
+				}
 			} else if (!obj.title) {
-				// No title at all - set empty (but try name one more time)
-				obj.title = obj.name 
-					? { en: String(obj.name).trim(), fr: String(obj.name).trim() }
-					: { en: '', fr: '' };
+				// No title at all - try name field but NOT providerId
+				if (obj.name && typeof obj.name === 'string') {
+					const nameStr = String(obj.name).trim();
+					if (nameStr && !nameStr.toLowerCase().startsWith('provider-') && nameStr !== obj.providerId) {
+						obj.title = { en: nameStr, fr: nameStr };
+					} else {
+						obj.title = { en: '', fr: '' };
+					}
+				} else {
+					obj.title = { en: '', fr: '' };
+				}
 			}
 			
 			// Ensure title is always an object with en/fr

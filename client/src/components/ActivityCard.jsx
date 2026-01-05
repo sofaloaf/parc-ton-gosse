@@ -85,16 +85,15 @@ export default function ActivityCard({ activity, locale, onView, rating = { aver
 		}
 	}
 	
-	// Last resort: check all possible fields
+	// Last resort: check organization name (but NOT providerId - that's just an ID)
 	if (!title) {
-		// Try any field that might contain a name
-		const possibleFields = ['organizationName', 'providerId', 'organization', 'provider'];
-		for (const field of possibleFields) {
-			if (activity[field]) {
-				title = String(activity[field]);
-				break;
-			}
+		// Try organizationName but NOT providerId (providerId is just an ID like "Provider-1")
+		if (activity.organizationName && !activity.organizationName.toLowerCase().startsWith('provider-')) {
+			title = String(activity.organizationName);
+		} else if (activity.organization && !activity.organization.toLowerCase().startsWith('provider-')) {
+			title = String(activity.organization);
 		}
+		// Don't use providerId as it's just an ID, not a name
 	}
 	
 	// Debug in development

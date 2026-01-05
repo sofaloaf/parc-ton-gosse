@@ -1179,8 +1179,10 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 
 				// STEP 2: Use intelligent crawler with seed sources and AI-assisted extraction
 				console.log(`📋 Step 2: Using intelligent crawler with seed sources...`);
+				let intelligentEntities = [];
 				try {
 					// Strategy 1: Intelligent crawler with seed sources (Wikidata, registries, etc.)
+					console.log(`  🧠 Initializing Intelligent Crawler...`);
 					const intelligentCrawler = new IntelligentCrawler({
 						googleApiKey: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY,
 						googleCx: process.env.GOOGLE_CUSTOM_SEARCH_CX,
@@ -1188,14 +1190,16 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						maxDelay: 2000
 					});
 
+					console.log(`  🔍 Starting intelligent crawl for ${arrondissement} (${postalCode})...`);
 					const intelligentResults = await intelligentCrawler.crawl(arrondissement, postalCode, {
 						maxPages: 20 // Limit to stay within timeout
 					});
 
-					console.log(`✅ Intelligent crawler: ${intelligentResults.entities.length} entities extracted`);
+					console.log(`  ✅ Intelligent crawler completed: ${intelligentResults.entities.length} entities extracted`);
+					console.log(`  📊 Intelligent crawler stats:`, intelligentResults.stats);
 
 					// Convert intelligent crawler results to entity format
-					const intelligentEntities = intelligentResults.entities.map(e => ({
+					intelligentEntities = intelligentResults.entities.map(e => ({
 						id: uuidv4(),
 						data: {
 							name: e.name,
@@ -1205,7 +1209,7 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 							email: e.email,
 							phone: e.phone,
 							address: e.address,
-							description: e.description || `Activity from ${arrondissement} arrondissement`,
+							description: e.description || `Activity from ${arrondissement} arrondissement (via intelligent crawler)`,
 							neighborhood: arrondissement,
 							arrondissement: arrondissement
 						},
@@ -1214,6 +1218,14 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						extractedAt: new Date().toISOString(),
 						validation: { valid: true, score: e.confidence || 0.7 }
 					}));
+
+					console.log(`  ✅ Converted ${intelligentEntities.length} intelligent crawler entities to standard format`);
+				} catch (intelligentError) {
+					console.error(`  ❌ Intelligent crawler failed:`, intelligentError.message);
+					console.error(`  Stack:`, intelligentError.stack);
+					allErrors.push({ stage: 'intelligent_crawler', error: intelligentError.message });
+					// Continue with other crawlers even if intelligent crawler fails
+				}
 
 					// Strategy 2: Advanced crawler with Playwright for JS-heavy sites (backup)
 					const advancedCrawler = new AdvancedCrawler({
@@ -1381,6 +1393,7 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					const existingNames = new Set(mairieEntities.map(e => e.data.name?.toLowerCase()));
 					
 					// Add intelligent crawler results FIRST (highest quality)
+					console.log(`  🔄 Merging ${intelligentEntities.length} intelligent crawler entities...`);
 					const filteredIntelligentEntities = intelligentEntities.filter(e => {
 						const name = (e.data.name || '').toLowerCase();
 						const website = (e.data.website || '').toLowerCase();
@@ -1394,8 +1407,14 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						}
 						
 						// Filter out duplicates
-						return name && !existingNames.has(name);
+						const isDuplicate = name && existingNames.has(name);
+						if (isDuplicate) {
+							console.log(`  ⏭️  Skipping duplicate from intelligent crawler: ${name}`);
+						}
+						return name && !isDuplicate;
 					});
+
+					console.log(`  ✅ After filtering: ${filteredIntelligentEntities.length} unique intelligent crawler entities`);
 
 					// Update existing names set
 					filteredIntelligentEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
@@ -1448,14 +1467,24 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					advancedEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
 					enhancedEntities.forEach(e => existingNames.add((e.data?.name || e.data?.title || '').toLowerCase()));
 
-					arrondissementEntities.push(
-						...filteredIntelligentEntities, // Intelligent crawler results first (highest quality)
-						...advancedEntities, 
-						...enhancedEntities
-					);
-					allErrors.push(...(intelligentResults.errors || []));
+					// Add intelligent crawler results FIRST (highest quality), then others
+					arrondissementEntities.push(...filteredIntelligentEntities);
+					console.log(`  ✅ Added ${filteredIntelligentEntities.length} intelligent crawler entities to results`);
+					
+					arrondissementEntities.push(...advancedEntities);
+					console.log(`  ✅ Added ${advancedEntities.length} advanced crawler entities to results`);
+					
+					arrondissementEntities.push(...enhancedEntities);
+					console.log(`  ✅ Added ${enhancedEntities.length} enhanced crawler entities to results`);
+					
 					allErrors.push(...(crawlResults?.errors || []));
-					console.log(`✅ Intelligent crawler: ${filteredIntelligentEntities.length}, Advanced: ${advancedEntities.length}, Enhanced: ${enhancedEntities.length} entities`);
+					
+					console.log(`\n📊 FINAL MERGE SUMMARY:`);
+					console.log(`  - Mairie crawler: ${mairieEntities.length} entities`);
+					console.log(`  - Intelligent crawler: ${filteredIntelligentEntities.length} entities`);
+					console.log(`  - Advanced crawler: ${advancedEntities.length} entities`);
+					console.log(`  - Enhanced crawler: ${enhancedEntities.length} entities`);
+					console.log(`  - TOTAL: ${arrondissementEntities.length} entities`);
 				} catch (enhancedError) {
 					console.error(`⚠️  Advanced crawler failed (continuing with mairie results):`, enhancedError.message);
 					allErrors.push({ stage: 'advanced_crawler', error: enhancedError.message });

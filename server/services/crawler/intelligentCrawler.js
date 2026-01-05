@@ -156,15 +156,36 @@ export class IntelligentCrawler {
 			});
 		}
 
-		// 4. Google Custom Search for specific queries
+		// 4. Google Custom Search for specific queries using comprehensive activity keywords
 		if (this.googleApiKey && this.googleCx) {
-			const searchQueries = [
+			const activityKeywords = this.getActivityKeywords();
+			
+			// Create multiple targeted search queries using the comprehensive activity list
+			// Group activities into chunks to create focused queries
+			const chunkSize = 15; // 15 activities per query to avoid query length limits
+			const searchQueries = [];
+			
+			// Base queries with activity chunks
+			for (let i = 0; i < activityKeywords.length; i += chunkSize) {
+				const activityChunk = activityKeywords.slice(i, i + chunkSize);
+				const activityQuery = activityChunk.join(' OR ');
+				const query = `Paris ${arrondissement} arrondissement enfants kids (${activityQuery}) -newsletter -"lettre d'information"`;
+				searchQueries.push(query);
+			}
+			
+			// Also add specific high-value queries
+			const highValueQueries = [
 				`association loi 1901 ${arrondissement} arrondissement Paris enfants`,
 				`club sport ${arrondissement} arrondissement Paris enfants`,
-				`activités enfants ${arrondissement} arrondissement Paris`
+				`activités enfants ${arrondissement} arrondissement Paris`,
+				`cercle escrime ${arrondissement} arrondissement Paris enfants`,
+				`centre loisirs ${arrondissement} arrondissement Paris enfants`
 			];
-
-			for (const query of searchQueries) {
+			
+			// Limit total queries to avoid timeout (use first 10 activity chunk queries + all high-value queries)
+			const limitedQueries = [...searchQueries.slice(0, 10), ...highValueQueries];
+			
+			for (const query of limitedQueries) {
 				seedUrls.push({
 					url: `google_search:${query}`,
 					priority: 0.6,
@@ -172,6 +193,8 @@ export class IntelligentCrawler {
 					source: 'google_search'
 				});
 			}
+			
+			console.log(`  🔍 Generated ${limitedQueries.length} Google search queries using ${activityKeywords.length} activity keywords`);
 		}
 
 		console.log(`  ✅ Total seed sources: ${seedUrls.length}`);
@@ -698,6 +721,130 @@ export class IntelligentCrawler {
 
 		console.log(`\n📊 Crawl complete: ${results.entities.length} entities, ${results.stats.duplicatesRemoved} duplicates removed`);
 		return results;
+	}
+
+	/**
+	 * Get comprehensive activity keywords (reuse from discovery module)
+	 */
+	getActivityKeywords() {
+		// Comprehensive activity keywords in French and English
+		// This matches the list from discovery.js to ensure consistency
+		return [
+			// Core activity terms
+			'activité', 'activités', 'activities', 'activity',
+			'club', 'clubs', 'association', 'associations',
+			'sport', 'sports', 'loisir', 'loisirs', 'leisure',
+			'cours', 'atelier', 'ateliers', 'workshop', 'workshops',
+			
+			// Team Ball Sports
+			'football', 'soccer', 'basketball', 'basket-ball', 'basket',
+			'volleyball', 'volley-ball', 'handball', 'rugby',
+			'baseball', 'cricket', 'ultimate frisbee', 'ultimate',
+			'beach volleyball', 'beach soccer', 'water polo', 'netball',
+			'floorball', 'korfball', 'sepak takraw', 'bossaball', 'footvolley',
+			
+			// Combat & Martial Arts
+			'boxe', 'boxing', 'judo', 'karate', 'karaté',
+			'taekwondo', 'tae kwon do', 'kickboxing', 'kick-boxing',
+			'jujitsu', 'jiu-jitsu', 'bjj', 'brazilian jiu-jitsu',
+			'mma', 'mixed martial arts', 'arts martiaux', 'martial arts',
+			'escrime', 'fencing', 'aïkido', 'aikido', 'kendo',
+			'kung fu', 'wrestling', 'lutte', 'sambo', 'taekkyon',
+			
+			// Water Sports
+			'natation', 'swimming', 'plongée', 'diving',
+			'water polo', 'water-polo', 'kayak', 'kayaking',
+			'canoë', 'canoe', 'canoeing', 'aviron', 'rowing',
+			'surf', 'surfing', 'bodyboarding', 'paddle', 'paddleboarding', 'sup',
+			'synchronized swimming', 'natation synchronisée', 'underwater hockey',
+			'freediving', 'apnée', 'scuba diving', 'plongée sous-marine',
+			
+			// Racquet & Precision Sports
+			'tennis', 'tennis de table', 'ping pong', 'table tennis',
+			'badminton', 'squash', 'racquetball', 'pickleball',
+			'padel', 'beach tennis', 'racketlon', 'pelota',
+			
+			// Athletics & Endurance
+			'athlétisme', 'athletics', 'course', 'running',
+			'marathon', 'triathlon', 'duathlon', 'biathlon',
+			'orientation', 'orienteering', 'race walking', 'marche athlétique',
+			'ultramarathon', 'adventure racing', 'cross-country', 'cross country',
+			
+			// Winter & Snow Sports
+			'ski', 'skiing', 'alpine skiing', 'ski alpin',
+			'cross-country skiing', 'ski de fond', 'freestyle skiing',
+			'snowboard', 'snowboarding', 'hockey sur glace', 'ice hockey',
+			'patinage', 'skating', 'patinage artistique', 'figure skating',
+			'patinage de vitesse', 'speed skating', 'curling',
+			'bobsleigh', 'luge', 'skeleton',
+			
+			// Cycling & Wheel Sports
+			'cyclisme', 'cycling', 'vélo', 'bike', 'biking',
+			'vtt', 'mountain bike', 'mtb', 'bmx', 'cyclocross',
+			'roller', 'roller skating', 'patin à roulettes', 'inline hockey',
+			'roller derby', 'unicycle', 'monocycle',
+			
+			// Gymnastics & Acrobatics
+			'gymnastique', 'gymnastics', 'gymnastique artistique', 'artistic gymnastics',
+			'gymnastique rythmique', 'rhythmic gymnastics',
+			'trampoline', 'trampolining', 'parkour', 'freerunning',
+			'cheerleading', 'acrobatie', 'acrobatics', 'tumbling',
+			'aerial silks', 'soie aérienne', 'pole dancing', 'baton twirling',
+			
+			// Mind & Board Games
+			'échecs', 'chess', 'go', 'bridge',
+			'esport', 'esports', 'gaming', 'jeux vidéo',
+			'rubik\'s cube', 'speedcubing', 'sport stacking',
+			'board game', 'jeux de société',
+			
+			// Creative & Niche Activities
+			'dessin', 'drawing', 'peinture', 'painting',
+			'manga', 'bande dessinée', 'comics', 'manga art',
+			'codage', 'coding', 'programmation', 'programming', 'hackathon',
+			'théâtre', 'theater', 'theatre', 'drama',
+			'danse', 'dance', 'ballet', 'hip-hop', 'hip hop',
+			'salsa', 'photographie', 'photography',
+			'écriture', 'writing', 'poésie', 'poetry', 'screenwriting',
+			'musique', 'music', 'chorale', 'choir', 'orchestre', 'orchestra',
+			'guitare', 'guitar', 'piano', 'violon', 'violin',
+			'cosplay', 'modélisme', 'model building', 'aeromodeling',
+			'debate', 'débat', 'public speaking', 'art oratoire',
+			
+			// Extreme & Adventure
+			'escalade', 'climbing', 'grimpe', 'bouldering', 'bloc',
+			'alpinisme', 'mountaineering', 'parapente', 'paragliding',
+			'skydiving', 'saut en parachute', 'base jumping',
+			'wingsuit flying', 'coasteering', 'free running',
+			
+			// Equestrian & Animal Sports
+			'équitation', 'horseback riding', 'equestrian',
+			'saut d\'obstacles', 'show jumping', 'dressage',
+			'eventing', 'polo', 'equestrian vaulting',
+			'agility', 'agility canine', 'dog agility',
+			
+			// Shooting & Archery
+			'tir à l\'arc', 'archery', 'tir', 'shooting',
+			'sporting clays', 'tir sportif',
+			
+			// Motorsports
+			'karting', 'go-kart', 'moto', 'motocross',
+			'formula racing', 'rally', 'stock car racing',
+			'drone racing', 'course de drones',
+			
+			// Alternative Sports
+			'ultimate frisbee', 'disc golf', 'geocaching',
+			'football américain', 'american football',
+			'bubble football', 'cheese rolling', 'wife carrying',
+			'bog snorkeling', 'kabaddi', 'powerbocking',
+			'sport kite flying', 'cerf-volant sportif',
+			
+			// Additional relevant terms
+			'cercle', 'académie', 'academy', 'école', 'school',
+			'centre', 'center', 'centre de loisirs', 'leisure center',
+			'périscolaire', 'extracurricular', 'extracurriculaire',
+			'jeunesse', 'youth', 'adolescent', 'teenager',
+			'initiation', 'débutant', 'beginner'
+		];
 	}
 
 	/**

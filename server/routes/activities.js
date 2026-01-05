@@ -104,9 +104,14 @@ activitiesRouter.get('/', async (req, res) => {
 		const duration = Date.now() - startTime;
 		console.log(`✅ Returning ${paginated.length} activities (${total} total, ${duration}ms)`);
 		
-		// Return paginated response
+		// Return paginated response (ensure data is always an array)
+		const responseData = Array.isArray(paginated) ? paginated : [];
+		if (!Array.isArray(paginated)) {
+			console.warn('⚠️  Paginated data is not an array, converting to empty array');
+		}
+		
 		res.json({
-			data: paginated,
+			data: responseData,
 			pagination: {
 				limit: limitNum,
 				offset: offsetNum,

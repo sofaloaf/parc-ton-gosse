@@ -1114,6 +1114,20 @@ async function runCrawlerJob(jobId) {
 							mlStats.reviewed++;
 						}
 						
+						// Record outcome for adaptive learning (if adaptive search is available)
+						if (adaptiveSearch && entity.data) {
+							const searchInfo = {
+								keywords: entity.data.categories || [],
+								source: entity.data.sourceType || entity.sources?.[0] || 'unknown',
+								query: `${entity.data.name} ${arrondissement}`
+							};
+							adaptiveSearch.recordOutcome(
+								searchInfo,
+								scoreResult.recommendation === 'accept' ? 'approved' : 'rejected',
+								scoreResult.score
+							);
+						}
+						
 						// Include all entities (both accepted and reviewed)
 						scoredEntities.push(entity);
 					} catch (scoreError) {

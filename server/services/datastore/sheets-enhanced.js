@@ -394,12 +394,18 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			
 			headerRow.forEach((colName, i) => {
 				const fieldName = columnMap[i];
-				// Get value - use empty string if undefined, but preserve actual empty strings
-				let val = row[i] !== undefined ? (row[i] || '') : '';
+				// Get value - preserve the actual value from the sheet (even if it's an empty string)
+				// Google Sheets API returns undefined for empty cells, so we need to handle that
+				let val = row[i];
+				if (val === undefined || val === null) {
+					val = '';
+				} else {
+					val = String(val); // Convert to string but preserve the value
+				}
 				
 				// Debug: Log title-related values for first few rows
 				if (sheetType === 'activities' && rowIndex < 3 && (fieldName === 'title_en' || fieldName === 'title_fr' || fieldName === 'title' || fieldName === 'name')) {
-					console.log(`  📝 Row ${rowIndex + 1}, Column "${colName}" (${fieldName}): "${val}"`);
+					console.log(`  📝 Row ${rowIndex + 1}, Column "${colName}" (${fieldName}): "${val}" (raw: ${JSON.stringify(row[i])})`);
 				}
 				
 				// Handle ID specially - be more lenient

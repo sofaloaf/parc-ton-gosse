@@ -396,9 +396,9 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 				const fieldName = columnMap[i];
 				let val = row[i] || '';
 				
-				// Debug: Log title-related values for first row
-				if (sheetType === 'activities' && rowIndex === 0 && (fieldName === 'title_en' || fieldName === 'title_fr' || fieldName === 'title' || fieldName === 'name')) {
-					console.log(`  📝 Row 1, Column "${colName}" (${fieldName}): "${val}"`);
+				// Debug: Log title-related values for first few rows
+				if (sheetType === 'activities' && rowIndex < 3 && (fieldName === 'title_en' || fieldName === 'title_fr' || fieldName === 'title' || fieldName === 'name')) {
+					console.log(`  📝 Row ${rowIndex + 1}, Column "${colName}" (${fieldName}): "${val}"`);
 				}
 				
 				// Handle ID specially - be more lenient
@@ -446,16 +446,30 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 				}
 			} else if (obj.title_en !== undefined || obj.title_fr !== undefined) {
 				// New format: separate columns (check for undefined, not just truthy, to catch empty strings)
-				const titleEn = (obj.title_en || obj.title || '').toString().trim();
-				const titleFr = (obj.title_fr || obj.title || '').toString().trim();
-				// Use name as fallback only if it's not a providerId
+				// IMPORTANT: Don't use || operator here - we want to preserve empty strings if they exist
+				// Only use fallback if the value is truly undefined or null
+				const titleEn = obj.title_en !== undefined && obj.title_en !== null 
+					? String(obj.title_en).trim() 
+					: (obj.title ? String(obj.title).trim() : '');
+				const titleFr = obj.title_fr !== undefined && obj.title_fr !== null 
+					? String(obj.title_fr).trim() 
+					: (obj.title ? String(obj.title).trim() : '');
+				
+				// Use name as fallback only if it's not a providerId AND title columns are empty
 				const nameFallback = (obj.name && !String(obj.name).toLowerCase().startsWith('provider-') && String(obj.name).trim() !== obj.providerId) 
 					? String(obj.name).trim() 
 					: '';
+				
 				obj.title = {
 					en: titleEn || nameFallback,
 					fr: titleFr || nameFallback
 				};
+				
+				// Debug: Log if we got empty titles from title_en/title_fr
+				if (!titleEn && !titleFr && (obj.title_en !== undefined || obj.title_fr !== undefined)) {
+					console.log(`  ⚠️  Row has title_en/title_fr columns but values are empty. title_en="${obj.title_en}", title_fr="${obj.title_fr}"`);
+				}
+				
 				// If both are still empty, try to use name field as fallback (but NOT providerId)
 				if (!obj.title.en && !obj.title.fr && obj.name) {
 					const nameStr = String(obj.name).trim();

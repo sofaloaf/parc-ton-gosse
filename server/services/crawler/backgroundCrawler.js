@@ -795,7 +795,218 @@ async function runCrawlerJob(jobId) {
 				return true;
 			});
 			
-			arrondissementEntities.push(...filteredLocalityEntities, ...filteredIntelligentEntities);
+			// STEP 2: Advanced crawler with Playwright for JS-heavy sites
+			job.progress.message = `Step 2: Advanced crawler for ${arrondissement}...`;
+			let advancedEntities = [];
+			try {
+				const advancedCrawler = new AdvancedCrawler({
+					maxDepth: 2,
+					maxUrls: 30,
+					usePlaywright: true,
+					timeout: 30000
+				});
+				
+				const arrNum = arrondissement.replace('er', '').replace('e', '');
+				const startUrls = [
+					`https://mairie${arrNum}.paris.fr/recherche/activites?arrondissements=${postalCode}`,
+					`https://www.paris.fr/pages/activites-et-loisirs-${arrondissement}-1234`
+				];
+				
+				const extractorFn = async (document, html, url) => {
+					const pageText = (document.body?.textContent || html).toLowerCase();
+					const title = document.querySelector('h1')?.textContent?.trim() ||
+					             document.querySelector('.title')?.textContent?.trim() ||
+					             document.querySelector('title')?.textContent?.trim() || '';
+					const titleLower = title.toLowerCase();
+					
+					// Filter out newsletters and non-kids activities
+					if (titleLower.includes('newsletter') || 
+					    titleLower.includes('lettre d\'information') ||
+					    pageText.includes('abonnez-vous à la newsletter')) {
+						return null;
+					}
+					
+					const activityKeywords = getActivityKeywords();
+					const kidsKeywords = ['enfant', 'enfants', 'kids', 'children', 'jeune', 'jeunes', 'youth'];
+					const combined = `${titleLower} ${pageText}`;
+					const hasKidsMention = kidsKeywords.some(kw => combined.includes(kw));
+					const hasActivityKeyword = activityKeywords.some(kw => combined.includes(kw));
+					
+					if (!hasKidsMention && !hasActivityKeyword) {
+						return null;
+					}
+					
+					// Extract organization info
+					const websiteSelectors = [
+						'a[href^="http"]:not([href*="mairie"]):not([href*="paris.fr"])',
+						'a[href^="https://"]'
+					];
+					
+					let website = null;
+					for (const selector of websiteSelectors) {
+						const links = document.querySelectorAll(selector);
+						for (const link of links) {
+							const href = link.getAttribute('href');
+							if (href && href.startsWith('http') && 
+							    !href.includes('mairie') && 
+							    !href.includes('paris.fr') &&
+							    !href.includes('facebook.com') &&
+							    !href.includes('instagram.com') &&
+							    !href.includes('twitter.com')) {
+								website = href;
+								break;
+							}
+						}
+						if (website) break;
+					}
+					
+					const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+					const emailMatch = html.match(emailPattern);
+					const email = emailMatch ? emailMatch.find(e => !e.includes('mairie') && !e.includes('paris.fr') && !e.includes('noreply')) : null;
+					
+					const phonePattern = /(?:\+33|0)[1-9](?:[.\s]?\d{2}){4}/g;
+					const phoneMatch = html.match(phonePattern);
+					const phone = phoneMatch ? phoneMatch[0].trim() : null;
+					
+					if (!title && !website && !email) {
+						return null;
+					}
+					
+					return {
+						id: uuidv4(),
+						data: {
+							name: title || 'Organization',
+							title: title || 'Organization',
+							website: website,
+							websiteLink: website,
+							email: email,
+							phone: phone,
+							description: `Activity from ${arrondissement} arrondissement`,
+							neighborhood: arrondissement,
+							arrondissement: arrondissement
+						},
+						sources: [url],
+						confidence: 0.8
+					};
+				};
+				
+				const advancedResults = await advancedCrawler.crawl(startUrls, extractorFn);
+				
+				advancedEntities = (advancedResults.results || []).map(r => ({
+					id: r.id || uuidv4(),
+					data: {
+						name: r.data.name,
+						title: r.data.title,
+						website: r.data.website,
+						websiteLink: r.data.websiteLink,
+						email: r.data.email,
+						phone: r.data.phone,
+						address: r.data.address,
+						description: r.data.description || `Activity from ${arrondissement} arrondissement (via advanced crawler)`,
+						neighborhood: arrondissement,
+						arrondissement: arrondissement,
+						categories: r.data.categories || [],
+						images: r.data.images || []
+					},
+					sources: r.sources || [r.url],
+					confidence: r.confidence || 0.8,
+					extractedAt: r.extractedAt || new Date().toISOString(),
+					validation: { valid: true, score: 0.8 }
+				}));
+				
+				console.log(`✅ Advanced crawler: ${advancedEntities.length} entities`);
+			} catch (advancedError) {
+				console.error(`  ❌ Advanced crawler failed:`, advancedError.message);
+				allErrors.push({ stage: 'advanced_crawler', error: advancedError.message });
+			}
+			
+			// STEP 3: Crawler Orchestrator with Google Custom Search
+			job.progress.message = `Step 3: Orchestrator crawler for ${arrondissement}...`;
+			let orchestratorEntities = [];
+			try {
+				const orchestrator = new CrawlerOrchestrator({
+					discovery: {
+						googleApiKey: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY,
+						googleCx: process.env.GOOGLE_CUSTOM_SEARCH_CX,
+						minDelay: 1000,
+						maxDelay: 3000
+					},
+					enrichment: {
+						googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY
+					},
+					storage: {
+						sheetId: sheetId
+					},
+					compliance: {
+						minDelay: 1000,
+						maxDelay: 3000
+					}
+				});
+				
+				// Build comprehensive query using activity keywords
+				const activityKeywords = getActivityKeywords();
+				const topActivities = activityKeywords.slice(0, 30);
+				const activityQuery = topActivities.join(' OR ');
+				const query = `Paris ${arrondissement} arrondissement enfants kids (${activityQuery}) -newsletter -"lettre d'information"`;
+				
+				const crawlResults = await orchestrator.crawl(query, {
+					arrondissement: arrondissement,
+					postalCode: postalCode,
+					maxSources: 20, // More sources for local runs
+					geocode: false, // Skip geocoding to save time
+					categorize: false, // Skip categorization to save time
+					expandGraph: false,
+					tabName: generateTabName('pending', 'orchestrator-crawler')
+				});
+				
+				// Filter orchestrator results for kids activities
+				const kidsKeywords = ['enfant', 'enfants', 'kids', 'children', 'jeune', 'jeunes', 'youth'];
+				orchestratorEntities = (crawlResults.entities || [])
+					.filter(e => {
+						const name = (e.data?.name || e.data?.title || '').toLowerCase();
+						const desc = (e.data?.description || '').toLowerCase();
+						const website = (e.data?.website || e.data?.websiteLink || '').toLowerCase();
+						const combined = `${name} ${desc} ${website}`;
+						
+						const hasKidsMention = kidsKeywords.some(kw => combined.includes(kw));
+						const hasActivityKeyword = activityKeywords.some(kw => combined.includes(kw));
+						const adultOnlyKeywords = ['senior', 'séniors', 'adulte', 'adultes', 'adult', 'retraité'];
+						const isAdultOnly = adultOnlyKeywords.some(kw => combined.includes(kw)) && !hasKidsMention;
+						const genericNonprofitKeywords = ['bénévolat', 'volunteer', 'charity', 'charité', 'fondation'];
+						const isGenericNonprofit = genericNonprofitKeywords.some(kw => combined.includes(kw)) && !hasActivityKeyword;
+						
+						return (hasKidsMention || hasActivityKeyword) && !isAdultOnly && !isGenericNonprofit;
+					})
+					.map(e => ({
+						id: e.id || uuidv4(),
+						data: {
+							name: e.data?.name || e.data?.title || 'Organization',
+							title: e.data?.title || e.data?.name || 'Organization',
+							website: e.data?.website || e.data?.websiteLink,
+							websiteLink: e.data?.websiteLink || e.data?.website,
+							email: e.data?.email,
+							phone: e.data?.phone,
+							address: e.data?.address,
+							description: e.data?.description || `Activity from ${arrondissement} arrondissement (via orchestrator)`,
+							neighborhood: arrondissement,
+							arrondissement: arrondissement,
+							categories: e.data?.categories || [],
+							images: e.data?.images || []
+						},
+						sources: e.sources || [e.sourceUrl || 'orchestrator'],
+						confidence: e.confidence || 0.7,
+						extractedAt: e.extractedAt || new Date().toISOString(),
+						validation: { valid: true, score: e.confidence || 0.7 }
+					}));
+				
+				console.log(`✅ Orchestrator crawler: ${orchestratorEntities.length} kids activity entities (filtered from ${crawlResults.entities?.length || 0} total)`);
+			} catch (orchestratorError) {
+				console.error(`  ❌ Orchestrator crawler failed:`, orchestratorError.message);
+				allErrors.push({ stage: 'orchestrator_crawler', error: orchestratorError.message });
+			}
+			
+			// Merge all results
+			arrondissementEntities.push(...filteredLocalityEntities, ...filteredIntelligentEntities, ...advancedEntities, ...orchestratorEntities);
 			
 			// Save to Google Sheets
 			job.progress.message = `Saving results for ${arrondissement}...`;

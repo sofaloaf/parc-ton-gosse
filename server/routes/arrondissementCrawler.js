@@ -1139,10 +1139,6 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 				}
 				*/
 
-			// Initialize arrondissementEntities with locality-first results
-			let arrondissementEntities = [...filteredLocalityEntities];
-			console.log(`  ✅ Starting with ${arrondissementEntities.length} locality-first entities`);
-
 			// Convert to enhanced crawler format and filter newsletters + rejected
 			const mairieEntities = mairieActivities
 					.filter(activity => {
@@ -1194,7 +1190,7 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						validation: { valid: true, score: 0.9 }
 					}));
 
-				const arrondissementEntities = [...mairieEntities];
+				// arrondissementEntities will be initialized after locality-first results are filtered
 
 				// STEP 2: Use intelligent crawler with seed sources and AI-assisted extraction
 				console.log(`📋 Step 2: Using intelligent crawler with seed sources...`);
@@ -1458,6 +1454,10 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 			
 			console.log(`  ✅ After filtering: ${filteredLocalityEntities.length} unique locality-first entities`);
 			filteredLocalityEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
+
+			// Initialize arrondissementEntities with locality-first results
+			let arrondissementEntities = [...filteredLocalityEntities];
+			console.log(`  ✅ Starting with ${arrondissementEntities.length} locality-first entities`);
 
 			// Add intelligent crawler results (secondary)
 			console.log(`  🔄 Merging ${intelligentEntities.length} intelligent crawler entities...`);

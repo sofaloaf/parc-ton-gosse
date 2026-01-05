@@ -396,46 +396,75 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			});
 			
 			// Combine bilingual fields - handle both old (JSON) and new (separate columns) formats
+			// Store raw values before transformation for debugging
+			const rawTitleEn = obj.title_en;
+			const rawTitleFr = obj.title_fr;
+			const rawTitle = obj.title;
+			const rawName = obj.name;
+			
 			// If title is already an object (from JSON parsing), keep it
 			if (typeof obj.title === 'object' && obj.title !== null && !Array.isArray(obj.title)) {
 				// Already a bilingual object, ensure it has en/fr
 				if (!obj.title.en && !obj.title.fr) {
 					// Invalid object, try to get from separate columns
 					obj.title = {
-						en: obj.title_en || '',
-						fr: obj.title_fr || ''
+						en: (obj.title_en || '').trim(),
+						fr: (obj.title_fr || '').trim()
 					};
 				}
-			} else if (obj.title_en || obj.title_fr) {
-				// New format: separate columns
+			} else if (obj.title_en !== undefined || obj.title_fr !== undefined) {
+				// New format: separate columns (check for undefined, not just truthy, to catch empty strings)
+				const titleEn = (obj.title_en || obj.title || '').toString().trim();
+				const titleFr = (obj.title_fr || obj.title || '').toString().trim();
 				obj.title = {
-					en: (obj.title_en || obj.title || '').trim(),
-					fr: (obj.title_fr || obj.title || '').trim()
+					en: titleEn || (obj.name ? String(obj.name).trim() : ''),
+					fr: titleFr || (obj.name ? String(obj.name).trim() : '')
 				};
-				// If both are empty, try to use name field as fallback
+				// If both are still empty, try to use name field as fallback
 				if (!obj.title.en && !obj.title.fr && obj.name) {
+					const nameStr = String(obj.name).trim();
 					obj.title = {
-						en: String(obj.name).trim(),
-						fr: String(obj.name).trim()
+						en: nameStr,
+						fr: nameStr
 					};
 				}
 			} else if (obj.title && typeof obj.title === 'string') {
 				// Single string title - use for both languages
 				const titleStr = obj.title.trim();
 				obj.title = {
-					en: titleStr,
-					fr: titleStr
+					en: titleStr || (obj.name ? String(obj.name).trim() : ''),
+					fr: titleStr || (obj.name ? String(obj.name).trim() : '')
 				};
 			} else if (obj.name && typeof obj.name === 'string') {
 				// Fallback: use name field if title is missing
-				const nameStr = obj.name.trim();
+				const nameStr = String(obj.name).trim();
 				obj.title = {
 					en: nameStr,
 					fr: nameStr
 				};
 			} else if (!obj.title) {
-				// No title at all - set empty
+				// No title at all - set empty (but try name one more time)
+				obj.title = obj.name 
+					? { en: String(obj.name).trim(), fr: String(obj.name).trim() }
+					: { en: '', fr: '' };
+			}
+			
+			// Ensure title is always an object with en/fr
+			if (!obj.title || typeof obj.title !== 'object' || Array.isArray(obj.title)) {
 				obj.title = { en: '', fr: '' };
+			}
+			if (!obj.title.en) obj.title.en = obj.title.fr || '';
+			if (!obj.title.fr) obj.title.fr = obj.title.en || '';
+			
+			// Debug: Log if title is still empty after all transformations
+			if ((!obj.title.en && !obj.title.fr)) {
+				console.warn(`⚠️  Activity ${obj.id} has no title after transformation. Raw data:`, {
+					title_en: rawTitleEn,
+					title_fr: rawTitleFr,
+					title: rawTitle,
+					name: rawName,
+					allKeys: Object.keys(obj)
+				});
 			}
 			
 			// Clean up title_en/title_fr if they exist

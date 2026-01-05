@@ -59,20 +59,56 @@ export default function ActivityCard({ activity, locale, onView, rating = { aver
 	}, [onView]);
 	
 	// Handle title - support both {en, fr} object and string formats
+	// Also handle title_en/title_fr format (legacy support)
 	let title = '';
-	if (activity.title) {
-		if (typeof activity.title === 'object' && activity.title !== null) {
+	
+	// First, try title_en/title_fr (legacy format that might come through)
+	if (activity.title_en !== undefined || activity.title_fr !== undefined) {
+		title = activity.title_en || activity.title_fr || '';
+	}
+	
+	// Then try title object
+	if (!title && activity.title) {
+		if (typeof activity.title === 'object' && activity.title !== null && !Array.isArray(activity.title)) {
 			title = activity.title[locale] || activity.title.en || activity.title.fr || '';
 		} else if (typeof activity.title === 'string') {
 			title = activity.title;
 		}
 	}
+	
 	// Fallback to name field if title is empty
 	if (!title && activity.name) {
-		title = typeof activity.name === 'object' 
-			? (activity.name[locale] || activity.name.en || activity.name.fr || '')
-			: String(activity.name);
+		if (typeof activity.name === 'object' && activity.name !== null && !Array.isArray(activity.name)) {
+			title = activity.name[locale] || activity.name.en || activity.name.fr || '';
+		} else {
+			title = String(activity.name);
+		}
 	}
+	
+	// Last resort: check all possible fields
+	if (!title) {
+		// Try any field that might contain a name
+		const possibleFields = ['organizationName', 'providerId', 'organization', 'provider'];
+		for (const field of possibleFields) {
+			if (activity[field]) {
+				title = String(activity[field]);
+				break;
+			}
+		}
+	}
+	
+	// Debug in development
+	if (!title) {
+		console.warn('⚠️  ActivityCard: No title found for activity:', {
+			id: activity.id,
+			title: activity.title,
+			title_en: activity.title_en,
+			title_fr: activity.title_fr,
+			name: activity.name,
+			allKeys: Object.keys(activity).slice(0, 10) // First 10 keys for debugging
+		});
+	}
+	
 	title = formatTitle(title || 'Activity', locale);
 	
 	// Handle description - support both {en, fr} object and string formats

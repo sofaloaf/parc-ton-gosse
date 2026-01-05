@@ -472,26 +472,196 @@ export class ExtractionModule {
 	}
 
 	/**
-	 * Extract data from PDF (placeholder - requires pdf-parse or similar)
+	 * Extract data from PDF using pdf-parse
+	 * PDFs often contain association registries, bulletins, or activity listings
 	 */
 	async extractFromPDF(url, options = {}) {
-		// Note: This requires a PDF parsing library like pdf-parse
-		// For now, return a placeholder structure
-		return {
-			url,
-			source: 'pdf',
-			extractedAt: new Date().toISOString(),
-			confidence: 0,
-			data: {},
-			note: 'PDF extraction requires pdf-parse library. Install with: npm install pdf-parse',
-			error: 'PDF extraction not yet implemented'
-		};
+		try {
+			// Lazy load pdf-parse
+			let pdfParse;
+			try {
+				pdfParse = (await import('pdf-parse')).default;
+			} catch (error) {
+				console.warn('⚠️  pdf-parse not available, skipping PDF extraction');
+				return {
+					url,
+					source: 'pdf',
+					extractedAt: new Date().toISOString(),
+					confidence: 0,
+					data: {},
+					error: 'PDF parsing library not available'
+				};
+			}
 
-		// Future implementation would:
-		// 1. Download PDF
-		// 2. Extract text using pdf-parse
-		// 3. Apply named entity recognition
-		// 4. Extract structured information
+			console.log(`  📄 Extracting from PDF: ${url}`);
+			
+			// 1. Download PDF
+			const response = await fetch(url, {
+				headers: {
+					'User-Agent': this.getRandomUserAgent(),
+					'Accept': 'application/pdf,*/*'
+				},
+				timeout: this.timeout
+			});
+
+			if (!response.ok) {
+				throw new Error(`Failed to download PDF: ${response.status} ${response.statusText}`);
+			}
+
+			const pdfBuffer = await response.arrayBuffer();
+			const buffer = Buffer.from(pdfBuffer);
+
+			// 2. Extract text using pdf-parse
+			const pdfData = await pdfParse(buffer);
+			const text = pdfData.text;
+
+			if (!text || text.trim().length === 0) {
+				console.warn(`  ⚠️  PDF contains no extractable text: ${url}`);
+				return {
+					url,
+					source: 'pdf',
+					extractedAt: new Date().toISOString(),
+					confidence: 0,
+					data: {},
+					note: 'PDF contains no extractable text (may be image-based)'
+				};
+			}
+
+			console.log(`  ✅ Extracted ${text.length} characters from PDF (${pdfData.numpages || 0} pages)`);
+
+			// 3. Extract organization entities from PDF text using NLP-like patterns
+			const entities = this.extractEntitiesFromPDFText(text, url, options);
+
+			console.log(`  ✅ Found ${entities.length} potential organizations in PDF`);
+
+			// Return in the same format as HTML extraction
+			return {
+				url,
+				source: 'pdf',
+				extractedAt: new Date().toISOString(),
+				confidence: entities.length > 0 ? 0.7 : 0.3,
+				data: {
+					name: entities[0]?.name || '',
+					title: entities[0]?.name || '',
+					website: entities[0]?.website || null,
+					email: entities[0]?.email || null,
+					phone: entities[0]?.phone || null,
+					address: entities[0]?.address || null,
+					description: `Extracted from PDF document (${pdfData.numpages || 0} pages)`,
+					entities: entities // Include all entities found
+				},
+				entities: entities, // Also include at top level for compatibility
+				textLength: text.length,
+				pageCount: pdfData.numpages || 0
+			};
+		} catch (error) {
+			console.error(`  ❌ PDF extraction failed for ${url}:`, error.message);
+			return {
+				url,
+				source: 'pdf',
+				extractedAt: new Date().toISOString(),
+				confidence: 0,
+				data: {},
+				error: error.message
+			};
+		}
+	}
+
+	/**
+	 * Extract organization entities from PDF text using NLP-like patterns
+	 */
+	extractEntitiesFromPDFText(text, sourceUrl, options = {}) {
+		const entities = [];
+		const arrondissement = options.arrondissement || '';
+
+		// Pattern 1: Association names (common formats in French registries)
+		const associationPatterns = [
+			/(?:Association|Club|Cercle|Centre|Académie|École)\s+([A-Z][a-zA-Z\s\-'éèêëàâäôöùûüç]{3,60})/g,
+			/([A-Z][a-zA-Z\s\-'éèêëàâäôöùûüç]{3,60})\s*\(?(?:Association|Club|Cercle|Centre)/g,
+			/(?:L\'|La\s+|Le\s+)?([A-Z][a-zA-Z\s\-'éèêëàâäôöùûüç]{3,60})\s*-\s*(?:Association|Club)/g
+		];
+
+		const foundNames = new Set();
+		for (const pattern of associationPatterns) {
+			const matches = text.matchAll(pattern);
+			for (const match of matches) {
+				const name = match[1]?.trim();
+				if (name && name.length > 3 && name.length < 100) {
+					foundNames.add(name);
+				}
+			}
+		}
+
+		// Pattern 2: Extract contact information
+		const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+		const emails = [...new Set(text.match(emailPattern) || [])]
+			.filter(e => !e.includes('example.com') && !e.includes('noreply') && !e.includes('no-reply'));
+
+		const phonePattern = /(?:\+33|0)[1-9](?:[.\s\-]?\d{2}){4}/g;
+		const phones = [...new Set(text.match(phonePattern) || [])];
+
+		const websitePattern = /https?:\/\/(?:www\.)?([a-zA-Z0-9\-]+\.(?:fr|com|org|net|eu))(?:\/[^\s<>"']*)?/g;
+		const websites = [...new Set(text.match(websitePattern) || [])]
+			.filter(w => !w.includes('facebook.com') && !w.includes('instagram.com'));
+
+		// Pattern 3: Address patterns (French format)
+		const addressPattern = /(\d{1,3}(?:\s+[a-zA-Z]+){1,3}(?:\s+[a-zA-Z]+)*\s+(?:rue|avenue|boulevard|place|allée|impasse|chemin)\s+[A-Za-z\s\-']+,\s*\d{5}\s+[A-Za-z\s\-']+)/g;
+		const addresses = [...new Set(text.match(addressPattern) || [])];
+
+		// Pattern 4: Activity keywords
+		const activityKeywords = [
+			'sport', 'activité', 'activités', 'club', 'association',
+			'théâtre', 'danse', 'musique', 'arts martiaux', 'gymnastique',
+			'natation', 'tennis', 'football', 'basketball', 'judo', 'karate'
+		];
+
+		// Group information by proximity in text
+		const textChunks = [];
+		const chunkSize = 500;
+		for (let i = 0; i < text.length; i += chunkSize) {
+			textChunks.push({
+				text: text.substring(i, i + chunkSize),
+				start: i,
+				end: Math.min(i + chunkSize, text.length)
+			});
+		}
+
+		// For each name found, try to find associated contact info nearby
+		for (const name of foundNames) {
+			const nameIndex = text.indexOf(name);
+			if (nameIndex === -1) continue;
+
+			const relevantChunk = textChunks.find(chunk => 
+				nameIndex >= chunk.start && nameIndex < chunk.end
+			) || { text: text.substring(Math.max(0, nameIndex - 200), Math.min(text.length, nameIndex + 200)) };
+
+			const chunkText = relevantChunk.text;
+			const nearbyEmail = emails.find(e => chunkText.includes(e)) || null;
+			const nearbyPhone = phones.find(p => chunkText.includes(p)) || null;
+			const nearbyWebsite = websites.find(w => chunkText.includes(w)) || null;
+			const nearbyAddress = addresses.find(a => chunkText.includes(a)) || null;
+
+			const hasActivityKeyword = activityKeywords.some(keyword => 
+				chunkText.toLowerCase().includes(keyword)
+			);
+
+			if (nearbyEmail || nearbyPhone || nearbyWebsite || nearbyAddress || hasActivityKeyword) {
+				entities.push({
+					name: name,
+					email: nearbyEmail,
+					phone: nearbyPhone,
+					website: nearbyWebsite,
+					address: nearbyAddress,
+					description: hasActivityKeyword ? `Organization found in PDF document` : '',
+					source: 'pdf',
+					sourceUrl: sourceUrl,
+					arrondissement: arrondissement,
+					confidence: (nearbyEmail || nearbyPhone || nearbyWebsite) ? 0.7 : 0.5
+				});
+			}
+		}
+
+		return entities;
 	}
 
 	/**

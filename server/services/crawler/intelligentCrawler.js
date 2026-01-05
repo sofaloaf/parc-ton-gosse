@@ -156,6 +156,25 @@ export class IntelligentCrawler {
 			});
 		}
 
+		// 3.5. PDF documents (association registries, bulletins, etc.)
+		// These are often found on government sites and contain structured organization data
+		const pdfSearchQueries = [
+			`filetype:pdf association ${arrondissement} arrondissement Paris`,
+			`filetype:pdf registre associations ${arrondissement} Paris`,
+			`filetype:pdf bulletin associations ${arrondissement} Paris`
+		];
+
+		if (this.googleApiKey && this.googleCx) {
+			for (const query of pdfSearchQueries) {
+				seedUrls.push({
+					url: `google_search_pdf:${query}`,
+					priority: 0.7,
+					metadata: { query, source: 'google_pdf_search' },
+					source: 'google_pdf_search'
+				});
+			}
+		}
+
 		// 4. Google Custom Search for specific queries using comprehensive activity keywords
 		if (this.googleApiKey && this.googleCx) {
 			const activityKeywords = this.getActivityKeywords();
@@ -432,10 +451,11 @@ export class IntelligentCrawler {
 	}
 
 	/**
-	 * Extract organization links from a page
+	 * Extract organization links from a page (including PDF links)
 	 */
 	extractOrganizationLinks(document, baseUrl) {
 		const links = new Set();
+		const pdfLinks = new Set();
 		
 		// Look for links that likely point to organization pages
 		const linkSelectors = [
@@ -462,7 +482,12 @@ export class IntelligentCrawler {
 					                `${baseUrl}/${href}`;
 					
 					if (fullUrl.startsWith('http') && !this.visitedUrls.has(fullUrl)) {
-						links.add(fullUrl);
+						// Check if it's a PDF
+						if (fullUrl.toLowerCase().endsWith('.pdf') || fullUrl.toLowerCase().includes('.pdf?')) {
+							pdfLinks.add(fullUrl);
+						} else {
+							links.add(fullUrl);
+						}
 					}
 				}
 			} catch (error) {
@@ -470,7 +495,22 @@ export class IntelligentCrawler {
 			}
 		}
 
-		return Array.from(links);
+		// Also search for PDF links in page text
+		const html = document.documentElement.outerHTML;
+		const pdfUrlPattern = /https?:\/\/[^\s<>"']+\.pdf(?:\?[^\s<>"']*)?/gi;
+		const pdfMatches = html.match(pdfUrlPattern);
+		if (pdfMatches) {
+			pdfMatches.forEach(url => {
+				if (!this.visitedUrls.has(url)) {
+					pdfLinks.add(url);
+				}
+			});
+		}
+
+		return {
+			regularLinks: Array.from(links),
+			pdfLinks: Array.from(pdfLinks)
+		};
 	}
 
 	/**
@@ -576,18 +616,61 @@ export class IntelligentCrawler {
 			for (let i = 0; i < Math.min(prioritizedUrls.length, maxPages); i++) {
 				const seed = prioritizedUrls[i];
 				
-				if (seed.url.startsWith('google_search:')) {
-					// Handle Google search
+				if (seed.url.startsWith('google_search:') || seed.url.startsWith('google_search_pdf:')) {
+					// Handle Google search (regular or PDF-specific)
 					const query = seed.metadata.query;
 					try {
 						const searchResults = await this.googleCustomSearch(query);
 						for (const result of searchResults) {
 							if (!this.visitedUrls.has(result.url)) {
-								this.priorityQueue.push({
-									url: result.url,
-									priority: 0.6,
-									source: 'google_search'
-								});
+								// Check if result is a PDF
+								const isPDF = result.url.toLowerCase().endsWith('.pdf') || 
+								             result.url.toLowerCase().includes('.pdf?') ||
+								             seed.url.startsWith('google_search_pdf:');
+								
+								if (isPDF) {
+									// Process PDF immediately
+									try {
+										console.log(`  📄 Processing PDF from search: ${result.url}`);
+										const { ExtractionModule } = await import('./extraction.js');
+										const extractor = new ExtractionModule({ timeout: 30000 });
+										
+										const pdfResult = await extractor.extractFromPDF(result.url, {
+											arrondissement: arrondissement
+										});
+
+										if (pdfResult.entities && pdfResult.entities.length > 0) {
+											const pdfEntities = pdfResult.entities.map(e => ({
+												...e,
+												sourceUrl: result.url,
+												arrondissement: arrondissement
+											}))
+											.map(e => this.validateEntity(e))
+											.filter(e => e !== null);
+
+											for (const entity of pdfEntities) {
+												if (!this.isDuplicate(entity, results.entities)) {
+													results.entities.push(entity);
+													results.stats.entitiesExtracted++;
+													console.log(`    ✅ Extracted from PDF: ${entity.name}`);
+												} else {
+													results.stats.duplicatesRemoved++;
+												}
+											}
+										}
+										this.visitedUrls.add(result.url);
+									} catch (pdfError) {
+										console.warn(`  ⚠️  PDF extraction failed:`, pdfError.message);
+										results.errors.push({ url: result.url, error: pdfError.message });
+									}
+								} else {
+									// Regular URL, add to priority queue
+									this.priorityQueue.push({
+										url: result.url,
+										priority: 0.6,
+										source: 'google_search'
+									});
+								}
 							}
 						}
 					} catch (error) {
@@ -647,17 +730,58 @@ export class IntelligentCrawler {
 
 					console.log(`  ✅ [${i + 1}/${Math.min(prioritizedUrls.length, maxPages)}] ${seed.url}: ${uniqueEntities.length} entities`);
 
-					// Extract organization links for further crawling
+					// Extract organization links for further crawling (including PDFs)
 					const baseUrl = new URL(seed.url).origin;
-					const orgLinks = this.extractOrganizationLinks(document, baseUrl);
+					const linkResults = this.extractOrganizationLinks(document, baseUrl);
 					
-					for (const link of orgLinks.slice(0, 10)) { // Limit to 10 links per page
+					// Add regular links to priority queue
+					for (const link of linkResults.regularLinks.slice(0, 10)) {
 						if (!this.visitedUrls.has(link)) {
 							this.priorityQueue.push({
 								url: link,
 								priority: 0.5,
 								source: 'discovered_link'
 							});
+						}
+					}
+
+					// Process PDF links immediately (extract entities from PDFs)
+					for (const pdfLink of linkResults.pdfLinks.slice(0, 5)) { // Limit to 5 PDFs per page
+						if (this.visitedUrls.has(pdfLink)) continue;
+						this.visitedUrls.add(pdfLink);
+
+						try {
+							console.log(`  📄 Processing PDF: ${pdfLink}`);
+							// Use extraction module for PDF processing
+							const { ExtractionModule } = await import('./extraction.js');
+							const extractor = new ExtractionModule({ timeout: 30000 });
+							
+							const pdfResult = await extractor.extractFromPDF(pdfLink, {
+								arrondissement: arrondissement
+							});
+
+							if (pdfResult.entities && pdfResult.entities.length > 0) {
+								const pdfEntities = pdfResult.entities.map(e => ({
+									...e,
+									sourceUrl: pdfLink,
+									arrondissement: arrondissement
+								}))
+								.map(e => this.validateEntity(e))
+								.filter(e => e !== null);
+
+								for (const entity of pdfEntities) {
+									if (!this.isDuplicate(entity, results.entities)) {
+										results.entities.push(entity);
+										results.stats.entitiesExtracted++;
+										console.log(`    ✅ Extracted from PDF: ${entity.name}`);
+									} else {
+										results.stats.duplicatesRemoved++;
+									}
+								}
+							}
+						} catch (pdfError) {
+							console.warn(`  ⚠️  PDF extraction failed for ${pdfLink}:`, pdfError.message);
+							results.errors.push({ url: pdfLink, error: pdfError.message });
 						}
 					}
 

@@ -207,6 +207,20 @@ function parseCSV(csvText) {
 function filterKidsActivities(associations) {
 	console.log(`\n🔍 Filtering ${associations.length} associations for kids' activities...`);
 	
+	// First, let's inspect the first few associations to see the actual field names
+	if (associations.length > 0) {
+		console.log(`\n📋 Sample association fields (first record):`);
+		const sample = associations[0];
+		console.log(`   Available fields:`, Object.keys(sample).slice(0, 20).join(', '));
+		console.log(`   Sample values:`);
+		Object.keys(sample).slice(0, 10).forEach(key => {
+			const value = sample[key];
+			if (value && typeof value === 'string' && value.length < 100) {
+				console.log(`     ${key}: ${value.substring(0, 80)}`);
+			}
+		});
+	}
+	
 	// Age group keywords (French)
 	const kidsAgeKeywords = [
 		'jeunes enfants', 'jeune enfant', 'enfants', 'enfant',
@@ -225,7 +239,7 @@ function filterKidsActivities(associations) {
 		'sport', 'sports', 'sportif', 'sportive',
 		'activité', 'activités', 'activite', 'activites',
 		'culture', 'culturel', 'culturelle', 'culturels',
-		'loisir', 'loisirs', 'loisir', 'loisirs',
+		'loisir', 'loisirs',
 		'éducation', 'éducatif', 'éducative',
 		'art', 'arts', 'artistique', 'artistiques',
 		'musique', 'musical', 'musicale',
@@ -246,25 +260,76 @@ function filterKidsActivities(associations) {
 		'mentions légales', 'politique de cookies'
 	];
 	
-	const filtered = associations.filter(assoc => {
-		// Get relevant fields (handle different field names)
-		const publicVise = (assoc['pv-public visé'] || assoc['pv_public_vise'] || assoc['public_vise'] || assoc['public visé'] || assoc['publicVise'] || '').toLowerCase();
-		const secteursActivites = (assoc['sa secteurs d\'activités'] || assoc['sa_secteurs_activites'] || assoc['secteurs_activites'] || assoc['secteurs d\'activités'] || assoc['secteursActivites'] || '').toLowerCase();
-		const nom = (assoc['nom'] || assoc['noms'] || assoc['name'] || assoc['association'] || '').toLowerCase();
-		const objet = (assoc['objet'] || assoc['object'] || assoc['description'] || '').toLowerCase();
+	let debugCount = 0;
+	const filtered = associations.filter((assoc, index) => {
+		// Try multiple possible field name variations
+		const publicVise = (
+			assoc['pv-public visé'] || 
+			assoc['pv_public_vise'] || 
+			assoc['public_vise'] || 
+			assoc['public visé'] || 
+			assoc['publicVise'] ||
+			assoc['pv_public_vise'] ||
+			assoc['public_vise'] ||
+			assoc['public'] ||
+			''
+		).toString().toLowerCase();
+		
+		const secteursActivites = (
+			assoc['sa secteurs d\'activités'] || 
+			assoc['sa_secteurs_activites'] || 
+			assoc['secteurs_activites'] || 
+			assoc['secteurs d\'activités'] || 
+			assoc['secteursActivites'] ||
+			assoc['secteurs_activites'] ||
+			assoc['secteurs'] ||
+			assoc['activites'] ||
+			''
+		).toString().toLowerCase();
+		
+		const nom = (
+			assoc['nom'] || 
+			assoc['noms'] || 
+			assoc['name'] || 
+			assoc['association'] ||
+			assoc['libelle'] ||
+			''
+		).toString().toLowerCase();
+		
+		const objet = (
+			assoc['objet'] || 
+			assoc['object'] || 
+			assoc['description'] ||
+			assoc['objet_social'] ||
+			''
+		).toString().toLowerCase();
 		
 		const combined = `${publicVise} ${secteursActivites} ${nom} ${objet}`;
+		
+		// Debug first few to see what we're getting
+		if (index < 5 && debugCount < 5) {
+			console.log(`\n  🔍 Sample ${index + 1}:`);
+			console.log(`     Nom: ${nom || '(empty)'}`);
+			console.log(`     Public Visé: ${publicVise || '(empty)'}`);
+			console.log(`     Secteurs: ${secteursActivites || '(empty)'}`);
+			console.log(`     Objet: ${objet.substring(0, 80) || '(empty)'}`);
+			debugCount++;
+		}
 		
 		// Exclude adult-only
 		if (excludedTerms.some(term => combined.includes(term))) {
 			return false;
 		}
 		
-		// Must have kids age group OR activity sector
+		// Must have kids age group OR activity sector OR relevant keywords in name/objet
 		const hasKidsAge = kidsAgeKeywords.some(kw => publicVise.includes(kw) || combined.includes(kw));
 		const hasActivitySector = activitySectorKeywords.some(kw => secteursActivites.includes(kw) || combined.includes(kw));
 		
-		return hasKidsAge || hasActivitySector;
+		// Also check if name or objet contains activity keywords (more lenient)
+		const hasActivityInName = activitySectorKeywords.some(kw => nom.includes(kw) || objet.includes(kw));
+		const hasKidsInName = kidsAgeKeywords.some(kw => nom.includes(kw) || objet.includes(kw));
+		
+		return hasKidsAge || hasActivitySector || hasActivityInName || hasKidsInName;
 	});
 	
 	console.log(`  ✅ Filtered to ${filtered.length} kids' activity associations`);

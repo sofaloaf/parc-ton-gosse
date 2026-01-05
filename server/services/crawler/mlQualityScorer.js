@@ -89,10 +89,11 @@ export class MLQualityScorer {
 	}
 
 	/**
-	 * Train the model on existing activities
-	 * @param {Array} activities - Array of activity objects (all should be "approved")
+	 * Train the model on activities with labels
+	 * @param {Array} activities - Array of activity objects
+	 * @param {Array} labels - Optional array of labels (0-10). If not provided, all activities are labeled as 10 (approved)
 	 */
-	async train(activities) {
+	async train(activities, labels = null) {
 		if (this.isTraining) {
 			console.log('⏳ Model is already training, skipping...');
 			return;
@@ -104,13 +105,20 @@ export class MLQualityScorer {
 		try {
 			// Extract features for all activities
 			const features = [];
-			const labels = [];
+			const trainingLabels = [];
 
-			for (const activity of activities) {
+			for (let i = 0; i < activities.length; i++) {
+				const activity = activities[i];
 				const featureVector = this.featureExtractor.extract(activity);
 				features.push(featureVector);
-				// All existing activities are "approved" = score 10
-				labels.push(10.0);
+				
+				// Use provided labels or default to 10 (approved)
+				if (labels && labels[i] !== undefined) {
+					trainingLabels.push(labels[i]);
+				} else {
+					// Default: all activities are "approved" = score 10
+					trainingLabels.push(10.0);
+				}
 			}
 
 			if (features.length === 0) {
@@ -124,7 +132,7 @@ export class MLQualityScorer {
 
 			// Convert to tensors
 			const featureTensor = tf.tensor2d(normalizedFeatures);
-			const labelTensor = tf.tensor2d(labels.map(l => [l]));
+			const labelTensor = tf.tensor2d(trainingLabels.map(l => [l]));
 
 			// Create or load model
 			if (!this.model) {

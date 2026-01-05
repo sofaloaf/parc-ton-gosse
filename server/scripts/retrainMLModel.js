@@ -216,16 +216,17 @@ async function main() {
 		await scorer.initialize();
 		console.log('✅ ML Quality Scorer initialized\n');
 
-		// Retrain model
+		// Retrain model with actual labels
 		console.log('🎓 Retraining model with combined data...');
-		console.log('   (Original activities + user feedback)\n');
+		console.log('   (Original activities + user feedback with actual labels)\n');
 		
 		const activitiesToTrain = trainingData.map(t => t.activity);
-		await scorer.train(activitiesToTrain);
+		const labelsToTrain = trainingData.map(t => t.label); // Use actual labels (10 for approved, 0 for rejected)
+		
+		await scorer.train(activitiesToTrain, labelsToTrain);
 
-		// But we need to use the actual labels (not all 10)
-		// For now, we'll train with all as 10, but in future can implement weighted training
 		console.log('\n✅ Retraining completed successfully!');
+		console.log(`   Model now knows: ${trainingData.filter(t => t.label >= 7).length} approved vs ${trainingData.filter(t => t.label < 7).length} rejected examples`);
 		console.log('📊 Model is ready to use for scoring organizations.\n');
 
 		// Test the model on feedback examples

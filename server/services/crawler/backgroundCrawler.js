@@ -17,6 +17,8 @@ import { IntelligentCrawler } from './intelligentCrawler.js';
 import { AdvancedCrawler } from './advancedCrawler.js';
 import { CrawlerOrchestrator } from './orchestrator.js';
 import { MLQualityScorer } from './mlQualityScorer.js';
+import { AdaptiveSearchStrategy } from './adaptiveSearch.js';
+import { EnhancedDiscovery } from './enhancedDiscovery.js';
 import { generateTabName, activityToSheetRow, ACTIVITIES_COLUMN_ORDER, getHeaders } from '../../utils/sheetsFormatter.js';
 
 // In-memory job store (in production, use Redis or database)

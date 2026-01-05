@@ -1139,8 +1139,12 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 				}
 				*/
 
-				// Convert to enhanced crawler format and filter newsletters + rejected
-				const mairieEntities = mairieActivities
+			// Initialize arrondissementEntities with locality-first results
+			let arrondissementEntities = [...filteredLocalityEntities];
+			console.log(`  ✅ Starting with ${arrondissementEntities.length} locality-first entities`);
+
+			// Convert to enhanced crawler format and filter newsletters + rejected
+			const mairieEntities = mairieActivities
 					.filter(activity => {
 						const name = (activity.name || '').toLowerCase().trim();
 						const website = (activity.website || '').toLowerCase();
@@ -1515,10 +1519,13 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 
 					console.log(`  ✅ After filtering: ${filteredIntelligentEntities.length} unique intelligent crawler entities`);
 
-					// Update existing names set
-					filteredIntelligentEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
+			// Update existing names set
+			filteredIntelligentEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
 
-					// Add advanced crawler results (with newsletter + rejected filtering)
+			// Note: arrondissementEntities already contains locality-first results
+			// Now add other crawler results
+
+			// Add advanced crawler results (with newsletter + rejected filtering)
 					const advancedEntities = (advancedResults?.results || []).map(r => ({
 						id: r.id || uuidv4(),
 						data: r.data,
@@ -1594,10 +1601,7 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					advancedEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
 					enhancedEntities.forEach(e => existingNames.add((e.data?.name || e.data?.title || '').toLowerCase()));
 
-			// Add locality-first results FIRST (highest precision), then others
-			arrondissementEntities.push(...filteredLocalityEntities);
-			console.log(`  ✅ Added ${filteredLocalityEntities.length} locality-first entities to results`);
-			
+			// Add intelligent crawler results (locality-first already added above)
 			arrondissementEntities.push(...filteredIntelligentEntities);
 			console.log(`  ✅ Added ${filteredIntelligentEntities.length} intelligent crawler entities to results`);
 					

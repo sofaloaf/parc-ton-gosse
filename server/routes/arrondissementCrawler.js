@@ -1122,12 +1122,56 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					continue;
 				}
 
-				console.log(`\n🔍 Starting HYBRID crawl for ${arrondissement} (${postalCode})`);
+			console.log(`\n🔍 Starting LOCALITY-FIRST crawl for ${arrondissement} (${postalCode})`);
 
-				// STEP 1: Use proven working crawler approach (this works!)
-				console.log(`📋 Step 1: Using proven mairie crawler...`);
-				const mairieActivities = await searchMairieActivities(arrondissement, postalCode);
-				console.log(`✅ Found ${mairieActivities.length} activities from mairie pages`);
+			// STEP 0: Use locality-first crawler (NEW - prioritizes precision)
+			console.log(`📋 Step 0: Using locality-first crawler (municipal sources first)...`);
+			let localityEntities = [];
+			try {
+				const localityCrawler = new LocalityFirstCrawler({
+					timeout: 30000,
+					minDelay: 1000,
+					maxDelay: 2000
+				});
+				
+				const localityResults = await localityCrawler.crawl(arrondissement, postalCode);
+				console.log(`✅ Locality-first crawler: ${localityResults.stats.entitiesValidated} validated entities from ${localityResults.stats.sourcesCrawled} municipal sources`);
+				
+				// Convert locality-first results to entity format
+				localityEntities = localityResults.entities.map(e => ({
+					id: e.id || uuidv4(),
+					data: {
+						name: e.name,
+						title: e.name,
+						website: e.website,
+						websiteLink: e.website,
+						email: e.email,
+						phone: e.phone,
+						address: e.address,
+						description: `Activity from ${arrondissement} arrondissement (locality-first crawler)`,
+						neighborhood: arrondissement,
+						arrondissement: arrondissement,
+						activityType: e.activityType,
+						ageGroup: e.ageGroup
+					},
+					sources: [e.sourceUrl || 'locality_first'],
+					confidence: e.confidence || 0.9,
+					extractedAt: e.extractedAt,
+					validation: e.validation,
+					geographicRelevance: e.geographicRelevance
+				}));
+			} catch (localityError) {
+				console.error(`  ❌ Locality-first crawler failed:`, localityError.message);
+				console.error(`  Stack:`, localityError.stack);
+				allErrors.push({ stage: 'locality_first_crawler', error: localityError.message });
+				// Continue with other crawlers even if locality-first fails
+				localityEntities = []; // Ensure it's always an array
+			}
+
+			// STEP 1: Use proven working crawler approach (backup)
+			console.log(`📋 Step 1: Using proven mairie crawler (backup)...`);
+			const mairieActivities = await searchMairieActivities(arrondissement, postalCode);
+			console.log(`✅ Found ${mairieActivities.length} activities from mairie pages`);
 
 				// STEP 1.5: Direct website access for known organizations (SKIPPED to avoid timeout)
 				console.log(`📋 Step 1.5: Skipping direct website access to avoid timeout...`);
@@ -1530,15 +1574,17 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 
 			// Merge all results (avoid duplicates and filter newsletters)
 			// Start with existing organizations from database and locality-first results
+			// Ensure localityEntities is always an array
+			const safeLocalityEntities = Array.isArray(localityEntities) ? localityEntities : [];
 			const existingNames = new Set([
 				...existingOrganizations.names,
-				...localityEntities.map(e => e.data.name?.toLowerCase()),
-				...mairieEntities.map(e => e.data.name?.toLowerCase())
+				...safeLocalityEntities.map(e => e.data?.name?.toLowerCase()).filter(Boolean),
+				...mairieEntities.map(e => e.data?.name?.toLowerCase()).filter(Boolean)
 			]);
 					
 			// Add locality-first results FIRST (highest precision)
-			console.log(`  🔄 Merging ${localityEntities.length} locality-first entities...`);
-			const filteredLocalityEntities = localityEntities.filter(e => {
+			console.log(`  🔄 Merging ${safeLocalityEntities.length} locality-first entities...`);
+			const filteredLocalityEntities = safeLocalityEntities.filter(e => {
 				const name = (e.data.name || e.data.title || '').toLowerCase().trim();
 				const website = (e.data.website || e.data.websiteLink || '').toLowerCase();
 				
@@ -1576,8 +1622,8 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 			console.log(`  ✅ After filtering: ${filteredLocalityEntities.length} unique locality-first entities`);
 			filteredLocalityEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
 
-			// Initialize arrondissementEntities with locality-first results
-			let arrondissementEntities = [...filteredLocalityEntities];
+			// Initialize arrondissementEntities with locality-first results (always initialize, even if empty)
+			let arrondissementEntities = Array.isArray(filteredLocalityEntities) ? [...filteredLocalityEntities] : [];
 			console.log(`  ✅ Starting with ${arrondissementEntities.length} locality-first entities`);
 
 			// Add intelligent crawler results (secondary)

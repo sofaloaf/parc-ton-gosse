@@ -416,24 +416,34 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 				// New format: separate columns (check for undefined, not just truthy, to catch empty strings)
 				const titleEn = (obj.title_en || obj.title || '').toString().trim();
 				const titleFr = (obj.title_fr || obj.title || '').toString().trim();
+				// Use name as fallback only if it's not a providerId
+				const nameFallback = (obj.name && !String(obj.name).toLowerCase().startsWith('provider-') && String(obj.name).trim() !== obj.providerId) 
+					? String(obj.name).trim() 
+					: '';
 				obj.title = {
-					en: titleEn || (obj.name ? String(obj.name).trim() : ''),
-					fr: titleFr || (obj.name ? String(obj.name).trim() : '')
+					en: titleEn || nameFallback,
+					fr: titleFr || nameFallback
 				};
-				// If both are still empty, try to use name field as fallback
+				// If both are still empty, try to use name field as fallback (but NOT providerId)
 				if (!obj.title.en && !obj.title.fr && obj.name) {
 					const nameStr = String(obj.name).trim();
-					obj.title = {
-						en: nameStr,
-						fr: nameStr
-					};
+					if (nameStr && !nameStr.toLowerCase().startsWith('provider-') && nameStr !== obj.providerId) {
+						obj.title = {
+							en: nameStr,
+							fr: nameStr
+						};
+					}
 				}
 			} else if (obj.title && typeof obj.title === 'string') {
 				// Single string title - use for both languages
 				const titleStr = obj.title.trim();
+				// Use name as fallback only if it's not a providerId
+				const nameFallback = (obj.name && !String(obj.name).toLowerCase().startsWith('provider-') && String(obj.name).trim() !== obj.providerId) 
+					? String(obj.name).trim() 
+					: '';
 				obj.title = {
-					en: titleStr || (obj.name ? String(obj.name).trim() : ''),
-					fr: titleStr || (obj.name ? String(obj.name).trim() : '')
+					en: titleStr || nameFallback,
+					fr: titleStr || nameFallback
 				};
 			} else if (obj.name && typeof obj.name === 'string') {
 				// Fallback: use name field if title is missing (but NOT providerId)

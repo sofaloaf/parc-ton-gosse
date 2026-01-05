@@ -1398,14 +1398,36 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					// Add intelligent crawler results FIRST (highest quality)
 					console.log(`  🔄 Merging ${intelligentEntities.length} intelligent crawler entities...`);
 					const filteredIntelligentEntities = intelligentEntities.filter(e => {
-						const name = (e.data.name || '').toLowerCase();
-						const website = (e.data.website || '').toLowerCase();
+						// Must have data object
+						if (!e.data) {
+							console.log(`  ⏭️  Skipping entity without data object`);
+							return false;
+						}
+						
+						const name = (e.data.name || e.data.title || '').toLowerCase().trim();
+						const website = (e.data.website || e.data.websiteLink || '').toLowerCase();
+						
+						// Must have a name
+						if (!name || name.length === 0) {
+							console.log(`  ⏭️  Skipping entity without name`);
+							return false;
+						}
 						
 						// Filter out newsletters
 						if (name.includes('newsletter') || 
 						    name.includes('lettre d\'information') ||
+						    name.includes('abonnement newsletter') ||
 						    website.includes('cdnjs.cloudflare.com') ||
-						    website.includes('cdn')) {
+						    website.includes('cdn') ||
+						    website.includes('font-awesome')) {
+							console.log(`  ⏭️  Filtered out newsletter/CDN: ${name}`);
+							return false;
+						}
+						
+						// Must have at least website OR email OR phone (contact info)
+						const hasContact = (e.data.website || e.data.websiteLink || e.data.email || e.data.phone);
+						if (!hasContact) {
+							console.log(`  ⏭️  Skipping entity without contact info: ${name}`);
 							return false;
 						}
 						
@@ -1414,7 +1436,7 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						if (isDuplicate) {
 							console.log(`  ⏭️  Skipping duplicate from intelligent crawler: ${name}`);
 						}
-						return name && !isDuplicate;
+						return !isDuplicate;
 					});
 
 					console.log(`  ✅ After filtering: ${filteredIntelligentEntities.length} unique intelligent crawler entities`);
@@ -1504,7 +1526,25 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						const finalSheetName = generateTabName('pending', 'arrondissement-crawler');
 						
 						// Convert entities to sheet rows using proven format
-						const rowsToSave = arrondissementEntities.map(e => {
+						// FILTER: Only save entities that have meaningful data
+						const validEntities = arrondissementEntities.filter(e => {
+							if (!e.data) return false;
+							const name = (e.data.name || e.data.title || '').trim();
+							if (!name || name.length === 0) return false;
+							
+							// Must have at least website OR email OR phone
+							const hasContact = e.data.website || e.data.websiteLink || e.data.email || e.data.phone;
+							if (!hasContact) {
+								console.log(`  ⏭️  Skipping entity without contact info: ${name}`);
+								return false;
+							}
+							
+							return true;
+						});
+						
+						console.log(`  📊 Filtered ${arrondissementEntities.length} entities down to ${validEntities.length} valid entities with contact info`);
+						
+						const rowsToSave = validEntities.map(e => {
 							// Ensure websiteLink has http:// or https:// prefix
 							let websiteLink = e.data.website || e.data.websiteLink || null;
 							if (websiteLink && !websiteLink.startsWith('http://') && !websiteLink.startsWith('https://')) {
@@ -1527,7 +1567,7 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 								images: [],
 								schedule: [],
 								providerId: '',
-								approvalStatus: 'pending',
+								approvalStatus: 'pending', // CRITICAL: Must be 'pending' for pending endpoint to find it
 								crawledAt: new Date().toISOString(),
 								sourceUrl: e.sources?.[0] || 'unknown',
 								createdAt: new Date().toISOString(),
@@ -1572,8 +1612,12 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						const existingRows = existingData.data.values || [];
 						const startRow = existingRows.length > 1 ? existingRows.length + 1 : 2; // Start after headers or existing data
 						
+						// Verify approvalStatus is in the data
+						console.log(`  📊 Saving ${rowsToSave.length} rows to sheet "${finalSheetName}"`);
+						console.log(`  📊 First row sample (first 5 columns):`, rowsToSave[0]?.slice(0, 5) || 'N/A');
+						
 						// Append rows
-						await sheets.spreadsheets.values.append({
+						const appendResult = await sheets.spreadsheets.values.append({
 							spreadsheetId: sheetId,
 							range: `${finalSheetName}!A${startRow}`,
 							valueInputOption: 'RAW',
@@ -1582,6 +1626,7 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 
 						saveResult = { savedCount: rowsToSave.length, sheetName: finalSheetName };
 						console.log(`✅ Saved ${rowsToSave.length} entities to Google Sheets (${finalSheetName})`);
+						console.log(`  📊 Updated range: ${appendResult.data.updates?.updatedRange || 'N/A'}`);
 						
 						// Get sheet ID for URL
 						const updatedSpreadsheet = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
@@ -1590,7 +1635,8 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						
 						console.log(`📋 Sheet URL: https://docs.google.com/spreadsheets/d/${sheetId}/edit#gid=${sheetGid}`);
 						console.log(`📋 Sheet name: "${finalSheetName}"`);
-						console.log(`📋 This sheet should appear in pending activities with pattern: "Pending - YYYY-MM-DD"`);
+						console.log(`📋 Sheet name pattern matches: ${/^Pending - \d{4}-\d{2}-\d{2}/.test(finalSheetName)}`);
+						console.log(`📋 This sheet should appear in pending activities endpoint`);
 					} catch (saveError) {
 						console.error(`❌ Failed to save entities:`, saveError.message);
 						allErrors.push({ stage: 'storage', error: saveError.message });
@@ -1749,7 +1795,7 @@ arrondissementCrawlerRouter.get('/pending', requireAuth('admin'), async (req, re
 							images: typeof activity.Images === 'string' 
 								? activity.Images.split(',').map(s => s.trim()).filter(s => s)
 								: (activity.images || []),
-							approvalStatus: activity['Approval Status'] || activity.approvalStatus || 'pending',
+							approvalStatus: activity['Approval Status'] || activity['approvalStatus'] || activity.approvalStatus || 'pending',
 							crawledAt: activity['Crawled At'] || activity.crawledAt || new Date().toISOString(),
 							createdAt: activity['Created At'] || activity.createdAt || new Date().toISOString(),
 							updatedAt: activity['Updated At'] || activity.updatedAt || new Date().toISOString()

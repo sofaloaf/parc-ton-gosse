@@ -540,6 +540,27 @@ async function runCrawlerJob(jobId) {
 			mlScorer = null; // Fallback to rule-based
 		}
 		
+		// Initialize Adaptive Search Strategy
+		let adaptiveSearch = null;
+		try {
+			adaptiveSearch = new AdaptiveSearchStrategy();
+			console.log('✅ Adaptive search strategy initialized');
+		} catch (adaptiveError) {
+			console.warn('⚠️  Adaptive search initialization failed:', adaptiveError.message);
+		}
+		
+		// Initialize Enhanced Discovery (database/PDF focus)
+		let enhancedDiscovery = null;
+		try {
+			enhancedDiscovery = new EnhancedDiscovery({
+				googleApiKey: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY,
+				googleCx: process.env.GOOGLE_CUSTOM_SEARCH_CX
+			});
+			console.log('✅ Enhanced discovery (database/PDF) initialized');
+		} catch (discoveryError) {
+			console.warn('⚠️  Enhanced discovery initialization failed:', discoveryError.message);
+		}
+		
 		// Get existing organizations from database
 		const store = global.app?.get('dataStore');
 		const existingActivities = store ? await store.activities.list() : [];
@@ -1326,8 +1347,12 @@ async function runCrawlerJob(jobId) {
 				arrondissement,
 				postalCode,
 				entities: arrondissementEntities,
+				databaseCount: databaseEntities.length,
+				mairieCount: mairieEntities.length,
 				localityCount: filteredLocalityEntities.length,
-				intelligentCount: filteredIntelligentEntities.length
+				intelligentCount: filteredIntelligentEntities.length,
+				advancedCount: advancedEntities.length,
+				orchestratorCount: orchestratorEntities.length
 			});
 		}
 		

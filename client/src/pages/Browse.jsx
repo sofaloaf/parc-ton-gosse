@@ -82,9 +82,21 @@ export default function Browse() {
 		fetchWithRetry(`/activities${qs ? `?${qs}` : ''}`)
 			.then((response) => {
 				// Handle both old format (array) and new format (paginated object)
-				const activitiesList = Array.isArray(response) 
-					? response 
-					: (response.data || []);
+				let activitiesList = [];
+				if (Array.isArray(response)) {
+					// Old format: direct array
+					activitiesList = response;
+				} else if (response && response.data && Array.isArray(response.data)) {
+					// New format: { data: [...], pagination: {...} }
+					activitiesList = response.data;
+				} else if (response && Array.isArray(response)) {
+					// Fallback: treat as array
+					activitiesList = response;
+				} else {
+					console.warn('⚠️  Unexpected response format:', response);
+					activitiesList = [];
+				}
+				
 				setActivities(activitiesList);
 				setError(null); // Clear any previous errors
 				setLoading(false);

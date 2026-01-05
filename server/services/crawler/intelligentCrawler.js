@@ -10,10 +10,31 @@
  * - Cross-referencing with official registries
  */
 
-import { chromium } from 'playwright';
 import { JSDOM } from 'jsdom';
-import fetch from 'node-fetch';
 import { v4 as uuidv4 } from 'uuid';
+
+// Use global fetch (Node 18+) or fallback to node-fetch
+let fetch;
+try {
+	if (typeof globalThis.fetch === 'function') {
+		fetch = globalThis.fetch;
+	} else {
+		const nodeFetch = await import('node-fetch');
+		fetch = nodeFetch.default;
+	}
+} catch (error) {
+	// Fallback: use global fetch if available
+	fetch = globalThis.fetch;
+}
+
+// Playwright is optional - only use if available
+let playwright;
+try {
+	playwright = await import('playwright');
+} catch (error) {
+	console.warn('Playwright not available, will use regular fetch only');
+	playwright = null;
+}
 
 export class IntelligentCrawler {
 	constructor(options = {}) {
@@ -32,8 +53,11 @@ export class IntelligentCrawler {
 	 * Initialize Playwright browser
 	 */
 	async initBrowser() {
+		if (!playwright) {
+			return null; // Playwright not available
+		}
 		if (!this.browser) {
-			this.browser = await chromium.launch({
+			this.browser = await playwright.chromium.launch({
 				headless: true,
 				args: ['--no-sandbox', '--disable-setuid-sandbox']
 			});
@@ -344,9 +368,16 @@ export class IntelligentCrawler {
 	 * Fetch page with Playwright (for JS-heavy sites)
 	 */
 	async fetchWithPlaywright(url) {
+		if (!playwright) {
+			// Fallback to regular fetch if Playwright not available
+			return await this.fetchWithFetch(url);
+		}
 		try {
-			await this.initBrowser();
-			const context = await this.browser.newContext({
+			const browser = await this.initBrowser();
+			if (!browser) {
+				return await this.fetchWithFetch(url);
+			}
+			const context = await browser.newContext({
 				userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 			});
 			const page = await context.newPage();
@@ -358,7 +389,8 @@ export class IntelligentCrawler {
 			return html;
 		} catch (error) {
 			console.error(`Playwright fetch failed for ${url}:`, error.message);
-			return null;
+			// Fallback to regular fetch
+			return await this.fetchWithFetch(url);
 		}
 	}
 

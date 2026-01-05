@@ -599,11 +599,34 @@ async function runCrawlerJob(jobId) {
 				const mairieActivities = await searchMairieActivities(arrondissement, postalCode);
 				console.log(`✅ Found ${mairieActivities.length} activities from mairie pages`);
 				
+				// Filter mairie activities with keyword validation
+				const activityKeywords = getActivityKeywords();
+				const kidsKeywords = ['enfant', 'enfants', 'kids', 'children', 'jeune', 'jeunes', 'youth', 'ado', 'adolescent', 'petit', 'petits', 'junior', 'scolaire', 'extracurriculaire', 'centre de loisirs', 'colonie', 'camp'];
+				
 				mairieEntities = mairieActivities
 					.filter(activity => {
 						const name = (activity.name || '').toLowerCase().trim();
+						
+						// Skip rejected/existing
 						if (rejectedOrganizations.names.has(name)) return false;
 						if (existingOrganizations.names.has(name)) return false;
+						
+						// Filter out newsletters
+						if (name.includes('newsletter') || name.includes('lettre d\'information')) {
+							console.log(`  ⏭️  Skipping newsletter from mairie: ${activity.name}`);
+							return false;
+						}
+						
+						// Must be kids activity related
+						const combined = `${name} ${activity.website || ''} ${activity.email || ''} ${activity.phone || ''}`.toLowerCase();
+						const hasKidsMention = kidsKeywords.some(kw => combined.includes(kw));
+						const hasActivityKeyword = activityKeywords.some(kw => combined.includes(kw));
+						
+						if (!hasKidsMention && !hasActivityKeyword) {
+							console.log(`  ⏭️  Skipping non-kids-activity from mairie: ${activity.name}`);
+							return false;
+						}
+						
 						return true;
 					})
 					.map(activity => ({
@@ -781,13 +804,35 @@ async function runCrawlerJob(jobId) {
 				const finalSheetName = generateTabName('pending', 'arrondissement-crawler');
 				console.log(`📋 Saving to sheet: "${finalSheetName}"`);
 				
+				// Log all entities before filtering
+				console.log(`📊 Total entities before validation: ${arrondissementEntities.length}`);
+				
 				const validEntities = arrondissementEntities.filter(e => {
-					if (!e.data) return false;
+					if (!e.data) {
+						console.log(`  ⏭️  Skipping entity without data`);
+						return false;
+					}
 					const name = (e.data.name || e.data.title || '').toLowerCase().trim();
-					if (!name || name.length === 0) return false;
+					if (!name || name.length === 0) {
+						console.log(`  ⏭️  Skipping entity without name`);
+						return false;
+					}
+					
+					// Filter out newsletters
+					if (name.includes('newsletter') || name.includes('lettre d\'information')) {
+						console.log(`  ⏭️  Skipping newsletter: ${name}`);
+						return false;
+					}
+					
 					const hasContact = e.data.website || e.data.websiteLink || e.data.email || e.data.phone;
-					return hasContact;
+					if (!hasContact) {
+						console.log(`  ⏭️  Skipping entity without contact info: ${name}`);
+						return false;
+					}
+					return true;
 				});
+				
+				console.log(`📊 Valid entities after filtering: ${validEntities.length}`);
 				
 				const rowsToSave = validEntities.map(e => {
 					let websiteLink = e.data.website || e.data.websiteLink || null;

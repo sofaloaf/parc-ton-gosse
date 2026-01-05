@@ -13,6 +13,7 @@ import {
 import { CrawlerOrchestrator } from '../services/crawler/index.js';
 import { AdvancedCrawler } from '../services/crawler/advancedCrawler.js';
 import { IntelligentCrawler } from '../services/crawler/intelligentCrawler.js';
+import { LocalityFirstCrawler } from '../services/crawler/localityFirstCrawler.js';
 
 export const arrondissementCrawlerRouter = express.Router();
 
@@ -1406,12 +1407,56 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						tabName: generateTabName('pending', 'enhanced-crawler')
 					});
 
-					// Merge all results (avoid duplicates and filter newsletters)
-					// Start with existing organizations from database
-					const existingNames = new Set([...existingOrganizations.names, ...mairieEntities.map(e => e.data.name?.toLowerCase())]);
+			// Merge all results (avoid duplicates and filter newsletters)
+			// Start with existing organizations from database and locality-first results
+			const existingNames = new Set([
+				...existingOrganizations.names,
+				...localityEntities.map(e => e.data.name?.toLowerCase()),
+				...mairieEntities.map(e => e.data.name?.toLowerCase())
+			]);
 					
-					// Add intelligent crawler results FIRST (highest quality)
-					console.log(`  🔄 Merging ${intelligentEntities.length} intelligent crawler entities...`);
+			// Add locality-first results FIRST (highest precision)
+			console.log(`  🔄 Merging ${localityEntities.length} locality-first entities...`);
+			const filteredLocalityEntities = localityEntities.filter(e => {
+				const name = (e.data.name || e.data.title || '').toLowerCase().trim();
+				const website = (e.data.website || e.data.websiteLink || '').toLowerCase();
+				
+				// Check if rejected
+				if (rejected.names.has(name)) {
+					console.log(`  ⏭️  Skipping rejected organization (by name): ${name}`);
+					return false;
+				}
+				
+				if (website) {
+					const normalizedWebsite = website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+					if (rejected.websites.has(normalizedWebsite)) {
+						console.log(`  ⏭️  Skipping rejected organization (by website): ${name}`);
+						return false;
+					}
+				}
+				
+				// Check if already exists in database
+				if (existingOrganizations.names.has(name)) {
+					console.log(`  ⏭️  Skipping organization already in database: ${name}`);
+					return false;
+				}
+				
+				if (website) {
+					const normalizedWebsite = website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+					if (existingOrganizations.websites.has(normalizedWebsite)) {
+						console.log(`  ⏭️  Skipping organization already in database (by website): ${name}`);
+						return false;
+					}
+				}
+				
+				return true;
+			});
+			
+			console.log(`  ✅ After filtering: ${filteredLocalityEntities.length} unique locality-first entities`);
+			filteredLocalityEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
+
+			// Add intelligent crawler results (secondary)
+			console.log(`  🔄 Merging ${intelligentEntities.length} intelligent crawler entities...`);
 					const filteredIntelligentEntities = intelligentEntities.filter(e => {
 						// Must have data object
 						if (!e.data) {
@@ -1549,9 +1594,12 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					advancedEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
 					enhancedEntities.forEach(e => existingNames.add((e.data?.name || e.data?.title || '').toLowerCase()));
 
-					// Add intelligent crawler results FIRST (highest quality), then others
-					arrondissementEntities.push(...filteredIntelligentEntities);
-					console.log(`  ✅ Added ${filteredIntelligentEntities.length} intelligent crawler entities to results`);
+			// Add locality-first results FIRST (highest precision), then others
+			arrondissementEntities.push(...filteredLocalityEntities);
+			console.log(`  ✅ Added ${filteredLocalityEntities.length} locality-first entities to results`);
+			
+			arrondissementEntities.push(...filteredIntelligentEntities);
+			console.log(`  ✅ Added ${filteredIntelligentEntities.length} intelligent crawler entities to results`);
 					
 					arrondissementEntities.push(...advancedEntities);
 					console.log(`  ✅ Added ${advancedEntities.length} advanced crawler entities to results`);
@@ -1561,12 +1609,13 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					
 					allErrors.push(...(crawlResults?.errors || []));
 					
-					console.log(`\n📊 FINAL MERGE SUMMARY:`);
-					console.log(`  - Mairie crawler: ${mairieEntities.length} entities`);
-					console.log(`  - Intelligent crawler: ${filteredIntelligentEntities.length} entities`);
-					console.log(`  - Advanced crawler: ${advancedEntities.length} entities`);
-					console.log(`  - Enhanced crawler: ${enhancedEntities.length} entities`);
-					console.log(`  - TOTAL: ${arrondissementEntities.length} entities`);
+			console.log(`\n📊 FINAL MERGE SUMMARY:`);
+			console.log(`  - Locality-first crawler: ${filteredLocalityEntities.length} entities (highest precision)`);
+			console.log(`  - Mairie crawler: ${mairieEntities.length} entities`);
+			console.log(`  - Intelligent crawler: ${filteredIntelligentEntities.length} entities`);
+			console.log(`  - Advanced crawler: ${advancedEntities.length} entities`);
+			console.log(`  - Enhanced crawler: ${enhancedEntities.length} entities`);
+			console.log(`  - TOTAL: ${arrondissementEntities.length} entities`);
 				} catch (enhancedError) {
 					console.error(`⚠️  Advanced/Enhanced crawler failed (continuing with mairie and intelligent results):`, enhancedError.message);
 					allErrors.push({ stage: 'advanced_enhanced_crawler', error: enhancedError.message });

@@ -9,22 +9,79 @@
  * Using Unsplash direct image URLs (free, no API key needed)
  * Each URL shows children doing that specific activity
  * Images are optimized for 400x300px cards
+ * Using arrays for multiple variations per category
  */
-const CATEGORY_IMAGES = {
-	// Sports category - Children playing sports
-	'sport': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
-	'sports': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
-	'football': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
-	'soccer': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
-	'basketball': 'https://images.unsplash.com/photo-1519869325934-21c5bf688fcf?w=400&h=300&fit=crop&q=80&auto=format',
-	'tennis': 'https://images.unsplash.com/photo-1622163642991-c6c81a9162b8?w=400&h=300&fit=crop&q=80&auto=format',
-	'swimming': 'https://images.unsplash.com/photo-1530549387789-4c1017266635?w=400&h=300&fit=crop&q=80&auto=format',
-	'natation': 'https://images.unsplash.com/photo-1530549387789-4c1017266635?w=400&h=300&fit=crop&q=80&auto=format',
-	'rugby': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
-	'handball': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
-	'volleyball': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
-	'gymnastics': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
-	'gymnastique': 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&q=80&auto=format',
+const CATEGORY_IMAGE_SETS = {
+	// Sports category - Children playing sports (multiple variations)
+	'sport': [
+		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+		'https://images.unsplash.com/photo-1519869325934-21c5bf688fcf',
+		'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9',
+		'https://images.unsplash.com/photo-1518611012118-696072aa579a',
+		'https://images.unsplash.com/photo-1530549387789-4c1017266635'
+	],
+	'sports': [
+		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+		'https://images.unsplash.com/photo-1519869325934-21c5bf688fcf',
+		'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9',
+		'https://images.unsplash.com/photo-1518611012118-696072aa579a',
+		'https://images.unsplash.com/photo-1530549387789-4c1017266635'
+	],
+	'football': [
+		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+		'https://images.unsplash.com/photo-1519869325934-21c5bf688fcf',
+		'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9'
+	],
+	'soccer': [
+		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+		'https://images.unsplash.com/photo-1519869325934-21c5bf688fcf',
+		'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9'
+	],
+	'basketball': [
+		'https://images.unsplash.com/photo-1519869325934-21c5bf688fcf',
+		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+		'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9'
+	],
+	'tennis': [
+		'https://images.unsplash.com/photo-1622163642991-c6c81a9162b8',
+		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+		'https://images.unsplash.com/photo-1519869325934-21c5bf688fcf'
+	],
+	'swimming': [
+		'https://images.unsplash.com/photo-1530549387789-4c1017266635',
+		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+		'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9'
+	],
+	'natation': [
+		'https://images.unsplash.com/photo-1530549387789-4c1017266635',
+		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+		'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9'
+	],
+	'rugby': [
+		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+		'https://images.unsplash.com/photo-1519869325934-21c5bf688fcf',
+		'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9'
+	],
+	'handball': [
+		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+		'https://images.unsplash.com/photo-1519869325934-21c5bf688fcf',
+		'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9'
+	],
+	'volleyball': [
+		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+		'https://images.unsplash.com/photo-1519869325934-21c5bf688fcf',
+		'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9'
+	],
+	'gymnastics': [
+		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+		'https://images.unsplash.com/photo-1519869325934-21c5bf688fcf',
+		'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9'
+	],
+	'gymnastique': [
+		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',
+		'https://images.unsplash.com/photo-1519869325934-21c5bf688fcf',
+		'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9'
+	],
 	
 	// Arts category - Children doing art (multiple variations)
 	'art': [
@@ -434,9 +491,15 @@ export function getActivityImageUrls(activity, locale = 'en', count = 3) {
 		}
 	}
 	
-	// Generate additional images if needed (use category image)
-	const categoryImage = getCategoryImageUrl(activity.categories);
+	// Generate additional images if needed (use category image with different seeds)
+	let seed = 0;
+	if (activity.id) {
+		for (let i = 0; i < activity.id.length; i++) {
+			seed += activity.id.charCodeAt(i);
+		}
+	}
 	while (urls.length < count) {
+		const categoryImage = getCategoryImageUrl(activity.categories, seed + urls.length);
 		urls.push(categoryImage);
 	}
 	

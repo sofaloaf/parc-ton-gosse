@@ -12,28 +12,19 @@
 
 import { JSDOM } from 'jsdom';
 import { v4 as uuidv4 } from 'uuid';
+import fetch from 'node-fetch';
 
-// Use global fetch (Node 18+) or fallback to node-fetch
-let fetch;
-try {
-	if (typeof globalThis.fetch === 'function') {
-		fetch = globalThis.fetch;
-	} else {
-		const nodeFetch = await import('node-fetch');
-		fetch = nodeFetch.default;
+// Playwright is optional - lazy load it
+let playwright = null;
+async function getPlaywright() {
+	if (playwright === null) {
+		try {
+			playwright = await import('playwright');
+		} catch (error) {
+			playwright = false; // Mark as unavailable
+		}
 	}
-} catch (error) {
-	// Fallback: use global fetch if available
-	fetch = globalThis.fetch;
-}
-
-// Playwright is optional - only use if available
-let playwright;
-try {
-	playwright = await import('playwright');
-} catch (error) {
-	console.warn('Playwright not available, will use regular fetch only');
-	playwright = null;
+	return playwright || null;
 }
 
 export class IntelligentCrawler {
@@ -53,11 +44,12 @@ export class IntelligentCrawler {
 	 * Initialize Playwright browser
 	 */
 	async initBrowser() {
-		if (!playwright) {
+		const playwrightModule = await getPlaywright();
+		if (!playwrightModule) {
 			return null; // Playwright not available
 		}
 		if (!this.browser) {
-			this.browser = await playwright.chromium.launch({
+			this.browser = await playwrightModule.chromium.launch({
 				headless: true,
 				args: ['--no-sandbox', '--disable-setuid-sandbox']
 			});
@@ -368,7 +360,8 @@ export class IntelligentCrawler {
 	 * Fetch page with Playwright (for JS-heavy sites)
 	 */
 	async fetchWithPlaywright(url) {
-		if (!playwright) {
+		const playwrightModule = await getPlaywright();
+		if (!playwrightModule) {
 			// Fallback to regular fetch if Playwright not available
 			return await this.fetchWithFetch(url);
 		}

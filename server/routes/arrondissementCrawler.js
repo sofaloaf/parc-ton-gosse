@@ -14,6 +14,7 @@ import { CrawlerOrchestrator } from '../services/crawler/index.js';
 import { AdvancedCrawler } from '../services/crawler/advancedCrawler.js';
 import { IntelligentCrawler } from '../services/crawler/intelligentCrawler.js';
 import { LocalityFirstCrawler } from '../services/crawler/localityFirstCrawler.js';
+import { startBackgroundCrawl, getJobStatus, listJobs } from '../services/crawler/backgroundCrawler.js';
 
 export const arrondissementCrawlerRouter = express.Router();
 
@@ -2584,6 +2585,57 @@ arrondissementCrawlerRouter.post('/batch-approve', requireAuth('admin'), async (
 		console.error('Failed to batch update activities:', error);
 		res.status(500).json({ 
 			error: 'Failed to batch update activities', 
+			message: error.message 
+		});
+	}
+});
+
+// Background crawler endpoints (async, no timeout limits)
+arrondissementCrawlerRouter.post('/start-background', requireAuth('admin'), async (req, res) => {
+	try {
+		const { arrondissements, options } = req.body;
+		const job = await startBackgroundCrawl(arrondissements || ['20e'], options || {});
+		res.json({
+			success: true,
+			jobId: job.id,
+			status: job.status,
+			message: 'Background crawl started. Use /status/:jobId to check progress.'
+		});
+	} catch (error) {
+		console.error('Failed to start background crawl:', error);
+		res.status(500).json({ 
+			error: 'Failed to start background crawl', 
+			message: error.message 
+		});
+	}
+});
+
+arrondissementCrawlerRouter.get('/status/:jobId', requireAuth('admin'), async (req, res) => {
+	try {
+		const { jobId } = req.params;
+		const job = getJobStatus(jobId);
+		if (!job) {
+			return res.status(404).json({ error: 'Job not found' });
+		}
+		res.json(job);
+	} catch (error) {
+		console.error('Failed to get job status:', error);
+		res.status(500).json({ 
+			error: 'Failed to get job status', 
+			message: error.message 
+		});
+	}
+});
+
+arrondissementCrawlerRouter.get('/jobs', requireAuth('admin'), async (req, res) => {
+	try {
+		const limit = parseInt(req.query.limit) || 50;
+		const jobs = listJobs(limit);
+		res.json({ success: true, jobs });
+	} catch (error) {
+		console.error('Failed to list jobs:', error);
+		res.status(500).json({ 
+			error: 'Failed to list jobs', 
 			message: error.message 
 		});
 	}

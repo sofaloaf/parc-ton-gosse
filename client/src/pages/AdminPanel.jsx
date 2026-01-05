@@ -1038,8 +1038,98 @@ export default function AdminPanel() {
 										</>
 									)}
 								</button>
+								
+								{/* Background Crawler Button (Async, No Timeout) */}
+								<button
+									onClick={runBackgroundCrawler}
+									disabled={backgroundJobPolling || backgroundJobId !== null}
+									style={{
+										padding: '12px 24px',
+										background: backgroundJobId ? '#28a745' : '#17a2b8',
+										color: 'white',
+										border: 'none',
+										borderRadius: 6,
+										cursor: backgroundJobPolling || backgroundJobId ? 'not-allowed' : 'pointer',
+										fontSize: 14,
+										fontWeight: 'bold',
+										opacity: backgroundJobPolling || backgroundJobId ? 0.7 : 1
+									}}
+								>
+									{backgroundJobPolling ? (
+										<>⏳ Starting Background Crawler...</>
+									) : backgroundJobId ? (
+										<>✅ Background Crawler Running (Job: {backgroundJobId.substring(0, 8)}...)</>
+									) : (
+										<>🚀 Start Background Crawler (No Timeout)</>
+									)}
+								</button>
 							</div>
 						</div>
+						
+						{/* Background Crawler Error */}
+						{backgroundJobError && (
+							<div style={{
+								marginTop: 16,
+								padding: 16,
+								background: '#f8d7da',
+								border: '1px solid #f5c6cb',
+								borderRadius: 6,
+								color: '#721c24'
+							}}>
+								<strong>Background Crawler Error:</strong> {backgroundJobError}
+							</div>
+						)}
+						
+						{/* Background Crawler Status */}
+						{backgroundJobStatus && (
+							<div style={{
+								marginTop: 16,
+								padding: 16,
+								background: '#d1ecf1',
+								border: '1px solid #bee5eb',
+								borderRadius: 6
+							}}>
+								<h4 style={{ marginTop: 0, color: '#0c5460' }}>🚀 Background Crawler Status</h4>
+								<div style={{ marginBottom: 12 }}>
+									<strong>Status:</strong> {backgroundJobStatus.status}
+								</div>
+								{backgroundJobStatus.progress && (
+									<div style={{ marginBottom: 12 }}>
+										<strong>Progress:</strong> {backgroundJobStatus.progress.percent}% - {backgroundJobStatus.progress.message}
+										<div style={{
+											marginTop: 8,
+											width: '100%',
+											height: 20,
+											background: '#e9ecef',
+											borderRadius: 10,
+											overflow: 'hidden'
+										}}>
+											<div style={{
+												width: `${backgroundJobStatus.progress.percent}%`,
+												height: '100%',
+												background: '#28a745',
+												transition: 'width 0.3s ease'
+											}} />
+										</div>
+									</div>
+								)}
+								{backgroundJobStatus.results && (
+									<div style={{ marginTop: 12 }}>
+										<strong>Results:</strong> {backgroundJobStatus.results.entities?.length || 0} entities found
+									</div>
+								)}
+								{backgroundJobStatus.status === 'completed' && (
+									<div style={{ marginTop: 12, color: '#28a745', fontWeight: 'bold' }}>
+										✅ Crawl completed! Check pending activities.
+									</div>
+								)}
+								{backgroundJobStatus.status === 'failed' && (
+									<div style={{ marginTop: 12, color: '#dc3545', fontWeight: 'bold' }}>
+										❌ Crawl failed: {backgroundJobStatus.error}
+									</div>
+								)}
+							</div>
+						)}
 
 						{/* All Arrondissements Button */}
 						<div style={{ marginBottom: 12 }}>

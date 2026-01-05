@@ -253,10 +253,32 @@ async function extractStaticHTML(url, userAgent) {
 }
 
 // Playwright extractor (for JS-heavy sites) - will be implemented if playwright is installed
+let playwrightAvailable = null; // Cache Playwright availability check
+let playwrightWarningShown = false; // Only show warning once
+
 async function extractWithPlaywright(url, userAgent) {
-	// Check if playwright is available
+	// Check if playwright is available (cache the result)
+	if (playwrightAvailable === null) {
+		try {
+			const playwrightModule = await import('playwright');
+			playwrightAvailable = playwrightModule;
+		} catch (error) {
+			playwrightAvailable = false;
+			if (!playwrightWarningShown) {
+				console.log(`⚠️  Playwright not installed - using static HTML extraction for all pages`);
+				console.log(`   (This is fine, but some JavaScript-heavy sites may not render fully)`);
+				console.log(`   To install: npm install playwright`);
+				playwrightWarningShown = true;
+			}
+		}
+	}
+	
+	if (!playwrightAvailable) {
+		return null; // Silently fallback to static
+	}
+	
 	try {
-		const { chromium } = await import('playwright');
+		const { chromium } = playwrightAvailable;
 		
 		const browser = await chromium.launch({ headless: true });
 		const page = await browser.newPage();
@@ -281,8 +303,7 @@ async function extractWithPlaywright(url, userAgent) {
 			method: 'playwright'
 		};
 	} catch (error) {
-		// Playwright not available or failed, fallback to static
-		console.log(`⚠️  Playwright not available for ${url}, using static extraction`);
+		// Playwright failed, fallback to static
 		return null;
 	}
 }

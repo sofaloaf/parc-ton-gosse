@@ -212,6 +212,78 @@ async function searchMairieActivities(arrondissement, postalCode) {
 	return activities;
 }
 
+// Get comprehensive activity keywords (same as discovery.js)
+function getActivityKeywords() {
+	return [
+		// Core activity terms
+		'activité', 'activités', 'activities', 'activity',
+		'club', 'clubs', 'association', 'associations',
+		'sport', 'sports', 'loisir', 'loisirs', 'leisure',
+		'cours', 'atelier', 'ateliers', 'workshop', 'workshops',
+		
+		// Team Ball Sports
+		'football', 'soccer', 'basketball', 'basket-ball', 'basket',
+		'volleyball', 'volley-ball', 'handball', 'rugby',
+		'baseball', 'cricket', 'ultimate frisbee', 'ultimate',
+		
+		// Combat & Martial Arts
+		'boxe', 'boxing', 'judo', 'karate', 'karaté',
+		'taekwondo', 'tae kwon do', 'kickboxing', 'kick-boxing',
+		'jujitsu', 'jiu-jitsu', 'mma', 'arts martiaux', 'martial arts',
+		'escrime', 'fencing', 'aïkido', 'aikido', 'kendo',
+		'kung fu', 'wrestling', 'lutte',
+		
+		// Water Sports
+		'natation', 'swimming', 'plongée', 'diving',
+		'water polo', 'water-polo', 'kayak', 'kayaking',
+		'canoë', 'canoe', 'canoeing', 'aviron', 'rowing',
+		'surf', 'surfing', 'paddle', 'paddleboarding',
+		
+		// Racquet & Precision Sports
+		'tennis', 'tennis de table', 'ping pong', 'table tennis',
+		'badminton', 'squash', 'racquetball',
+		
+		// Athletics & Endurance
+		'athlétisme', 'athletics', 'course', 'running',
+		'marathon', 'triathlon', 'duathlon', 'biathlon',
+		'orientation', 'orienteering',
+		
+		// Winter & Snow Sports
+		'ski', 'skiing', 'snowboard', 'snowboarding',
+		'hockey sur glace', 'ice hockey', 'patinage', 'skating',
+		'patinage artistique', 'figure skating', 'patinage de vitesse', 'speed skating',
+		'curling',
+		
+		// Cycling & Wheel Sports
+		'cyclisme', 'cycling', 'vélo', 'bike', 'biking',
+		'vtt', 'mountain bike', 'bmx', 'cyclocross',
+		'roller', 'roller skating', 'patin à roulettes',
+		
+		// Gymnastics & Acrobatics
+		'gymnastique', 'gymnastics', 'gymnastique artistique', 'artistic gymnastics',
+		'gymnastique rythmique', 'rhythmic gymnastics',
+		'trampoline', 'trampolining', 'parkour', 'freerunning',
+		'cheerleading', 'acrobatie', 'acrobatics',
+		
+		// Creative & Arts
+		'théâtre', 'theater', 'theatre', 'danse', 'dance',
+		'musique', 'music', 'piano', 'guitare', 'guitar',
+		'violon', 'violin', 'chant', 'singing', 'chorale', 'choir',
+		'dessin', 'drawing', 'peinture', 'painting', 'art plastique', 'plastic arts',
+		'sculpture', 'poterie', 'pottery', 'céramique', 'ceramics',
+		'photographie', 'photography', 'cinéma', 'cinema', 'film',
+		'écriture', 'writing', 'littérature', 'literature',
+		
+		// Youth & Kids Specific
+		'enfant', 'enfants', 'kids', 'children', 'jeune', 'jeunes', 'youth',
+		'ado', 'adolescent', 'adolescents', 'teenager', 'teenagers',
+		'petit', 'petits', 'little', 'junior', 'juniors',
+		'école', 'school', 'scolaire', 'extracurriculaire', 'extracurricular',
+		'centre de loisirs', 'leisure center', 'centre aéré', 'day camp',
+		'colonie', 'summer camp', 'camp de vacances', 'vacation camp'
+	];
+}
+
 // Extract organization information from mairie activity page
 async function extractOrganizationFromMairiePage(activityUrl, arrondissement) {
 	try {
@@ -229,6 +301,54 @@ async function extractOrganizationFromMairiePage(activityUrl, arrondissement) {
 		             document.querySelector('.title')?.textContent?.trim() ||
 		             document.querySelector('title')?.textContent?.trim() ||
 		             '';
+
+		// Get full page text for keyword checking
+		const pageText = (document.body?.textContent || html).toLowerCase();
+		const titleLower = title.toLowerCase();
+		
+		// FILTER: Must be related to kids activities
+		const activityKeywords = getActivityKeywords();
+		const kidsKeywords = ['enfant', 'enfants', 'kids', 'children', 'jeune', 'jeunes', 'youth', 'ado', 'adolescent', 'petit', 'petits', 'junior', 'scolaire', 'extracurriculaire', 'centre de loisirs', 'colonie', 'camp'];
+		
+		// Check if page mentions kids/children/youth
+		const hasKidsMention = kidsKeywords.some(kw => 
+			titleLower.includes(kw) || 
+			pageText.includes(kw) ||
+			activityUrl.toLowerCase().includes(kw)
+		);
+		
+		// Check if page mentions activities
+		const hasActivityKeyword = activityKeywords.some(kw => 
+			titleLower.includes(kw) || 
+			pageText.includes(kw) ||
+			activityUrl.toLowerCase().includes(kw)
+		);
+		
+		// REJECT if it's a general nonprofit without kids/activity focus
+		// Must have BOTH kids mention AND activity keyword (or very strong activity keyword)
+		if (!hasKidsMention && !hasActivityKeyword) {
+			console.log(`  ⏭️  Skipping non-kids-activity organization: ${title}`);
+			return null;
+		}
+		
+		// If it has activity keywords but no kids mention, check if it's clearly for adults only
+		const adultOnlyKeywords = ['senior', 'séniors', 'adulte', 'adultes', 'adult', 'retraité', 'retraités', 'retired', 'troisième âge'];
+		const isAdultOnly = adultOnlyKeywords.some(kw => titleLower.includes(kw) || pageText.includes(kw));
+		if (isAdultOnly && !hasKidsMention) {
+			console.log(`  ⏭️  Skipping adults-only organization: ${title}`);
+			return null;
+		}
+		
+		// Filter out general nonprofits that aren't activity-focused
+		const genericNonprofitKeywords = ['bénévolat', 'volunteer', 'charity', 'charité', 'fondation', 'foundation', 'aide', 'help', 'soutien', 'support'];
+		const isGenericNonprofit = genericNonprofitKeywords.some(kw => 
+			(titleLower.includes(kw) || pageText.includes(kw)) && 
+			!hasActivityKeyword
+		);
+		if (isGenericNonprofit) {
+			console.log(`  ⏭️  Skipping generic nonprofit without activities: ${title}`);
+			return null;
+		}
 
 		let orgWebsite = null;
 		let orgName = title;
@@ -559,7 +679,7 @@ async function runCrawlerJob(jobId) {
 				allErrors.push({ stage: 'locality_first_crawler', error: localityError.message });
 			}
 			
-			// STEP 1: Intelligent crawler
+			// STEP 1: Intelligent crawler (with keyword filtering)
 			job.progress.message = `Step 1: Intelligent crawler for ${arrondissement}...`;
 			let intelligentEntities = [];
 			try {
@@ -578,29 +698,54 @@ async function runCrawlerJob(jobId) {
 					maxPages: 50 // More pages for background jobs
 				});
 				
-				intelligentEntities = intelligentResults.entities.map(e => ({
-					id: uuidv4(),
-					data: {
-						name: e.name,
-						title: e.name,
-						website: e.website,
-						websiteLink: e.website,
-						email: e.email,
-						phone: e.phone,
-						address: e.address,
-						description: e.description || `Activity from ${arrondissement} arrondissement (via intelligent crawler)`,
-						neighborhood: arrondissement,
-						arrondissement: arrondissement,
-						categories: e.categories || [],
-						images: e.images || []
-					},
-					sources: [e.sourceUrl || e.source || 'intelligent_crawler'],
-					confidence: e.confidence || 0.7,
-					extractedAt: new Date().toISOString(),
-					validation: { valid: true, score: e.confidence || 0.7 }
-				}));
+				// Filter entities to only include kids activities
+				const activityKeywords = getActivityKeywords();
+				const kidsKeywords = ['enfant', 'enfants', 'kids', 'children', 'jeune', 'jeunes', 'youth', 'ado', 'adolescent', 'petit', 'petits', 'junior', 'scolaire', 'extracurriculaire', 'centre de loisirs', 'colonie', 'camp'];
 				
-				console.log(`✅ Intelligent crawler: ${intelligentEntities.length} entities`);
+				intelligentEntities = intelligentResults.entities
+					.filter(e => {
+						const name = (e.name || '').toLowerCase();
+						const desc = (e.description || '').toLowerCase();
+						const website = (e.website || '').toLowerCase();
+						const combined = `${name} ${desc} ${website}`;
+						
+						// Must have kids mention OR strong activity keyword
+						const hasKidsMention = kidsKeywords.some(kw => combined.includes(kw));
+						const hasActivityKeyword = activityKeywords.some(kw => combined.includes(kw));
+						
+						// Filter out adult-only organizations
+						const adultOnlyKeywords = ['senior', 'séniors', 'adulte', 'adultes', 'adult', 'retraité', 'retraités', 'retired', 'troisième âge'];
+						const isAdultOnly = adultOnlyKeywords.some(kw => combined.includes(kw)) && !hasKidsMention;
+						
+						// Filter out generic nonprofits
+						const genericNonprofitKeywords = ['bénévolat', 'volunteer', 'charity', 'charité', 'fondation', 'foundation'];
+						const isGenericNonprofit = genericNonprofitKeywords.some(kw => combined.includes(kw)) && !hasActivityKeyword;
+						
+						return (hasKidsMention || hasActivityKeyword) && !isAdultOnly && !isGenericNonprofit;
+					})
+					.map(e => ({
+						id: uuidv4(),
+						data: {
+							name: e.name,
+							title: e.name,
+							website: e.website,
+							websiteLink: e.website,
+							email: e.email,
+							phone: e.phone,
+							address: e.address,
+							description: e.description || `Activity from ${arrondissement} arrondissement (via intelligent crawler)`,
+							neighborhood: arrondissement,
+							arrondissement: arrondissement,
+							categories: e.categories || [],
+							images: e.images || []
+						},
+						sources: [e.sourceUrl || e.source || 'intelligent_crawler'],
+						confidence: e.confidence || 0.7,
+						extractedAt: new Date().toISOString(),
+						validation: { valid: true, score: e.confidence || 0.7 }
+					}));
+				
+				console.log(`✅ Intelligent crawler: ${intelligentEntities.length} kids activity entities (filtered from ${intelligentResults.entities.length} total)`);
 			} catch (intelligentError) {
 				console.error(`  ❌ Intelligent crawler failed:`, intelligentError.message);
 				allErrors.push({ stage: 'intelligent_crawler', error: intelligentError.message });

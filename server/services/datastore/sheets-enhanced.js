@@ -355,22 +355,31 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			}
 		});
 		
-		// Log column mapping for debugging
-		if (process.env.NODE_ENV === 'development' || sheetType === 'activities') {
+		// Log column mapping for debugging (always log for activities to debug title issues)
+		if (sheetType === 'activities') {
 			console.log(`📊 Reading ${sheetName}: Found ${headerRow.length} columns, mapped to ${Object.keys(columnMap).length} fields`);
+			console.log(`📋 All column headers:`, headerRow);
+			console.log(`📋 Column mapping:`, Object.entries(columnMap).map(([idx, field]) => ({ index: idx, header: headerRow[idx], field: field })));
+			
 			// Log title-related columns for activities
-			if (sheetType === 'activities') {
-				const titleColumns = headerRow.map((col, idx) => {
-					const field = columnMap[idx];
-					if (field && (field.includes('title') || field.includes('name') || col.toLowerCase().includes('title') || col.toLowerCase().includes('name') || col.toLowerCase().includes('nom') || col.toLowerCase().includes('activité'))) {
-						return { column: col, field: field, index: idx };
-					}
-					return null;
-				}).filter(Boolean);
-				if (titleColumns.length > 0) {
-					console.log(`📋 Title-related columns found:`, titleColumns);
+			const titleColumns = headerRow.map((col, idx) => {
+				const field = columnMap[idx];
+				const colLower = (col || '').toLowerCase();
+				if (field && (field.includes('title') || field.includes('name') || 
+				    colLower.includes('title') || colLower.includes('name') || 
+				    colLower.includes('nom') || colLower.includes('activité') ||
+				    colLower.includes('organization') || colLower.includes('organisation'))) {
+					return { column: col, field: field, index: idx };
 				}
+				return null;
+			}).filter(Boolean);
+			if (titleColumns.length > 0) {
+				console.log(`📋 Title-related columns found:`, titleColumns);
+			} else {
+				console.warn(`⚠️  No title-related columns found! Available columns:`, headerRow);
 			}
+		} else if (process.env.NODE_ENV === 'development') {
+			console.log(`📊 Reading ${sheetName}: Found ${headerRow.length} columns, mapped to ${Object.keys(columnMap).length} fields`);
 		}
 		
 		// Process rows
@@ -493,13 +502,24 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			
 			// Debug: Log if title is still empty after all transformations
 			if ((!obj.title.en && !obj.title.fr)) {
-				console.warn(`⚠️  Activity ${obj.id} has no title after transformation. Raw data:`, {
-					title_en: rawTitleEn,
-					title_fr: rawTitleFr,
-					title: rawTitle,
-					name: rawName,
-					allKeys: Object.keys(obj)
-				});
+				// Only log first few to avoid spam
+				const sampleCount = 3;
+				if (!global._titleWarningCount) global._titleWarningCount = 0;
+				if (global._titleWarningCount < sampleCount) {
+					global._titleWarningCount++;
+					console.warn(`⚠️  Activity ${obj.id} has no title after transformation. Raw data:`, {
+						title_en: rawTitleEn,
+						title_fr: rawTitleFr,
+						title: rawTitle,
+						name: rawName,
+						providerId: obj.providerId,
+						allKeys: Object.keys(obj).slice(0, 20) // First 20 keys
+					});
+					// Log first row's actual values for debugging
+					if (global._titleWarningCount === 1) {
+						console.log(`📋 Sample activity raw values:`, Object.entries(obj).slice(0, 15).map(([k, v]) => ({ key: k, value: v, type: typeof v })));
+					}
+				}
 			}
 			
 			// Clean up title_en/title_fr if they exist

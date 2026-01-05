@@ -37,10 +37,11 @@ activitiesRouter.get('/', async (req, res) => {
 			minPrice, maxPrice, neighborhood, q
 		};
 		
-		// Check cache first
+		// Check cache first (but force refresh for debugging title issues)
 		const cache = getCache();
 		const cacheKey = cacheKeys.activities.list(filters);
-		const cached = cache.get(cacheKey);
+		const forceRefresh = req.query.refresh === 'true'; // Allow ?refresh=true to bypass cache
+		const cached = forceRefresh ? null : cache.get(cacheKey);
 		
 		let all;
 		if (cached) {
@@ -58,6 +59,21 @@ activitiesRouter.get('/', async (req, res) => {
 			const dataPromise = store.activities.list();
 			all = await Promise.race([dataPromise, timeoutPromise]);
 			console.log(`✅ Retrieved ${all.length} activities from data store`);
+			
+			// Debug: Check title format for first few activities
+			if (all.length > 0 && process.env.NODE_ENV === 'development') {
+				const sample = all.slice(0, 3);
+				sample.forEach((a, idx) => {
+					console.log(`📋 Activity ${idx + 1}:`, {
+						id: a.id,
+						title: a.title,
+						titleType: typeof a.title,
+						title_en: a.title_en,
+						title_fr: a.title_fr,
+						name: a.name
+					});
+				});
+			}
 			
 			// Cache for 5 minutes (300000ms)
 			cache.set(cacheKey, all, 300000);

@@ -12,6 +12,7 @@ import {
 } from '../utils/sheetsFormatter.js';
 import { CrawlerOrchestrator } from '../services/crawler/index.js';
 import { AdvancedCrawler } from '../services/crawler/advancedCrawler.js';
+import { IntelligentCrawler } from '../services/crawler/intelligentCrawler.js';
 
 export const arrondissementCrawlerRouter = express.Router();
 
@@ -1391,9 +1392,14 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					advancedEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
 					enhancedEntities.forEach(e => existingNames.add((e.data?.name || e.data?.title || '').toLowerCase()));
 
-					arrondissementEntities.push(...advancedEntities, ...enhancedEntities);
-					allErrors.push(...(crawlResults.errors || []));
-					console.log(`✅ Advanced crawler found ${advancedEntities.length} entities, Enhanced crawler found ${enhancedEntities.length} entities`);
+					arrondissementEntities.push(
+						...filteredIntelligentEntities, // Intelligent crawler results first (highest quality)
+						...advancedEntities, 
+						...enhancedEntities
+					);
+					allErrors.push(...(intelligentResults.errors || []));
+					allErrors.push(...(crawlResults?.errors || []));
+					console.log(`✅ Intelligent crawler: ${filteredIntelligentEntities.length}, Advanced: ${advancedEntities.length}, Enhanced: ${enhancedEntities.length} entities`);
 				} catch (enhancedError) {
 					console.error(`⚠️  Advanced crawler failed (continuing with mairie results):`, enhancedError.message);
 					allErrors.push({ stage: 'advanced_crawler', error: enhancedError.message });

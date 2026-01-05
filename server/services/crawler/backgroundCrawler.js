@@ -10,14 +10,256 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { google } from 'googleapis';
+import fetch from 'node-fetch';
+import { JSDOM } from 'jsdom';
 import { LocalityFirstCrawler } from './localityFirstCrawler.js';
 import { IntelligentCrawler } from './intelligentCrawler.js';
 import { AdvancedCrawler } from './advancedCrawler.js';
 import { CrawlerOrchestrator } from './orchestrator.js';
 import { generateTabName, activityToSheetRow, ACTIVITIES_COLUMN_ORDER, getHeaders } from '../../utils/sheetsFormatter.js';
+import { fetchWithRetry } from '../../utils/fetchUtils.js';
 
 // In-memory job store (in production, use Redis or database)
 const jobs = new Map();
+
+// Helper functions (copied from arrondissementCrawler.js)
+function randomDelay(min, max) {
+	const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+	return new Promise(resolve => setTimeout(resolve, delay));
+}
+
+// Search for activities on Paris mairie websites (PROVEN WORKING FUNCTION)
+async function searchMairieActivities(arrondissement, postalCode) {
+	const activities = [];
+	
+	try {
+		// Build mairie activities URL - try multiple URL patterns
+		const arrNum = arrondissement.replace('er', '').replace('e', '');
+		const mairieUrls = [
+			`https://mairie${arrNum}.paris.fr/recherche/activites?arrondissements=${postalCode}`,
+			`https://mairie${arrNum}.paris.fr/recherche?q=activités&arrondissements=${postalCode}`,
+			`https://mairie${arrNum}.paris.fr/recherche?q=associations&arrondissements=${postalCode}`,
+			`https://mairie${arrNum}.paris.fr/recherche?q=clubs&arrondissements=${postalCode}`
+		];
+		
+		const allActivityLinks = new Set();
+		
+		// Try each URL pattern
+		for (const mairieUrl of mairieUrls) {
+			try {
+				console.log(`🔍 [${arrondissement}] Trying mairie URL: ${mairieUrl}`);
+				const response = await fetchWithRetry(mairieUrl, { timeout: 20000 });
+
+				if (!response.ok) {
+					console.warn(`⚠️ [${arrondissement}] Mairie URL failed: HTTP ${response.status}`);
+					continue;
+				}
+
+				const html = await response.text();
+				const dom = new JSDOM(html);
+				const document = dom.window.document;
+
+				const baseUrl = `https://mairie${arrNum}.paris.fr`;
+				const pageActivityLinks = new Set();
+
+				// Find activity links - try multiple selectors
+				const activitySelectors = [
+					'a[href*="/activites/"]',
+					'a[href*="/activite/"]',
+					'a[href*="activites"]',
+					'a[href*="activite"]',
+					'article a',
+					'.result-item a',
+					'.activity-item a',
+					'.search-result a',
+					'[class*="result"] a',
+					'[class*="activity"] a',
+					'[class*="activite"] a',
+					'.card a',
+					'.item a',
+					'li a[href*="activite"]'
+				];
+				
+				for (const selector of activitySelectors) {
+					try {
+						const links = document.querySelectorAll(selector);
+						for (const link of links) {
+							const href = link.getAttribute('href');
+							if (!href) continue;
+							
+							const isActivityLink = href.includes('activite') || 
+							                     href.includes('activites') ||
+							                     link.textContent?.toLowerCase().includes('activité') ||
+							                     link.textContent?.toLowerCase().includes('activite');
+							
+							if (isActivityLink) {
+								let fullUrl = href;
+								if (href.startsWith('/')) {
+									fullUrl = `${baseUrl}${href}`;
+								} else if (!href.startsWith('http')) {
+									fullUrl = `${baseUrl}/${href}`;
+								}
+								if (fullUrl.startsWith('http') && !pageActivityLinks.has(fullUrl)) {
+									pageActivityLinks.add(fullUrl);
+								}
+							}
+						}
+					} catch (e) {
+						// Skip selector errors
+					}
+				}
+
+				// Also search for URLs in page text
+				const activityUrlPattern = /https?:\/\/mairie\d+\.paris\.fr\/[^"'\s<>]*activit[^"'\s<>]*/gi;
+				const urlMatches = html.match(activityUrlPattern);
+				if (urlMatches) {
+					urlMatches.forEach(url => pageActivityLinks.add(url));
+				}
+
+				// Parse JSON-LD structured data
+				const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+				for (const script of jsonLdScripts) {
+					try {
+						const jsonLd = JSON.parse(script.textContent);
+						const extractUrls = (obj) => {
+							if (typeof obj !== 'object' || obj === null) return;
+							if (Array.isArray(obj)) {
+								obj.forEach(extractUrls);
+							} else {
+								for (const [key, value] of Object.entries(obj)) {
+									if (key === 'url' && typeof value === 'string' && value.includes('activite')) {
+										pageActivityLinks.add(value);
+									} else if (typeof value === 'object') {
+										extractUrls(value);
+									}
+								}
+							}
+						};
+						extractUrls(jsonLd);
+					} catch (e) {
+						// Invalid JSON-LD, skip
+					}
+				}
+
+				pageActivityLinks.forEach(link => allActivityLinks.add(link));
+				console.log(`  ✅ Found ${pageActivityLinks.size} links from this URL (total: ${allActivityLinks.size})`);
+				
+				await randomDelay(1000, 2000);
+				
+			} catch (urlError) {
+				console.warn(`  ⚠️  Error with URL ${mairieUrl}:`, urlError.message);
+				continue;
+			}
+		}
+
+		console.log(`📋 [${arrondissement}] Found ${allActivityLinks.size} total activity links from all mairie URLs`);
+		
+		const activityArray = Array.from(allActivityLinks).slice(0, 50); // Limit to 50 to avoid timeout
+		console.log(`📋 [${arrondissement}] Processing ${activityArray.length} activity links...`);
+		
+		for (let i = 0; i < activityArray.length; i++) {
+			const activityUrl = activityArray[i];
+			try {
+				await randomDelay(1500, 3000);
+				const orgInfo = await extractOrganizationFromMairiePage(activityUrl, arrondissement);
+				
+				if (orgInfo && (orgInfo.website || orgInfo.email || orgInfo.phone)) {
+					activities.push(orgInfo);
+					console.log(`✅ [${arrondissement}] Found: ${orgInfo.name} (${i + 1}/${activityArray.length})${orgInfo.website ? '' : ' (no website)'}`);
+				} else if (orgInfo) {
+					activities.push({
+						...orgInfo,
+						name: orgInfo.name || `Activity from ${arrondissement}`,
+						website: null
+					});
+					console.log(`⚠️ [${arrondissement}] Found activity without contact: ${orgInfo.name} (${i + 1}/${activityArray.length})`);
+				}
+			} catch (error) {
+				console.error(`❌ [${arrondissement}] Error extracting from ${activityUrl}:`, error.message);
+				continue;
+			}
+		}
+	} catch (error) {
+		console.error(`❌ [${arrondissement}] Error searching mairie:`, error.message);
+	}
+	
+	return activities;
+}
+
+// Extract organization information from mairie activity page
+async function extractOrganizationFromMairiePage(activityUrl, arrondissement) {
+	try {
+		const response = await fetchWithRetry(activityUrl, { timeout: 15000 });
+
+		if (!response.ok) {
+			return null;
+		}
+
+		const html = await response.text();
+		const dom = new JSDOM(html);
+		const document = dom.window.document;
+
+		const title = document.querySelector('h1')?.textContent?.trim() ||
+		             document.querySelector('.title')?.textContent?.trim() ||
+		             document.querySelector('title')?.textContent?.trim() ||
+		             '';
+
+		let orgWebsite = null;
+		let orgName = title;
+
+		const websiteSelectors = [
+			'a[href^="http"]:not([href*="mairie"]):not([href*="paris.fr"])',
+			'a[href^="https://"]',
+			'.website',
+			'.site-web',
+			'[class*="website"]',
+			'[class*="site"]',
+			'a[href*="www."]'
+		];
+
+		for (const selector of websiteSelectors) {
+			const links = document.querySelectorAll(selector);
+			for (const link of links) {
+				const href = link.getAttribute('href');
+				if (href && href.startsWith('http') && 
+				    !href.includes('mairie') && 
+				    !href.includes('paris.fr') &&
+				    !href.includes('facebook.com') &&
+				    !href.includes('twitter.com') &&
+				    !href.includes('instagram.com')) {
+					orgWebsite = href;
+					break;
+				}
+			}
+			if (orgWebsite) break;
+		}
+
+		const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+		const emailMatch = html.match(emailPattern);
+		const email = emailMatch ? emailMatch.find(e => !e.includes('mairie') && !e.includes('paris.fr') && !e.includes('noreply')) : null;
+
+		const phonePattern = /(?:\+33|0)[1-9](?:[.\s]?\d{2}){4}/g;
+		const phoneMatch = html.match(phonePattern);
+		const phone = phoneMatch ? phoneMatch[0].trim() : null;
+
+		const addressPattern = /\d+\s(?:rue|avenue|boulevard|place|allée|chemin|impasse)\s[A-ZÉÈÀÛÔÎÂÙÇa-zéèàûôîâùç\s\d\-.']+,?\s(?:750(?:0[1-9]|1[0-9]|20))\sParis/gi;
+		const addressMatch = html.match(addressPattern);
+		const address = addressMatch ? addressMatch[0].trim() : null;
+
+		return {
+			name: orgName,
+			website: orgWebsite,
+			email: email,
+			phone: phone,
+			address: address,
+			arrondissement: arrondissement,
+			sourceUrl: activityUrl
+		};
+	} catch (error) {
+		console.error(`Error extracting from ${activityUrl}:`, error.message);
+		return null;
+	}
+}
 
 /**
  * Get Google Sheets client
@@ -204,7 +446,48 @@ async function runCrawlerJob(jobId) {
 			
 			const arrondissementEntities = [];
 			
-			// STEP 0: Locality-first crawler (highest precision)
+			// STEP 0: Use proven mairie crawler (this works!)
+			job.progress.message = `Step 0: Using proven mairie crawler for ${arrondissement}...`;
+			let mairieEntities = [];
+			try {
+				const mairieActivities = await searchMairieActivities(arrondissement, postalCode);
+				console.log(`✅ Found ${mairieActivities.length} activities from mairie pages`);
+				
+				mairieEntities = mairieActivities
+					.filter(activity => {
+						const name = (activity.name || '').toLowerCase().trim();
+						if (rejectedOrganizations.names.has(name)) return false;
+						if (existingOrganizations.names.has(name)) return false;
+						return true;
+					})
+					.map(activity => ({
+						id: uuidv4(),
+						data: {
+							name: activity.name,
+							title: activity.name,
+							website: activity.website,
+							websiteLink: activity.website,
+							email: activity.email,
+							phone: activity.phone,
+							address: activity.address,
+							description: `Activity from ${arrondissement} arrondissement`,
+							neighborhood: arrondissement,
+							arrondissement: arrondissement
+						},
+						sources: [activity.sourceUrl || 'mairie'],
+						confidence: 0.9,
+						extractedAt: new Date().toISOString(),
+						validation: { valid: true, score: 0.9 }
+					}));
+				
+				arrondissementEntities.push(...mairieEntities);
+				console.log(`✅ Added ${mairieEntities.length} mairie entities`);
+			} catch (mairieError) {
+				console.error(`  ❌ Mairie crawler failed:`, mairieError.message);
+				allErrors.push({ stage: 'mairie_crawler', error: mairieError.message });
+			}
+			
+			// STEP 1: Locality-first crawler (highest precision)
 			job.progress.message = `Step 0: Locality-first crawler for ${arrondissement}...`;
 			let localityEntities = [];
 			try {
@@ -323,7 +606,9 @@ async function runCrawlerJob(jobId) {
 			// Save to Google Sheets
 			job.progress.message = `Saving results for ${arrondissement}...`;
 			if (arrondissementEntities.length > 0) {
+				// Use the same format as the regular crawler: "Pending - YYYY-MM-DD - Arrondissement Crawler"
 				const finalSheetName = generateTabName('pending', 'arrondissement-crawler');
+				console.log(`📋 Saving to sheet: "${finalSheetName}"`);
 				
 				const validEntities = arrondissementEntities.filter(e => {
 					if (!e.data) return false;
@@ -423,7 +708,14 @@ async function runCrawlerJob(jobId) {
 					requestBody: { values: rowsToSave }
 				});
 				
-				console.log(`✅ Saved ${rowsToSave.length} entities to Google Sheets (${finalSheetName})`);
+				// Get sheet ID for URL
+				const updatedSpreadsheet = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
+				const updatedSheet = updatedSpreadsheet.data.sheets.find(s => s.properties.title === finalSheetName);
+				const sheetGid = updatedSheet?.properties?.sheetId || '';
+				
+				console.log(`✅ Saved ${rowsToSave.length} entities to Google Sheets`);
+				console.log(`📋 Sheet name: "${finalSheetName}"`);
+				console.log(`🔗 Sheet URL: https://docs.google.com/spreadsheets/d/${sheetId}/edit#gid=${sheetGid}`);
 			}
 			
 			allResults.push({

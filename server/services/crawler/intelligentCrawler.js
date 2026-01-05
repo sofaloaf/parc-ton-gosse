@@ -349,8 +349,10 @@ export class IntelligentCrawler {
 			'enfant', 'enfants', 'kids', 'children', 'jeunesse', 'youth'
 		];
 		
+		// For Wikidata pages, skip keyword check (they're structured data, not HTML with keywords)
+		const isWikidata = url.includes('wikidata.org');
 		const hasActivityKeyword = activityKeywords.some(keyword => textLower.includes(keyword));
-		if (!hasActivityKeyword && !url.includes('association') && !url.includes('club') && !url.includes('activite')) {
+		if (!isWikidata && !hasActivityKeyword && !url.includes('association') && !url.includes('club') && !url.includes('activite')) {
 			console.log(`  ⏭️  Skipping page without activity keywords: ${url}`);
 			return []; // Return empty if no activity-related content
 		}

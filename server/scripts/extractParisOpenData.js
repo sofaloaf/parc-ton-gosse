@@ -262,32 +262,29 @@ function filterKidsActivities(associations) {
 	
 	let debugCount = 0;
 	const filtered = associations.filter((assoc, index) => {
-		// Try multiple possible field name variations
+		// Use actual field names from the API
 		const publicVise = (
+			assoc['pv_public_vis'] || 
 			assoc['pv-public visé'] || 
 			assoc['pv_public_vise'] || 
 			assoc['public_vise'] || 
 			assoc['public visé'] || 
-			assoc['publicVise'] ||
-			assoc['pv_public_vise'] ||
-			assoc['public_vise'] ||
-			assoc['public'] ||
 			''
 		).toString().toLowerCase();
 		
-		const secteursActivites = (
-			assoc['sa secteurs d\'activités'] || 
-			assoc['sa_secteurs_activites'] || 
-			assoc['secteurs_activites'] || 
-			assoc['secteurs d\'activités'] || 
-			assoc['secteursActivites'] ||
-			assoc['secteurs_activites'] ||
-			assoc['secteurs'] ||
-			assoc['activites'] ||
-			''
-		).toString().toLowerCase();
+		// Combine all activity sector fields
+		const secteursActivites = [
+			assoc['sa_libell_secteur_d_activit'] || '',
+			assoc['sa_secteur_d_activit_1'] || '',
+			assoc['sa_secteur_d_activit_2'] || '',
+			assoc['sa_secteur_d_activit_3'] || '',
+			assoc['sa_libell_domaine_d_activit'] || '',
+			assoc['sa secteurs d\'activités'] || '',
+			assoc['secteurs_activites'] || ''
+		].filter(Boolean).join(' ').toLowerCase();
 		
 		const nom = (
+			assoc['pr_nom_statutaire'] ||
 			assoc['nom'] || 
 			assoc['noms'] || 
 			assoc['name'] || 
@@ -309,8 +306,8 @@ function filterKidsActivities(associations) {
 		// Debug first few to see what we're getting
 		if (index < 5 && debugCount < 5) {
 			console.log(`\n  🔍 Sample ${index + 1}:`);
-			console.log(`     Nom: ${nom || '(empty)'}`);
-			console.log(`     Public Visé: ${publicVise || '(empty)'}`);
+			console.log(`     Nom (pr_nom_statutaire): ${nom || '(empty)'}`);
+			console.log(`     Public Visé (pv_public_vis): ${publicVise || '(empty)'}`);
 			console.log(`     Secteurs: ${secteursActivites || '(empty)'}`);
 			console.log(`     Objet: ${objet.substring(0, 80) || '(empty)'}`);
 			debugCount++;
@@ -363,14 +360,23 @@ async function saveToGoogleSheets(associations, sheets, sheetId) {
 	
 	// Prepare rows
 	const rows = associations.map(assoc => {
-		// Handle different field names
-		const nom = assoc['nom'] || assoc['noms'] || assoc['name'] || assoc['association'] || '';
+		// Use actual field names from the API
+		const nom = assoc['pr_nom_statutaire'] || assoc['nom'] || assoc['noms'] || assoc['name'] || assoc['association'] || '';
 		const objet = assoc['objet'] || assoc['object'] || assoc['description'] || '';
-		const publicVise = assoc['pv-public visé'] || assoc['pv_public_vise'] || assoc['public_vise'] || assoc['public visé'] || assoc['publicVise'] || '';
-		const secteursActivites = assoc['sa secteurs d\'activités'] || assoc['sa_secteurs_activites'] || assoc['secteurs_activites'] || assoc['secteurs d\'activités'] || assoc['secteursActivites'] || '';
-		const adresse = assoc['adresse'] || assoc['address'] || assoc['adresse_siege'] || assoc['siege'] || '';
-		const codePostal = assoc['code_postal'] || assoc['postal_code'] || assoc['cp'] || '';
-		const ville = assoc['ville'] || assoc['city'] || 'Paris';
+		const publicVise = assoc['pv_public_vis'] || assoc['pv-public visé'] || assoc['pv_public_vise'] || assoc['public_vise'] || assoc['public visé'] || '';
+		
+		// Combine all activity sector fields
+		const secteursActivites = [
+			assoc['sa_libell_secteur_d_activit'],
+			assoc['sa_secteur_d_activit_1'],
+			assoc['sa_secteur_d_activit_2'],
+			assoc['sa_secteur_d_activit_3'],
+			assoc['sa_libell_domaine_d_activit']
+		].filter(Boolean).join('; ');
+		
+		const adresse = assoc['adresse'] || assoc['address'] || assoc['adresse_siege'] || assoc['siege'] || assoc['cp_adresse'] || '';
+		const codePostal = assoc['cp_adresse_code_postal'] || assoc['code_postal'] || assoc['postal_code'] || assoc['cp'] || '';
+		const ville = assoc['cp_adresse_ville'] || assoc['ville'] || assoc['city'] || 'Paris';
 		const siteWeb = assoc['site_web'] || assoc['website'] || assoc['url'] || assoc['lien_site'] || '';
 		const email = assoc['email'] || assoc['courriel'] || assoc['mail'] || '';
 		const telephone = assoc['telephone'] || assoc['phone'] || assoc['tel'] || '';

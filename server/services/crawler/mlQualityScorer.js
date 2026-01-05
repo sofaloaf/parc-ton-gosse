@@ -33,22 +33,11 @@ export class MLQualityScorer {
 	 * Initialize the model (load from disk or create new)
 	 */
 	async initialize() {
-		try {
-			// Try to load existing model
-			if (fs.existsSync(this.modelPath)) {
-				console.log('📦 Loading existing ML model from disk...');
-				this.model = await tf.loadLayersModel(`file://${this.modelPath}`);
-				console.log('✅ ML model loaded successfully');
-				return true;
-			} else {
-				console.log('⚠️  No existing model found. Model will be created on first training.');
-				return false;
-			}
-		} catch (error) {
-			console.warn('⚠️  Could not load model:', error.message);
-			console.log('📝 Will create new model on first training.');
-			return false;
-		}
+		// For now, model will be created on first training
+		// File loading can be added later if needed
+		// Model works fine in-memory for crawler sessions
+		console.log('📝 Model will be created on first training (in-memory mode)');
+		return false;
 	}
 
 	/**
@@ -130,13 +119,16 @@ export class MLQualityScorer {
 				return;
 			}
 
+			// Normalize features (important for training stability)
+			const normalizedFeatures = this.normalizeFeatures(features);
+
 			// Convert to tensors
-			const featureTensor = tf.tensor2d(features);
+			const featureTensor = tf.tensor2d(normalizedFeatures);
 			const labelTensor = tf.tensor2d(labels.map(l => [l]));
 
 			// Create or load model
 			if (!this.model) {
-				const inputShape = features[0].length;
+				const inputShape = normalizedFeatures[0].length;
 				this.model = this.createModel(inputShape);
 				console.log(`📊 Created new model with input shape: [${inputShape}]`);
 			}
@@ -160,8 +152,12 @@ export class MLQualityScorer {
 			featureTensor.dispose();
 			labelTensor.dispose();
 
-			// Save model
-			await this.saveModel();
+			// Save model (optional - model works in-memory even if save fails)
+			try {
+				await this.saveModel();
+			} catch (saveError) {
+				console.warn('⚠️  Could not save model to disk, but model is ready in memory:', saveError.message);
+			}
 
 			console.log('✅ Model training completed');
 			console.log(`   Final loss: ${history.history.loss[history.history.loss.length - 1].toFixed(4)}`);
@@ -189,7 +185,9 @@ export class MLQualityScorer {
 		try {
 			// Extract features
 			const features = this.featureExtractor.extract(organization);
-			const featureTensor = tf.tensor2d([features]);
+			// Normalize features if normalization params exist
+			const normalizedFeatures = this.normalizeFeatureVector(features);
+			const featureTensor = tf.tensor2d([normalizedFeatures]);
 
 			// Predict
 			const prediction = this.model.predict(featureTensor);
@@ -330,7 +328,73 @@ export class MLQualityScorer {
 	}
 
 	/**
-	 * Save model to disk
+	 * Normalize features to 0-1 range (prevents NaN during training)
+	 */
+	normalizeFeatures(features) {
+		if (features.length === 0) return features;
+
+		const featureCount = features[0].length;
+		const normalized = [];
+
+		// Calculate min/max for each feature
+		const mins = new Array(featureCount).fill(Infinity);
+		const maxs = new Array(featureCount).fill(-Infinity);
+
+		for (const featureVector of features) {
+			for (let i = 0; i < featureCount; i++) {
+				const val = featureVector[i] || 0;
+				mins[i] = Math.min(mins[i], val);
+				maxs[i] = Math.max(maxs[i], val);
+			}
+		}
+
+		// Normalize each feature vector
+		for (const featureVector of features) {
+			const normalizedVector = [];
+			for (let i = 0; i < featureCount; i++) {
+				const val = featureVector[i] || 0;
+				const range = maxs[i] - mins[i];
+				if (range > 0) {
+					normalizedVector.push((val - mins[i]) / range);
+				} else {
+					normalizedVector.push(0); // All same value, normalize to 0
+				}
+			}
+			normalized.push(normalizedVector);
+		}
+
+		// Store normalization params for inference
+		this.normalizationParams = { mins, maxs };
+
+		return normalized;
+	}
+
+	/**
+	 * Normalize a single feature vector using stored params
+	 */
+	normalizeFeatureVector(features) {
+		if (!this.normalizationParams) {
+			return features; // No normalization params, return as-is
+		}
+
+		const { mins, maxs } = this.normalizationParams;
+		const normalized = [];
+
+		for (let i = 0; i < features.length; i++) {
+			const val = features[i] || 0;
+			const range = maxs[i] - mins[i];
+			if (range > 0) {
+				normalized.push((val - mins[i]) / range);
+			} else {
+				normalized.push(0);
+			}
+		}
+
+		return normalized;
+	}
+
+	/**
+	 * Save model to disk (using JSON format since file:// doesn't work with browser version)
 	 */
 	async saveModel() {
 		if (!this.model) {
@@ -345,12 +409,31 @@ export class MLQualityScorer {
 				fs.mkdirSync(modelsDir, { recursive: true });
 			}
 
-			// Save model
-			await this.model.save(`file://${this.modelPath}`);
-			console.log(`💾 Model saved to: ${this.modelPath}`);
+			// Save model architecture and weights separately
+			const modelJson = this.model.toJSON();
+			const weights = await this.model.getWeights();
+			const weightsData = weights.map(w => Array.from(w.dataSync()));
+
+			const modelData = {
+				modelTopology: modelJson,
+				weights: weightsData,
+				normalizationParams: this.normalizationParams
+			};
+
+			// Save to JSON file
+			const jsonPath = this.modelPath.replace('.json', '_data.json');
+			fs.writeFileSync(jsonPath, JSON.stringify(modelData, null, 2));
+			console.log(`💾 Model saved to: ${jsonPath}`);
+
+			// Also save normalization params separately for easy loading
+			if (this.normalizationParams) {
+				const normPath = this.modelPath.replace('.json', '_normalization.json');
+				fs.writeFileSync(normPath, JSON.stringify(this.normalizationParams, null, 2));
+			}
 		} catch (error) {
 			console.error('❌ Failed to save model:', error);
-			throw error;
+			// Don't throw - model can still be used in memory
+			console.warn('⚠️  Model will only be available in current session');
 		}
 	}
 

@@ -1407,7 +1407,8 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					});
 
 					// Merge all results (avoid duplicates and filter newsletters)
-					const existingNames = new Set(mairieEntities.map(e => e.data.name?.toLowerCase()));
+					// Start with existing organizations from database
+					const existingNames = new Set([...existingOrganizations.names, ...mairieEntities.map(e => e.data.name?.toLowerCase())]);
 					
 					// Add intelligent crawler results FIRST (highest quality)
 					console.log(`  🔄 Merging ${intelligentEntities.length} intelligent crawler entities...`);
@@ -1445,7 +1446,21 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 							return false;
 						}
 						
-						// Filter out duplicates
+						// Check if already exists in database
+						if (existingOrganizations.names.has(name)) {
+							console.log(`  ⏭️  Skipping organization already in database: ${name}`);
+							return false;
+						}
+						
+						if (website) {
+							const normalizedWebsite = website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+							if (existingOrganizations.websites.has(normalizedWebsite)) {
+								console.log(`  ⏭️  Skipping organization already in database (by website): ${name}`);
+								return false;
+							}
+						}
+						
+						// Filter out duplicates within this crawl
 						const isDuplicate = name && existingNames.has(name);
 						if (isDuplicate) {
 							console.log(`  ⏭️  Skipping duplicate from intelligent crawler: ${name}`);

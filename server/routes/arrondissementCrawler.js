@@ -1573,7 +1573,10 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 								createdAt: new Date().toISOString(),
 								updatedAt: new Date().toISOString()
 							};
-							return activityToSheetRow(activity, ACTIVITIES_COLUMN_ORDER);
+							// Convert activity object to sheet row object, then convert to array of values
+							const rowObject = activityToSheetRow(activity, ACTIVITIES_COLUMN_ORDER);
+							// Convert object to array of values in column order
+							return ACTIVITIES_COLUMN_ORDER.map(col => rowObject[col] || '');
 						});
 
 						// Get or create sheet

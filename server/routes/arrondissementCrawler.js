@@ -1807,13 +1807,8 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 			console.log(`  - Advanced crawler: ${advancedEntities.length} entities`);
 			console.log(`  - Enhanced crawler: ${enhancedEntities.length} entities`);
 			console.log(`  - TOTAL: ${arrondissementEntities.length} entities`);
-				} catch (enhancedError) {
-					console.error(`⚠️  Advanced/Enhanced crawler failed (continuing with mairie and intelligent results):`, enhancedError.message);
-					allErrors.push({ stage: 'advanced_enhanced_crawler', error: enhancedError.message });
-					// Continue with results we have so far (mairie + intelligent)
-				}
 
-				// STEP 3: Save all entities to Google Sheets using proven approach
+			// STEP 3: Save all entities to Google Sheets using proven approach
 				console.log(`📋 Step 3: Saving ${arrondissementEntities.length} entities to Google Sheets...`);
 				let saveResult = null;
 				if (arrondissementEntities.length > 0) {

@@ -1582,7 +1582,15 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 
 						saveResult = { savedCount: rowsToSave.length, sheetName: finalSheetName };
 						console.log(`✅ Saved ${rowsToSave.length} entities to Google Sheets (${finalSheetName})`);
-						console.log(`📋 Sheet URL: https://docs.google.com/spreadsheets/d/${sheetId}/edit#gid=${sheet.properties?.sheetId || ''}`);
+						
+						// Get sheet ID for URL
+						const updatedSpreadsheet = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
+						const updatedSheet = updatedSpreadsheet.data.sheets.find(s => s.properties.title === finalSheetName);
+						const sheetGid = updatedSheet?.properties?.sheetId || '';
+						
+						console.log(`📋 Sheet URL: https://docs.google.com/spreadsheets/d/${sheetId}/edit#gid=${sheetGid}`);
+						console.log(`📋 Sheet name: "${finalSheetName}"`);
+						console.log(`📋 This sheet should appear in pending activities with pattern: "Pending - YYYY-MM-DD"`);
 					} catch (saveError) {
 						console.error(`❌ Failed to save entities:`, saveError.message);
 						allErrors.push({ stage: 'storage', error: saveError.message });

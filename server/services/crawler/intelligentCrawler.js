@@ -330,10 +330,35 @@ export class IntelligentCrawler {
 	extractEntitiesFromText(text, url) {
 		const entities = [];
 		
+		// STRICT FILTERING: Skip newsletter and irrelevant pages
+		const textLower = text.toLowerCase();
+		if (textLower.includes('newsletter') && 
+		    (textLower.includes('abonnez-vous') || textLower.includes('inscription') || textLower.includes('abonnement'))) {
+			console.log(`  ⏭️  Skipping newsletter page: ${url}`);
+			return []; // Return empty array for newsletter pages
+		}
+
+		// Must contain activity-related keywords to be relevant
+		const activityKeywords = [
+			'activité', 'activités', 'activity', 'activities',
+			'club', 'clubs', 'association', 'associations',
+			'sport', 'sports', 'théâtre', 'danse', 'musique',
+			'arts martiaux', 'gymnastique', 'natation', 'tennis',
+			'football', 'basketball', 'judo', 'karate', 'escrime',
+			'loisir', 'loisirs', 'atelier', 'ateliers', 'cours',
+			'enfant', 'enfants', 'kids', 'children', 'jeunesse', 'youth'
+		];
+		
+		const hasActivityKeyword = activityKeywords.some(keyword => textLower.includes(keyword));
+		if (!hasActivityKeyword && !url.includes('association') && !url.includes('club') && !url.includes('activite')) {
+			console.log(`  ⏭️  Skipping page without activity keywords: ${url}`);
+			return []; // Return empty if no activity-related content
+		}
+		
 		// Organization name patterns
 		const namePatterns = [
-			/(?:Association|Club|Cercle|Centre|Académie|École)\s+([A-Z][a-zA-Z\s\-'éèêëàâäôöùûüç]+)/g,
-			/([A-Z][a-zA-Z\s\-'éèêëàâäôöùûüç]+)\s+(?:Association|Club|Cercle)/g,
+			/(?:Association|Club|Cercle|Centre|Académie|École)\s+([A-Z][a-zA-Z\s\-'éèêëàâäôöùûüç]{3,60})/g,
+			/([A-Z][a-zA-Z\s\-'éèêëàâäôöùûüç]{3,60})\s+(?:Association|Club|Cercle)/g,
 			/<h[1-3][^>]*>([^<]+(?:Association|Club|Cercle|Centre)[^<]*)<\/h[1-3]>/gi
 		];
 
@@ -342,7 +367,15 @@ export class IntelligentCrawler {
 			const matches = text.matchAll(pattern);
 			for (const match of matches) {
 				const name = match[1]?.trim();
-				if (name && name.length > 3 && name.length < 100 && !name.includes('http')) {
+				// STRICT VALIDATION: Must be a real organization name
+				if (name && 
+				    name.length > 3 && 
+				    name.length < 100 && 
+				    !name.includes('http') &&
+				    !name.toLowerCase().includes('newsletter') &&
+				    !name.toLowerCase().includes('lettre') &&
+				    !name.toLowerCase().includes('abonnement') &&
+				    name.match(/^[A-Z]/)) { // Must start with capital letter
 					foundNames.add(name);
 				}
 			}
@@ -704,7 +737,18 @@ export class IntelligentCrawler {
 					const schemaEntities = this.extractSchemaOrg(html, document);
 					const nlpEntities = this.extractEntitiesFromText(html, seed.url);
 					
-					// Combine all entities
+					// STRICT FILTERING: Only keep entities that are actually relevant
+					const activityKeywords = [
+						'activité', 'activités', 'activity', 'activities',
+						'club', 'clubs', 'association', 'associations',
+						'sport', 'sports', 'théâtre', 'danse', 'musique',
+						'arts martiaux', 'gymnastique', 'natation', 'tennis',
+						'football', 'basketball', 'judo', 'karate', 'escrime',
+						'loisir', 'loisirs', 'atelier', 'ateliers', 'cours',
+						'enfant', 'enfants', 'kids', 'children', 'jeunesse', 'youth'
+					];
+					
+					// Combine all entities with strict validation
 					const pageEntities = [...schemaEntities, ...nlpEntities]
 						.map(e => ({
 							...e,
@@ -712,7 +756,33 @@ export class IntelligentCrawler {
 							arrondissement: arrondissement
 						}))
 						.map(e => this.validateEntity(e))
-						.filter(e => e !== null);
+						.filter(e => {
+							if (!e) return false;
+							
+							// Must have name
+							if (!e.name || e.name.trim().length === 0) return false;
+							
+							// Filter out newsletters
+							const nameLower = e.name.toLowerCase();
+							if (nameLower.includes('newsletter') || 
+							    nameLower.includes('lettre d\'information') ||
+							    nameLower.includes('abonnement newsletter')) {
+								return false;
+							}
+							
+							// Must have at least website OR email OR phone (contact info)
+							if (!e.website && !e.email && !e.phone) {
+								// If no contact info, must have activity keyword in name or description
+								const hasActivityInName = activityKeywords.some(kw => nameLower.includes(kw));
+								const descLower = (e.description || '').toLowerCase();
+								const hasActivityInDesc = activityKeywords.some(kw => descLower.includes(kw));
+								if (!hasActivityInName && !hasActivityInDesc) {
+									return false; // Too generic, skip
+								}
+							}
+							
+							return true;
+						});
 
 					// Remove duplicates
 					const uniqueEntities = [];

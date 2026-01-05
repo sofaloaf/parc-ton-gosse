@@ -1177,13 +1177,48 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 
 				const arrondissementEntities = [...mairieEntities];
 
-				// STEP 2: Use advanced hybrid crawler for additional sources
-				console.log(`📋 Step 2: Using advanced hybrid crawler for additional sources...`);
+				// STEP 2: Use intelligent crawler with seed sources and AI-assisted extraction
+				console.log(`📋 Step 2: Using intelligent crawler with seed sources...`);
 				try {
-					// Strategy 1: Advanced crawler with Playwright for JS-heavy sites
+					// Strategy 1: Intelligent crawler with seed sources (Wikidata, registries, etc.)
+					const intelligentCrawler = new IntelligentCrawler({
+						googleApiKey: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY,
+						googleCx: process.env.GOOGLE_CUSTOM_SEARCH_CX,
+						minDelay: 1000,
+						maxDelay: 2000
+					});
+
+					const intelligentResults = await intelligentCrawler.crawl(arrondissement, postalCode, {
+						maxPages: 20 // Limit to stay within timeout
+					});
+
+					console.log(`✅ Intelligent crawler: ${intelligentResults.entities.length} entities extracted`);
+
+					// Convert intelligent crawler results to entity format
+					const intelligentEntities = intelligentResults.entities.map(e => ({
+						id: uuidv4(),
+						data: {
+							name: e.name,
+							title: e.name,
+							website: e.website,
+							websiteLink: e.website,
+							email: e.email,
+							phone: e.phone,
+							address: e.address,
+							description: e.description || `Activity from ${arrondissement} arrondissement`,
+							neighborhood: arrondissement,
+							arrondissement: arrondissement
+						},
+						sources: [e.sourceUrl || e.source || 'intelligent_crawler'],
+						confidence: e.confidence || 0.7,
+						extractedAt: new Date().toISOString(),
+						validation: { valid: true, score: e.confidence || 0.7 }
+					}));
+
+					// Strategy 2: Advanced crawler with Playwright for JS-heavy sites (backup)
 					const advancedCrawler = new AdvancedCrawler({
-						maxDepth: 2,
-						maxUrls: 50,
+						maxDepth: 1, // Reduced depth
+						maxUrls: 20, // Reduced URLs
 						usePlaywright: true
 					});
 
@@ -1345,8 +1380,28 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 					// Merge all results (avoid duplicates and filter newsletters)
 					const existingNames = new Set(mairieEntities.map(e => e.data.name?.toLowerCase()));
 					
+					// Add intelligent crawler results FIRST (highest quality)
+					const filteredIntelligentEntities = intelligentEntities.filter(e => {
+						const name = (e.data.name || '').toLowerCase();
+						const website = (e.data.website || '').toLowerCase();
+						
+						// Filter out newsletters
+						if (name.includes('newsletter') || 
+						    name.includes('lettre d\'information') ||
+						    website.includes('cdnjs.cloudflare.com') ||
+						    website.includes('cdn')) {
+							return false;
+						}
+						
+						// Filter out duplicates
+						return name && !existingNames.has(name);
+					});
+
+					// Update existing names set
+					filteredIntelligentEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
+
 					// Add advanced crawler results (with newsletter filtering)
-					const advancedEntities = (advancedResults.results || []).map(r => ({
+					const advancedEntities = (advancedResults?.results || []).map(r => ({
 						id: r.id || uuidv4(),
 						data: r.data,
 						sources: r.sources || [r.url],
@@ -1362,7 +1417,6 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						    name.includes('lettre d\'information') ||
 						    website.includes('cdnjs.cloudflare.com') ||
 						    website.includes('cdn')) {
-							console.log(`  ⏭️  Filtered out newsletter/CDN result: ${name}`);
 							return false;
 						}
 						
@@ -1370,8 +1424,11 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						return name && !existingNames.has(name);
 					});
 
+					// Update existing names set
+					advancedEntities.forEach(e => existingNames.add(e.data.name?.toLowerCase()));
+
 					// Add enhanced crawler results (with newsletter filtering)
-					const enhancedEntities = (crawlResults.entities || []).filter(e => {
+					const enhancedEntities = (crawlResults?.entities || []).filter(e => {
 						const name = (e.data?.name || e.data?.title || '').toLowerCase();
 						const website = (e.data?.website || e.data?.websiteLink || '').toLowerCase();
 						
@@ -1380,7 +1437,6 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 						    name.includes('lettre d\'information') ||
 						    website.includes('cdnjs.cloudflare.com') ||
 						    website.includes('cdn')) {
-							console.log(`  ⏭️  Filtered out newsletter/CDN result: ${name}`);
 							return false;
 						}
 						

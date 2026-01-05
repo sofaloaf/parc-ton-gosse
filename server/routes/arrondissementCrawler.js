@@ -17,6 +17,62 @@ import { LocalityFirstCrawler } from '../services/crawler/localityFirstCrawler.j
 
 export const arrondissementCrawlerRouter = express.Router();
 
+/**
+ * Get rejected organizations from the Rejected Organizations sheet
+ * Returns a Set of normalized names and websites for quick lookup
+ */
+async function getRejectedOrganizations(sheets, sheetId) {
+	const rejectedSheetName = 'Rejected Organizations';
+	const rejected = {
+		names: new Set(),
+		websites: new Set()
+	};
+	
+	try {
+		const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
+		const rejectedSheet = spreadsheet.data.sheets.find(s => s.properties.title === rejectedSheetName);
+		
+		if (!rejectedSheet) {
+			console.log(`📋 No "Rejected Organizations" sheet found - starting fresh`);
+			return rejected;
+		}
+		
+		const response = await sheets.spreadsheets.values.get({
+			spreadsheetId: sheetId,
+			range: `${rejectedSheetName}!A:Z`
+		});
+		
+		const rows = response.data.values || [];
+		if (rows.length <= 1) {
+			console.log(`📋 Rejected Organizations sheet is empty`);
+			return rejected;
+		}
+		
+		const headers = rows[0];
+		const nameColIndex = headers.findIndex(h => h && h.toLowerCase().includes('name'));
+		const websiteColIndex = headers.findIndex(h => h && h.toLowerCase().includes('website'));
+		
+		for (let i = 1; i < rows.length; i++) {
+			const row = rows[i];
+			if (nameColIndex >= 0 && row[nameColIndex]) {
+				rejected.names.add(row[nameColIndex].toLowerCase().trim());
+			}
+			if (websiteColIndex >= 0 && row[websiteColIndex]) {
+				const website = row[websiteColIndex].toLowerCase().trim();
+				// Normalize website (remove http/https, www, trailing slashes)
+				const normalized = website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+				rejected.websites.add(normalized);
+			}
+		}
+		
+		console.log(`📋 Loaded ${rejected.names.size} rejected organization names and ${rejected.websites.size} rejected websites`);
+		return rejected;
+	} catch (error) {
+		console.error(`⚠️  Error loading rejected organizations:`, error.message);
+		return rejected; // Return empty set on error
+	}
+}
+
 // Paris arrondissements (excluding 20e which already has data)
 const ARRONDISSEMENTS = [
 	'1er', '2e', '3e', '4e', '5e', '6e', '7e', '8e', '9e', '10e',

@@ -1180,6 +1180,7 @@ arrondissementCrawlerRouter.post('/search-enhanced', requireAuth('admin'), async
 				// STEP 2: Use intelligent crawler with seed sources and AI-assisted extraction
 				console.log(`📋 Step 2: Using intelligent crawler with seed sources...`);
 				let intelligentEntities = [];
+				let intelligentResults = { entities: [], errors: [], stats: {} };
 				try {
 					// Strategy 1: Intelligent crawler with seed sources (Wikidata, registries, etc.)
 					console.log(`  🧠 Initializing Intelligent Crawler...`);

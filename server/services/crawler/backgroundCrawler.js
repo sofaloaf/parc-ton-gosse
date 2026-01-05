@@ -17,7 +17,6 @@ import { IntelligentCrawler } from './intelligentCrawler.js';
 import { AdvancedCrawler } from './advancedCrawler.js';
 import { CrawlerOrchestrator } from './orchestrator.js';
 import { generateTabName, activityToSheetRow, ACTIVITIES_COLUMN_ORDER, getHeaders } from '../../utils/sheetsFormatter.js';
-import { fetchWithRetry } from '../../utils/fetchUtils.js';
 
 // In-memory job store (in production, use Redis or database)
 const jobs = new Map();
@@ -26,6 +25,33 @@ const jobs = new Map();
 function randomDelay(min, max) {
 	const delay = Math.floor(Math.random() * (max - min + 1)) + min;
 	return new Promise(resolve => setTimeout(resolve, delay));
+}
+
+// Fetch with retry logic
+async function fetchWithRetry(url, options = {}, maxRetries = 3) {
+	for (let attempt = 0; attempt < maxRetries; attempt++) {
+		try {
+			const controller = new AbortController();
+			const timeout = options.timeout || 20000;
+			const timeoutId = setTimeout(() => controller.abort(), timeout);
+			
+			const response = await fetch(url, {
+				...options,
+				signal: controller.signal,
+				headers: {
+					'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+					'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/*;q=0.8',
+					...options.headers
+				}
+			});
+			
+			clearTimeout(timeoutId);
+			return response;
+		} catch (error) {
+			if (attempt === maxRetries - 1) throw error;
+			await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+		}
+	}
 }
 
 // Search for activities on Paris mairie websites (PROVEN WORKING FUNCTION)

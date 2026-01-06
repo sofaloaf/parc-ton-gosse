@@ -383,7 +383,7 @@ function convertToActivity(org, extractedInfo) {
 		images: [],
 		providerId: '',
 		additionalNotes: `Imported from Paris Open Data. Public Visé: ${org['Public Visé'] || 'N/A'}. Secteurs: ${org['Secteurs d\'Activités'] || 'N/A'}`,
-		approvalStatus: 'approved', // All approved as requested
+		approvalStatus: 'pending', // Set to pending until curated
 		crawledAt: new Date().toISOString(),
 		createdAt: new Date().toISOString(),
 		updatedAt: new Date().toISOString()

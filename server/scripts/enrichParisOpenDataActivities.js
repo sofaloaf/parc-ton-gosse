@@ -102,7 +102,7 @@ async function readParisOpenData(sheets, sheetId) {
 /**
  * Get organization website (from sheet or search)
  */
-async function getOrganizationWebsite(orgName, existingWebsite = null) {
+async function getOrganizationWebsite(orgName, existingWebsite = null, categories = [], activityType = '', address = '') {
 	// If website already exists in sheet, use it
 	if (existingWebsite) {
 		// Clean up the website URL
@@ -121,10 +121,26 @@ async function getOrganizationWebsite(orgName, existingWebsite = null) {
 		return null;
 	}
 	
+	// Build search query using available information
+	let query = `"${orgName}"`;
+	if (address) {
+		// Extract arrondissement from address (750XX)
+		const arrMatch = address.match(/750(\d{2})/);
+		if (arrMatch) {
+			query += ` ${arrMatch[0]}`;
+		}
+	}
+	if (activityType) {
+		query += ` ${activityType}`;
+	}
+	if (categories && categories.length > 0) {
+		query += ` ${categories[0]}`;
+	}
+	query += ` Paris`;
+	
 	// Search for website using Google Custom Search
 	try {
-		const query = `"${orgName}" Paris association`;
-		const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${process.env.GOOGLE_CUSTOM_SEARCH_API_KEY}&cx=${process.env.GOOGLE_CUSTOM_SEARCH_CX}&q=${encodeURIComponent(query)}&num=3`;
+		const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${process.env.GOOGLE_CUSTOM_SEARCH_API_KEY}&cx=${process.env.GOOGLE_CUSTOM_SEARCH_CX}&q=${encodeURIComponent(query)}&num=5`;
 		
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -144,6 +160,7 @@ async function getOrganizationWebsite(orgName, existingWebsite = null) {
 		const items = data.items || [];
 		
 		if (items.length > 0) {
+			// Return the first result that looks like the organization's website
 			const topResult = items[0].link;
 			return topResult;
 		}
@@ -155,7 +172,7 @@ async function getOrganizationWebsite(orgName, existingWebsite = null) {
 }
 
 /**
- * Extract information from organization website
+ * Extract information from organization website (including registration link)
  */
 async function extractFromWebsite(websiteUrl, orgName) {
 	if (!websiteUrl) return null;
@@ -325,6 +342,9 @@ function convertToActivity(org, extractedInfo) {
 	const emailLink = email ? `mailto:${email}` : null;
 	const phoneLink = phone ? `tel:${phone}` : null;
 	
+	// Get registration link from extracted info
+	const registrationLink = extractedInfo?.registrationLink || null;
+	
 	// Extract age range from "Public Visé"
 	let ageMin = 0;
 	let ageMax = 99;
@@ -379,7 +399,7 @@ function convertToActivity(org, extractedInfo) {
 		contactPhone: phoneLink || null,
 		disponibiliteJours: '',
 		disponibiliteDates: '',
-		registrationLink: null,
+		registrationLink: registrationLink || null,
 		images: [],
 		providerId: '',
 		additionalNotes: `Imported from Paris Open Data. Public Visé: ${org['Public Visé'] || 'N/A'}. Secteurs: ${org['Secteurs d\'Activités'] || 'N/A'}`,
@@ -418,12 +438,12 @@ async function getExistingActivityNames(sheets, sheetId) {
 }
 
 /**
- * Save activities to main activities sheet
+ * Save activities to pending sheet
  */
-async function saveToActivitiesSheet(sheets, sheetId, activities) {
-	console.log(`\n📋 Saving ${activities.length} activities to main activities sheet...`);
+async function saveToPendingSheet(sheets, sheetId, activities) {
+	console.log(`\n📋 Saving ${activities.length} activities to pending sheet...`);
 	
-	const activitiesSheet = 'v1763586991792_2025-11-19';
+	const pendingSheetName = 'Pending - 2026-01-06 - paris-open-data-import';
 	
 	// Convert to sheet rows
 	const rowsToSave = activities.map(activity => {
@@ -431,10 +451,41 @@ async function saveToActivitiesSheet(sheets, sheetId, activities) {
 		return ACTIVITIES_COLUMN_ORDER.map(col => rowObject[col] || '');
 	});
 	
-	// Get existing rows
+	// Get or create sheet
+	const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
+	let sheet = spreadsheet.data.sheets.find(s => s.properties.title === pendingSheetName);
+	
+	if (!sheet) {
+		console.log(`  📄 Creating new sheet: "${pendingSheetName}"`);
+		await sheets.spreadsheets.batchUpdate({
+			spreadsheetId: sheetId,
+			requestBody: {
+				requests: [{
+					addSheet: {
+						properties: {
+							title: pendingSheetName,
+							gridProperties: { rowCount: Math.max(1000, rowsToSave.length + 100), columnCount: ACTIVITIES_COLUMN_ORDER.length }
+						}
+					}
+				}]
+			}
+		});
+		
+		// Write headers
+		await sheets.spreadsheets.values.update({
+			spreadsheetId: sheetId,
+			range: `${pendingSheetName}!A1`,
+			valueInputOption: 'RAW',
+			requestBody: { values: [getHeaders(ACTIVITIES_COLUMN_ORDER)] }
+		});
+	} else {
+		console.log(`  📄 Using existing sheet: "${pendingSheetName}"`);
+	}
+	
+	// Get existing rows to append
 	const existingData = await sheets.spreadsheets.values.get({
 		spreadsheetId: sheetId,
-		range: `${activitiesSheet}!A:Z`
+		range: `${pendingSheetName}!A:Z`
 	}).catch(() => ({ data: { values: [] } }));
 	
 	const existingRows = existingData.data.values || [];
@@ -444,15 +495,20 @@ async function saveToActivitiesSheet(sheets, sheetId, activities) {
 	if (rowsToSave.length > 0) {
 		await sheets.spreadsheets.values.append({
 			spreadsheetId: sheetId,
-			range: `${activitiesSheet}!A${startRow}`,
+			range: `${pendingSheetName}!A${startRow}`,
 			valueInputOption: 'RAW',
 			requestBody: { values: rowsToSave }
 		});
 	}
 	
+	// Get sheet ID for URL
+	const updatedSpreadsheet = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
+	const updatedSheet = updatedSpreadsheet.data.sheets.find(s => s.properties.title === pendingSheetName);
+	const sheetGid = updatedSheet?.properties?.sheetId || '';
+	
 	console.log(`\n✅ Saved ${rowsToSave.length} activities to Google Sheets`);
-	console.log(`📋 Sheet name: "${activitiesSheet}"`);
-	console.log(`🔗 Sheet URL: https://docs.google.com/spreadsheets/d/${sheetId}/edit#gid=0`);
+	console.log(`📋 Sheet name: "${pendingSheetName}"`);
+	console.log(`🔗 Sheet URL: https://docs.google.com/spreadsheets/d/${sheetId}/edit#gid=${sheetGid}`);
 }
 
 /**
@@ -501,8 +557,14 @@ async function main() {
 			}
 			
 			try {
+				// Get categories and activity type for better search
+				const secteurs = (org['Secteurs d\'Activités'] || '').split(';').map(s => s.trim()).filter(Boolean);
+				const activityType = secteurs[0] || '';
+				const categories = secteurs;
+				const address = org['Adresse'] || '';
+				
 				// Get website (from sheet or search)
-				const website = await getOrganizationWebsite(orgName, org['Site Web']);
+				const website = await getOrganizationWebsite(orgName, org['Site Web'], categories, activityType, address);
 				
 				// Extract information from website
 				let extractedInfo = null;
@@ -514,7 +576,7 @@ async function main() {
 					
 					if (extractedInfo) {
 						if (processed % 10 === 0) {
-							console.log(`     ✅ Extracted: email=${!!extractedInfo.email}, phone=${!!extractedInfo.phone}, address=${!!extractedInfo.address}, description=${!!extractedInfo.description}`);
+							console.log(`     ✅ Extracted: email=${!!extractedInfo.email}, phone=${!!extractedInfo.phone}, registration=${!!extractedInfo.registrationLink}, description=${!!extractedInfo.description}`);
 						}
 					} else {
 						if (processed % 10 === 0) {
@@ -554,9 +616,9 @@ async function main() {
 		console.log(`   - Duplicates: ${duplicates}`);
 		console.log(`   - Errors: ${errors}`);
 		
-		// Save to activities sheet
+		// Save to pending sheet
 		if (activities.length > 0) {
-			await saveToActivitiesSheet(sheets, sheetId, activities);
+			await saveToPendingSheet(sheets, sheetId, activities);
 		} else {
 			console.log('\n⚠️  No new activities to save (all are duplicates or had errors)');
 		}

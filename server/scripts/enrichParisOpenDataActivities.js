@@ -162,21 +162,31 @@ async function extractFromWebsite(websiteUrl, orgName) {
 	
 	try {
 		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), 10000);
+		const timeoutId = setTimeout(() => controller.abort(), 15000); // Increased timeout
 		
 		const response = await fetch(websiteUrl, {
 			headers: {
-				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-				'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/*;q=0.8'
+				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+				'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,application/*;q=0.8',
+				'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
 			},
-			signal: controller.signal
+			signal: controller.signal,
+			redirect: 'follow'
 		});
 		
 		clearTimeout(timeoutId);
 		
-		if (!response.ok) return null;
+		if (!response.ok) {
+			console.warn(`     ⚠️  HTTP ${response.status} for ${websiteUrl}`);
+			return null;
+		}
 		
 		const html = await response.text();
+		if (!html || html.length < 100) {
+			console.warn(`     ⚠️  Empty or very short HTML for ${websiteUrl}`);
+			return null;
+		}
+		
 		const dom = new JSDOM(html);
 		const document = dom.window.document;
 		
@@ -184,31 +194,66 @@ async function extractFromWebsite(websiteUrl, orgName) {
 		let description = '';
 		const metaDesc = document.querySelector('meta[name="description"]');
 		if (metaDesc) {
-			description = metaDesc.getAttribute('content') || '';
+			description = (metaDesc.getAttribute('content') || '').trim();
 		}
 		if (!description) {
-			const firstP = document.querySelector('p');
-			if (firstP) {
-				description = firstP.textContent.trim().substring(0, 500);
+			// Try Open Graph description
+			const ogDesc = document.querySelector('meta[property="og:description"]');
+			if (ogDesc) {
+				description = (ogDesc.getAttribute('content') || '').trim();
+			}
+		}
+		if (!description) {
+			// Try first few paragraphs
+			const paragraphs = document.querySelectorAll('p');
+			for (const p of paragraphs) {
+				const text = p.textContent.trim();
+				if (text.length > 50 && text.length < 1000) {
+					description = text.substring(0, 500);
+					break;
+				}
 			}
 		}
 		
-		// Extract email
+		// Extract email (look in multiple places)
+		let email = null;
 		const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 		const emailMatches = html.match(emailPattern);
-		const email = emailMatches ? emailMatches[0] : null;
+		if (emailMatches && emailMatches.length > 0) {
+			// Filter out common non-contact emails
+			const filtered = emailMatches.filter(e => 
+				!e.includes('example.com') && 
+				!e.includes('test.com') &&
+				!e.includes('noreply') &&
+				!e.includes('no-reply')
+			);
+			if (filtered.length > 0) {
+				email = filtered[0];
+			}
+		}
 		
-		// Extract phone
-		const phonePattern = /(?:\+33|0)[1-9](?:[.\s]?\d{2}){4}/g;
-		const phoneMatches = html.match(phonePattern);
-		const phone = phoneMatches ? phoneMatches[0] : null;
+		// Extract phone (look in multiple formats)
+		let phone = null;
+		const phonePatterns = [
+			/(?:\+33|0)[1-9](?:[.\s\-]?\d{2}){4}/g, // French format
+			/(?:\+33\s?|0)[1-9][\s\.\-]?(?:\d{2}[\s\.\-]?){4}/g, // With spaces/dots/dashes
+			/0[1-9][\s\.\-]?\d{2}[\s\.\-]?\d{2}[\s\.\-]?\d{2}[\s\.\-]?\d{2}/g // Standard format
+		];
+		for (const pattern of phonePatterns) {
+			const matches = html.match(pattern);
+			if (matches && matches.length > 0) {
+				phone = matches[0].replace(/[\s\.\-]/g, ''); // Clean up
+				break;
+			}
+		}
 		
 		// Extract address (look for common patterns)
-		const addressPatterns = [
-			/(\d+\s+[^,\n]{10,80}(?:,\s*)?(?:750\d{2})?\s*PARIS?)/i,
-			/(\d+\s+[^,\n]{10,80}(?:,\s*)?(?:750\d{2}))/i
-		];
 		let address = null;
+		const addressPatterns = [
+			/(\d+\s+[^,\n<]{10,80}(?:,\s*)?(?:750\d{2})?\s*PARIS?)/i,
+			/(\d+\s+[^,\n<]{10,80}(?:,\s*)?(?:750\d{2}))/i,
+			/(?:adresse|address)[:\s]+([0-9]+\s+[^,\n<]{10,80}(?:,\s*)?(?:750\d{2})?)/i
+		];
 		for (const pattern of addressPatterns) {
 			const match = html.match(pattern);
 			if (match) {
@@ -223,21 +268,25 @@ async function extractFromWebsite(websiteUrl, orgName) {
 		if (content.includes('sport') || content.includes('sportif')) categories.push('sports');
 		if (content.includes('musique') || content.includes('music')) categories.push('music');
 		if (content.includes('danse') || content.includes('dance')) categories.push('dance');
-		if (content.includes('théâtre') || content.includes('theatre')) categories.push('theater');
+		if (content.includes('théâtre') || content.includes('theatre') || content.includes('théatre')) categories.push('theater');
 		if (content.includes('art') && !content.includes('martial')) categories.push('arts');
-		if (content.includes('arts martiaux')) categories.push('martial-arts');
-		if (content.includes('gymnastique')) categories.push('sports');
-		if (content.includes('natation') || content.includes('swimming')) categories.push('sports');
+		if (content.includes('arts martiaux') || content.includes('art martial')) categories.push('martial-arts');
+		if (content.includes('gymnastique') || content.includes('gym')) categories.push('sports');
+		if (content.includes('natation') || content.includes('swimming') || content.includes('piscine')) categories.push('sports');
+		if (content.includes('football') || content.includes('soccer')) categories.push('sports');
+		if (content.includes('basket') || content.includes('basketball')) categories.push('sports');
+		if (content.includes('tennis')) categories.push('sports');
 		if (categories.length === 0) categories.push('other');
 		
 		return {
-			description,
-			email,
-			phone,
-			address,
+			description: description || null,
+			email: email || null,
+			phone: phone || null,
+			address: address || null,
 			categories: [...new Set(categories)] // Remove duplicates
 		};
 	} catch (error) {
+		console.warn(`     ⚠️  Error extracting from ${websiteUrl}:`, error.message);
 		return null;
 	}
 }
@@ -249,17 +298,22 @@ function convertToActivity(org, extractedInfo) {
 	const nom = (org['Nom'] || '').trim();
 	if (!nom) return null;
 	
-	// Use extracted info or fallback to sheet data
+	// Prioritize extracted info, then fallback to sheet data
 	const description = extractedInfo?.description || org['Objet'] || `Association ${nom}`;
 	const email = extractedInfo?.email || org['Email'] || '';
 	const phone = extractedInfo?.phone || org['Téléphone'] || '';
 	const address = extractedInfo?.address || org['Adresse'] || '';
 	const website = org['Site Web'] || '';
 	
-	// Format full address
-	const codePostal = org['Code Postal'] || '';
-	const ville = org['Ville'] || 'Paris';
-	const fullAddress = [address, codePostal, ville].filter(Boolean).join(', ');
+	// Format full address - prioritize extracted address
+	let fullAddress = '';
+	if (extractedInfo?.address) {
+		fullAddress = extractedInfo.address;
+	} else {
+		const codePostal = org['Code Postal'] || '';
+		const ville = org['Ville'] || 'Paris';
+		fullAddress = [address, codePostal, ville].filter(Boolean).join(', ');
+	}
 	
 	// Format website
 	let websiteLink = website;
@@ -298,6 +352,7 @@ function convertToActivity(org, extractedInfo) {
 		if (secteurs.includes('musique')) categories.push('music');
 		if (secteurs.includes('danse')) categories.push('dance');
 		if (secteurs.includes('théâtre') || secteurs.includes('theatre')) categories.push('theater');
+		if (secteurs.includes('arts martiaux') || secteurs.includes('art martial')) categories.push('martial-arts');
 		if (categories.length === 0) categories.push('other');
 	}
 	
@@ -452,7 +507,24 @@ async function main() {
 				// Extract information from website
 				let extractedInfo = null;
 				if (website) {
+					if (processed % 10 === 0) {
+						console.log(`  🔍 Extracting from website: ${website.substring(0, 60)}...`);
+					}
 					extractedInfo = await extractFromWebsite(website, orgName);
+					
+					if (extractedInfo) {
+						if (processed % 10 === 0) {
+							console.log(`     ✅ Extracted: email=${!!extractedInfo.email}, phone=${!!extractedInfo.phone}, address=${!!extractedInfo.address}, description=${!!extractedInfo.description}`);
+						}
+					} else {
+						if (processed % 10 === 0) {
+							console.log(`     ⚠️  No data extracted from website`);
+						}
+					}
+				} else {
+					if (processed % 10 === 0) {
+						console.log(`  ⚠️  No website found for: ${orgName}`);
+					}
 				}
 				
 				// Convert to activity

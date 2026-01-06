@@ -100,19 +100,28 @@ async function readParisOpenData(sheets, sheetId) {
 }
 
 /**
- * Search for organization website using Google Custom Search
+ * Get organization website (from sheet or search)
  */
-async function searchOrganizationWebsite(orgName, existingWebsite = null) {
-	// If website already exists, use it
-	if (existingWebsite && existingWebsite.startsWith('http')) {
-		return existingWebsite;
+async function getOrganizationWebsite(orgName, existingWebsite = null) {
+	// If website already exists in sheet, use it
+	if (existingWebsite) {
+		// Clean up the website URL
+		let website = existingWebsite.trim();
+		if (website && !website.startsWith('http://') && !website.startsWith('https://')) {
+			website = `https://${website}`;
+		}
+		if (website && (website.startsWith('http://') || website.startsWith('https://'))) {
+			return website;
+		}
 	}
 	
+	// Only search if no website provided AND Google Custom Search is configured
 	if (!process.env.GOOGLE_CUSTOM_SEARCH_API_KEY || !process.env.GOOGLE_CUSTOM_SEARCH_CX) {
-		console.warn('  ⚠️  Google Custom Search API not configured, skipping website search');
+		// No API configured and no website in sheet - return null
 		return null;
 	}
 	
+	// Search for website using Google Custom Search
 	try {
 		const query = `"${orgName}" Paris association`;
 		const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${process.env.GOOGLE_CUSTOM_SEARCH_API_KEY}&cx=${process.env.GOOGLE_CUSTOM_SEARCH_CX}&q=${encodeURIComponent(query)}&num=3`;
@@ -135,7 +144,6 @@ async function searchOrganizationWebsite(orgName, existingWebsite = null) {
 		const items = data.items || [];
 		
 		if (items.length > 0) {
-			// Return the first result that looks like the organization's website
 			const topResult = items[0].link;
 			return topResult;
 		}
@@ -438,17 +446,13 @@ async function main() {
 			}
 			
 			try {
-				// Search for website
-				const website = await searchOrganizationWebsite(orgName, org['Site Web']);
+				// Get website (from sheet or search)
+				const website = await getOrganizationWebsite(orgName, org['Site Web']);
 				
 				// Extract information from website
 				let extractedInfo = null;
 				if (website) {
 					extractedInfo = await extractFromWebsite(website, orgName);
-					// Update org with found website
-					if (website && !org['Site Web']) {
-						org['Site Web'] = website;
-					}
 				}
 				
 				// Convert to activity

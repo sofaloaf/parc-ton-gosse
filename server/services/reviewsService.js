@@ -48,6 +48,18 @@ export class ReviewsService extends BaseService {
 
 			return reviews;
 		} catch (error) {
+			// Handle rate limit errors gracefully - return empty array instead of failing
+			const isRateLimit = error.statusCode === 429 || 
+				error.message?.includes('Quota exceeded') || 
+				error.message?.includes('rateLimitExceeded') ||
+				error.status === 429 ||
+				error.code === 429;
+
+			if (isRateLimit) {
+				console.warn('⚠️  Rate limit hit for reviews list - returning empty array');
+				return [];
+			}
+
 			throw this._handleError(error, 'Failed to list reviews', 'REVIEWS_LIST_ERROR');
 		}
 	}
@@ -90,6 +102,18 @@ export class ReviewsService extends BaseService {
 				count: ratedReviews.length
 			};
 		} catch (error) {
+			// Handle rate limit errors gracefully - return default values instead of failing
+			const isRateLimit = error.statusCode === 429 || 
+				error.message?.includes('Quota exceeded') || 
+				error.message?.includes('rateLimitExceeded') ||
+				error.originalError?.status === 429 ||
+				error.originalError?.code === 429;
+
+			if (isRateLimit) {
+				console.warn('⚠️  Rate limit hit for reviews - returning default rating');
+				return { average: 0, count: 0 };
+			}
+
 			throw this._handleError(error, 'Failed to calculate rating', 'RATING_CALCULATION_ERROR');
 		}
 	}
@@ -135,6 +159,23 @@ export class ReviewsService extends BaseService {
 
 			return ratingsMap;
 		} catch (error) {
+			// Handle rate limit errors gracefully - return default ratings for all activities
+			const isRateLimit = error.statusCode === 429 || 
+				error.message?.includes('Quota exceeded') || 
+				error.message?.includes('rateLimitExceeded') ||
+				error.status === 429 ||
+				error.code === 429;
+
+			if (isRateLimit) {
+				console.warn('⚠️  Rate limit hit for batch ratings - returning default ratings');
+				const idsToFetch = activityIds.slice(0, 50);
+				const ratingsMap = {};
+				idsToFetch.forEach(activityId => {
+					ratingsMap[activityId] = { average: 0, count: 0 };
+				});
+				return ratingsMap;
+			}
+
 			throw this._handleError(error, 'Failed to batch fetch ratings', 'BATCH_RATINGS_FETCH_ERROR');
 		}
 	}
@@ -155,6 +196,18 @@ export class ReviewsService extends BaseService {
 
 			return userReview || null;
 		} catch (error) {
+			// Handle rate limit errors gracefully - return null instead of failing
+			const isRateLimit = error.statusCode === 429 || 
+				error.message?.includes('Quota exceeded') || 
+				error.message?.includes('rateLimitExceeded') ||
+				error.status === 429 ||
+				error.code === 429;
+
+			if (isRateLimit) {
+				console.warn('⚠️  Rate limit hit for user review - returning null');
+				return null;
+			}
+
 			throw this._handleError(error, 'Failed to fetch user review', 'USER_REVIEW_FETCH_ERROR');
 		}
 	}

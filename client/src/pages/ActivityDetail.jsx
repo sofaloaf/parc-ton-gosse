@@ -31,29 +31,44 @@ export default function ActivityDetail() {
 		setLoading(true);
 		setError(null);
 		
+		// Set a timeout to prevent infinite loading
+		const timeoutId = setTimeout(() => {
+			setError(locale === 'fr' ? 'La requête a pris trop de temps. Veuillez réessayer.' : 'Request timed out. Please try again.');
+			setLoading(false);
+		}, 30000); // 30 second timeout
+		
 		Promise.all([
-			api(`/activities/${id}`).catch(err => { throw err; }),
+			api(`/activities/${id}`).catch(err => { 
+				clearTimeout(timeoutId);
+				throw err; 
+			}),
 			api(`/reviews/activity/${id}/rating`).catch(() => ({ average: 0, count: 0 })),
 			api('/me').then(data => data.user).catch(() => null)
 		])
 			.then(([activityData, ratingData, userData]) => {
+				clearTimeout(timeoutId);
 				setActivity(activityData);
-				setRating(ratingData);
+				setRating(ratingData || { average: 0, count: 0 });
 				setUser(userData);
 				
 				// If user is logged in, check if they've already rated
 				if (userData) {
 					api(`/reviews/activity/${id}/user`)
-						.then(review => setUserRating(review.rating))
+						.then(review => setUserRating(review?.rating || null))
 						.catch(() => setUserRating(null));
 				}
 			})
 			.catch((err) => {
+				clearTimeout(timeoutId);
+				console.error('Error loading activity:', err);
 				setError(err.message || 'Failed to load activity');
 			})
 			.finally(() => {
+				clearTimeout(timeoutId);
 				setLoading(false);
 			});
+		
+		return () => clearTimeout(timeoutId);
 	}, [id]);
 	
 	// Reload rating when user rating changes

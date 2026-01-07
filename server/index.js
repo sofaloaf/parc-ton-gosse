@@ -40,7 +40,6 @@ import { metricsRouter } from './routes/metrics.js';
 import { referralsRouter } from './routes/referrals.js';
 import { preordersRouter } from './routes/preorders.js';
 import { crawlerRouter } from './routes/crawler.js';
-import { arrondissementCrawlerRouter } from './routes/arrondissementCrawler.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { cardViewsRouter } from './routes/cardViews.js';
 import { cacheRouter } from './routes/cache.js';
@@ -125,9 +124,10 @@ console.log(`   Parsed origins: [${allowedOrigins.join(', ')}]`);
 console.log(`   NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
 
 if (allowedOrigins.length === 0 && process.env.NODE_ENV === 'production') {
-	console.warn('⚠️  WARNING: CORS_ORIGIN not set in production. Allowing all origins for now.');
-	console.warn('   This is insecure! Set CORS_ORIGIN in Railway variables.');
-	console.warn('   Expected: CORS_ORIGIN=https://victorious-gentleness-production.up.railway.app');
+	console.error('❌ CRITICAL: CORS_ORIGIN must be set in production environment');
+	console.error('   Server will not start without CORS_ORIGIN configured.');
+	console.error('   Set CORS_ORIGIN in Railway variables with your frontend URL(s).');
+	throw new Error('CORS_ORIGIN must be set in production. Server startup aborted for security.');
 } else if (allowedOrigins.length > 0) {
 	console.log(`✅ CORS configured for origins: ${allowedOrigins.join(', ')}`);
 } else {
@@ -288,20 +288,24 @@ let dataStore = null;
 		
 		// Process private key BEFORE passing to createDataStore
 		let processedPrivateKey = null;
-		console.log('🔍 Checking for private key...');
-		console.log('GS_PRIVATE_KEY_BASE64 exists:', !!process.env.GS_PRIVATE_KEY_BASE64);
-		console.log('GS_PRIVATE_KEY_BASE64 length:', process.env.GS_PRIVATE_KEY_BASE64?.length || 0);
-		console.log('GS_PRIVATE_KEY exists:', !!process.env.GS_PRIVATE_KEY);
-		console.log('GS_PRIVATE_KEY length:', process.env.GS_PRIVATE_KEY?.length || 0);
+		// Only log key existence in development (never log key content)
+		if (process.env.NODE_ENV === 'development') {
+			console.log('🔍 Checking for private key...');
+			console.log('GS_PRIVATE_KEY_BASE64 exists:', !!process.env.GS_PRIVATE_KEY_BASE64);
+			console.log('GS_PRIVATE_KEY exists:', !!process.env.GS_PRIVATE_KEY);
+		}
 		
 		if (process.env.GS_PRIVATE_KEY_BASE64) {
-			console.log('✅ Using GS_PRIVATE_KEY_BASE64 (base64-encoded)');
+			if (process.env.NODE_ENV === 'development') {
+				console.log('✅ Using GS_PRIVATE_KEY_BASE64 (base64-encoded)');
+			}
 			try {
 				const decoded = Buffer.from(process.env.GS_PRIVATE_KEY_BASE64, 'base64').toString('utf-8');
-				console.log('✅ Base64 key decoded successfully');
-				console.log('Decoded key length:', decoded.length);
-				console.log('Key preview (first 50 chars):', decoded.substring(0, 50));
-				console.log('Key has newlines:', decoded.includes('\n'));
+				if (process.env.NODE_ENV === 'development') {
+					console.log('✅ Base64 key decoded successfully');
+					console.log('Decoded key length:', decoded.length);
+					console.log('Key has newlines:', decoded.includes('\n'));
+				}
 				if (!decoded.includes('BEGIN PRIVATE KEY')) {
 					console.error('❌ Decoded key does not contain BEGIN PRIVATE KEY marker');
 					throw new Error('Decoded base64 key is not a valid private key');
@@ -312,19 +316,25 @@ let dataStore = null;
 				throw new Error('GS_PRIVATE_KEY_BASE64 is invalid base64: ' + error.message);
 			}
 		} else if (process.env.GS_PRIVATE_KEY) {
-			console.log('⚠️  Using GS_PRIVATE_KEY (not base64-encoded)');
+			if (process.env.NODE_ENV === 'development') {
+				console.log('⚠️  Using GS_PRIVATE_KEY (not base64-encoded)');
+			}
 			processedPrivateKey = process.env.GS_PRIVATE_KEY;
 			
 			// Pre-process the key to ensure proper format
 			// Replace literal \n with actual newlines if needed
 			if (processedPrivateKey.includes('\\n')) {
-				console.log('🔧 Converting \\n to actual newlines');
+				if (process.env.NODE_ENV === 'development') {
+					console.log('🔧 Converting \\n to actual newlines');
+				}
 				processedPrivateKey = processedPrivateKey.replace(/\\n/g, '\n');
 			}
 			
 			// Ensure key has proper newlines
 			if (!processedPrivateKey.includes('\n') && processedPrivateKey.includes('BEGIN PRIVATE KEY')) {
-				console.log('🔧 Adding newlines to private key');
+				if (process.env.NODE_ENV === 'development') {
+					console.log('🔧 Adding newlines to private key');
+				}
 				processedPrivateKey = processedPrivateKey
 					.replace(/-----BEGIN PRIVATE KEY-----/g, '-----BEGIN PRIVATE KEY-----\n')
 					.replace(/-----END PRIVATE KEY-----/g, '\n-----END PRIVATE KEY-----')
@@ -334,19 +344,24 @@ let dataStore = null;
 			// Validate key format
 			if (!processedPrivateKey.includes('BEGIN PRIVATE KEY') || !processedPrivateKey.includes('END PRIVATE KEY')) {
 				console.error('❌ Private key format validation failed');
-				console.error('Key preview (first 100 chars):', processedPrivateKey.substring(0, 100));
+				if (process.env.NODE_ENV === 'development') {
+					console.error('Key preview (first 100 chars):', processedPrivateKey.substring(0, 100));
+				}
 				throw new Error('GS_PRIVATE_KEY format is invalid. Must include BEGIN and END markers.');
 			}
 			
-			console.log('✅ Private key format validated');
-			console.log('Key has newlines:', processedPrivateKey.includes('\n'));
-			console.log('Key preview (first 80 chars):', processedPrivateKey.substring(0, 80).replace(/\n/g, '\\n'));
+			if (process.env.NODE_ENV === 'development') {
+				console.log('✅ Private key format validated');
+				console.log('Key has newlines:', processedPrivateKey.includes('\n'));
+			}
 		} else {
 			console.error('❌ Neither GS_PRIVATE_KEY_BASE64 nor GS_PRIVATE_KEY is set');
 			throw new Error('Neither GS_PRIVATE_KEY_BASE64 nor GS_PRIVATE_KEY is set');
 		}
 		
-		console.log('✅ Private key processed, length:', processedPrivateKey?.length || 0);
+		if (process.env.NODE_ENV === 'development') {
+			console.log('✅ Private key processed, length:', processedPrivateKey?.length || 0);
+		}
 		
 		dataStore = await createDataStore({
 			backend: backend,
@@ -487,12 +502,15 @@ app.use('/api/card-views', cardViewsRouter);
 app.use('/api/referrals', referralsRouter);
 app.use('/api/preorders', preordersRouter);
 app.use('/api/crawler', crawlerRouter);
-app.use('/api/arrondissement-crawler', arrondissementCrawlerRouter);
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/cache', cacheRouter);
 app.use('/api/test-email', testEmailRouter);
 app.use('/api/sandbox', sandboxRouter);
 app.use('/api/sandbox/cleanup', sandboxCleanupRouter);
+
+// Error handling middleware (must be last)
+import { errorHandler } from './middleware/errorHandler.js';
+app.use(errorHandler);
 
 // Get current user with trial status
 app.get('/api/me', requireAuth(), async (req, res) => {

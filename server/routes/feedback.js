@@ -1,132 +1,117 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { v4 as uuidv4 } from 'uuid';
+import { FeedbackService } from '../services/feedbackService.js';
 
 const feedbackRouter = express.Router();
 
 // Public feedback submission endpoint
 feedbackRouter.post('/submit', async (req, res) => {
-	const store = req.app.get('dataStore');
 	try {
-		const now = new Date().toISOString();
-		const feedback = {
-			id: uuidv4(),
-			userId: req.user?.id || 'anonymous',
-			userAgent: req.headers['user-agent'] || '',
-			timestamp: now,
-			...req.body,
-			status: 'pending',
-			createdAt: now,
-			updatedAt: now
-		};
-		
-		const created = await store.feedback.create(feedback);
+		const store = req.app.get('dataStore');
+		const service = new FeedbackService(store);
+		const created = await service.submitFeedback(req.body, {
+			user: req.user,
+			userAgent: req.headers['user-agent'] || ''
+		});
 		res.status(201).json(created);
 	} catch (error) {
-		console.error('Feedback submission error:', error);
-		res.status(500).json({ error: 'Failed to submit feedback' });
+		console.error('❌ Error submitting feedback:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to submit feedback',
+			message: error.message || 'An unexpected error occurred',
+			code: error.code || 'FEEDBACK_SUBMIT_ERROR'
+		});
 	}
 });
 
 // Public organization submission endpoint
 feedbackRouter.post('/add-organization', async (req, res) => {
-	const store = req.app.get('dataStore');
 	try {
-		const now = new Date().toISOString();
-		const org = {
-			id: uuidv4(),
-			userId: req.user?.id || 'anonymous',
-			userAgent: req.headers['user-agent'] || '',
-			timestamp: now,
-			...req.body,
-			status: 'pending',
-			reviewedBy: '',
-			reviewedAt: null,
-			createdAt: now,
-			updatedAt: now
-		};
-		
-		const created = await store.organizationSuggestions.create(org);
+		const store = req.app.get('dataStore');
+		const service = new FeedbackService(store);
+		const created = await service.submitOrganization(req.body, {
+			user: req.user,
+			userAgent: req.headers['user-agent'] || ''
+		});
 		res.status(201).json(created);
 	} catch (error) {
-		console.error('Organization submission error:', error);
-		res.status(500).json({ error: 'Failed to submit organization' });
+		console.error('❌ Error submitting organization:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to submit organization',
+			message: error.message || 'An unexpected error occurred',
+			code: error.code || 'ORGANIZATION_SUBMIT_ERROR'
+		});
 	}
 });
 
 // Protected admin routes to view submissions
 feedbackRouter.get('/list', requireAuth('admin'), async (req, res) => {
-	const store = req.app.get('dataStore');
 	try {
-		const feedbacks = await store.feedback.list();
+		const store = req.app.get('dataStore');
+		const service = new FeedbackService(store);
+		const feedbacks = await service.listFeedback({ user: req.user });
 		res.json(feedbacks);
 	} catch (error) {
-		console.error('Error fetching feedback:', error);
-		res.status(500).json({ error: 'Failed to fetch feedback' });
+		console.error('❌ Error fetching feedback:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to fetch feedback',
+			message: error.message || 'An unexpected error occurred',
+			code: error.code || 'FEEDBACK_LIST_ERROR'
+		});
 	}
 });
 
 feedbackRouter.get('/organizations/list', requireAuth('admin'), async (req, res) => {
-	const store = req.app.get('dataStore');
 	try {
-		const orgs = await store.organizationSuggestions.list();
+		const store = req.app.get('dataStore');
+		const service = new FeedbackService(store);
+		const orgs = await service.listOrganizations({ user: req.user });
 		res.json(orgs);
 	} catch (error) {
-		console.error('Error fetching organizations:', error);
-		res.status(500).json({ error: 'Failed to fetch organization suggestions' });
+		console.error('❌ Error fetching organizations:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to fetch organization suggestions',
+			message: error.message || 'An unexpected error occurred',
+			code: error.code || 'ORGANIZATIONS_LIST_ERROR'
+		});
 	}
 });
 
 feedbackRouter.patch('/organizations/:id/approve', requireAuth('admin'), async (req, res) => {
-	const store = req.app.get('dataStore');
 	try {
-		const now = new Date().toISOString();
-		const org = await store.organizationSuggestions.read(req.params.id);
-		if (!org) {
-			return res.status(404).json({ error: 'Organization not found' });
-		}
-		
-		const updated = {
-			...org,
-			status: 'approved',
-			reviewedBy: req.user.id,
-			reviewedAt: now,
-			updatedAt: now
-		};
-		
-		await store.organizationSuggestions.update(req.params.id, updated);
-		
-		// TODO: Automatically add to activities
-		
+		const store = req.app.get('dataStore');
+		const service = new FeedbackService(store);
+		const updated = await service.approveOrganization(req.params.id, { user: req.user });
 		res.json(updated);
 	} catch (error) {
-		console.error('Error approving organization:', error);
-		res.status(500).json({ error: 'Failed to approve organization' });
+		console.error('❌ Error approving organization:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to approve organization',
+			message: error.message || 'Organization not found',
+			code: error.code || 'ORGANIZATION_APPROVE_ERROR'
+		});
 	}
 });
 
 feedbackRouter.patch('/organizations/:id/reject', requireAuth('admin'), async (req, res) => {
-	const store = req.app.get('dataStore');
 	try {
-		const now = new Date().toISOString();
-		const org = await store.organizationSuggestions.read(req.params.id);
-		if (!org) {
-			return res.status(404).json({ error: 'Organization not found' });
-		}
-		
-		const updated = {
-			...org,
-			status: 'rejected',
-			reviewedBy: req.user.id,
-			reviewedAt: now,
-			updatedAt: now
-		};
-		
-		await store.organizationSuggestions.update(req.params.id, updated);
+		const store = req.app.get('dataStore');
+		const service = new FeedbackService(store);
+		const updated = await service.rejectOrganization(req.params.id, { user: req.user });
 		res.json(updated);
 	} catch (error) {
-		console.error('Error rejecting organization:', error);
-		res.status(500).json({ error: 'Failed to reject organization' });
+		console.error('❌ Error rejecting organization:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to reject organization',
+			message: error.message || 'Organization not found',
+			code: error.code || 'ORGANIZATION_REJECT_ERROR'
+		});
 	}
 });
 

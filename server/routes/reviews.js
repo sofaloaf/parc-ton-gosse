@@ -1,174 +1,191 @@
 import express from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import { requireAuth } from '../middleware/auth.js';
+import { ReviewsService } from '../services/reviewsService.js';
 
 export const reviewsRouter = express.Router();
 
 // Get all reviews
 reviewsRouter.get('/', async (req, res) => {
-	const store = req.app.get('dataStore');
-	res.json(await store.reviews.list());
+	try {
+		const store = req.app.get('dataStore');
+		const service = new ReviewsService(store);
+		const filters = {
+			status: req.query.status || 'approved'
+		};
+		const reviews = await service.list(filters, { user: req.user });
+		res.json(reviews);
+	} catch (error) {
+		console.error('❌ Error listing reviews:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to list reviews',
+			message: error.message || 'An unexpected error occurred',
+			code: error.code || 'REVIEWS_LIST_ERROR'
+		});
+	}
 });
 
 // Get reviews for a specific activity
 reviewsRouter.get('/activity/:activityId', async (req, res) => {
-	const store = req.app.get('dataStore');
-	const allReviews = await store.reviews.list();
-	const activityReviews = allReviews.filter(r => r.activityId === req.params.activityId && (r.status === 'approved' || !r.status));
-	res.json(activityReviews);
+	try {
+		const store = req.app.get('dataStore');
+		const service = new ReviewsService(store);
+		const reviews = await service.getByActivity(req.params.activityId, { user: req.user });
+		res.json(reviews);
+	} catch (error) {
+		console.error('❌ Error fetching activity reviews:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to fetch activity reviews',
+			message: error.message || 'An unexpected error occurred',
+			code: error.code || 'ACTIVITY_REVIEWS_FETCH_ERROR'
+		});
+	}
 });
 
 // Get average rating for an activity
 reviewsRouter.get('/activity/:activityId/rating', async (req, res) => {
-	const store = req.app.get('dataStore');
-	const allReviews = await store.reviews.list();
-	const activityReviews = allReviews.filter(r => 
-		r.activityId === req.params.activityId && 
-		(r.status === 'approved' || !r.status) &&
-		r.rating != null
-	);
-	
-	if (activityReviews.length === 0) {
-		return res.json({ average: 0, count: 0 });
+	try {
+		const store = req.app.get('dataStore');
+		const service = new ReviewsService(store);
+		const rating = await service.getRating(req.params.activityId, { user: req.user });
+		res.json(rating);
+	} catch (error) {
+		console.error('❌ Error calculating rating:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to calculate rating',
+			message: error.message || 'An unexpected error occurred',
+			code: error.code || 'RATING_CALCULATION_ERROR'
+		});
 	}
-	
-	const sum = activityReviews.reduce((acc, r) => acc + (Number(r.rating) || 0), 0);
-	const average = sum / activityReviews.length;
-	
-	res.json({ 
-		average: Math.round(average * 10) / 10, // Round to 1 decimal
-		count: activityReviews.length 
-	});
 });
 
 // Batch get ratings for multiple activities (optimized)
 reviewsRouter.post('/activities/ratings', async (req, res) => {
-	const store = req.app.get('dataStore');
-	const { activityIds } = req.body;
-	
-	if (!activityIds || !Array.isArray(activityIds)) {
-		return res.status(400).json({ error: 'activityIds array required' });
-	}
-	
-	// Limit to prevent abuse
-	const idsToFetch = activityIds.slice(0, 50);
-	
 	try {
-		const allReviews = await store.reviews.list();
-		const approvedReviews = allReviews.filter(r => 
-			(r.status === 'approved' || !r.status) &&
-			r.rating != null
-		);
+		const store = req.app.get('dataStore');
+		const service = new ReviewsService(store);
+		const { activityIds } = req.body;
 		
-		const ratingsMap = {};
-		
-		idsToFetch.forEach(activityId => {
-			const activityReviews = approvedReviews.filter(r => r.activityId === activityId);
-			
-			if (activityReviews.length === 0) {
-				ratingsMap[activityId] = { average: 0, count: 0 };
-			} else {
-				const sum = activityReviews.reduce((acc, r) => acc + (Number(r.rating) || 0), 0);
-				const average = sum / activityReviews.length;
-				ratingsMap[activityId] = {
-					average: Math.round(average * 10) / 10,
-					count: activityReviews.length
-				};
-			}
-		});
-		
+		if (!activityIds || !Array.isArray(activityIds)) {
+			return res.status(400).json({ 
+				error: 'activityIds array required',
+				code: 'VALIDATION_ERROR'
+			});
+		}
+
+		const ratingsMap = await service.getBatchRatings(activityIds, { user: req.user });
 		res.json(ratingsMap);
 	} catch (error) {
-		console.error('Failed to batch fetch ratings:', error);
-		res.status(500).json({ error: 'Failed to fetch ratings' });
+		console.error('❌ Error batch fetching ratings:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to fetch ratings',
+			message: error.message || 'An unexpected error occurred',
+			code: error.code || 'BATCH_RATINGS_FETCH_ERROR'
+		});
 	}
 });
 
 // Get user's review for an activity (if exists)
 reviewsRouter.get('/activity/:activityId/user', requireAuth(null), async (req, res) => {
-	const store = req.app.get('dataStore');
-	const allReviews = await store.reviews.list();
-	const userReview = allReviews.find(r => 
-		r.activityId === req.params.activityId && 
-		(r.parentId === req.user.id || r.userId === req.user.id)
-	);
-	
-	if (!userReview) {
-		return res.status(404).json({ error: 'Not found' });
+	try {
+		const store = req.app.get('dataStore');
+		const service = new ReviewsService(store);
+		const review = await service.getUserReview(req.params.activityId, req.user.id, { user: req.user });
+		
+		if (!review) {
+			return res.status(404).json({ 
+				error: 'Not found',
+				code: 'REVIEW_NOT_FOUND'
+			});
+		}
+		
+		res.json(review);
+	} catch (error) {
+		console.error('❌ Error fetching user review:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to fetch user review',
+			message: error.message || 'Review not found',
+			code: error.code || 'USER_REVIEW_FETCH_ERROR'
+		});
 	}
-	
-	res.json(userReview);
 });
 
 // Get single review
 reviewsRouter.get('/:id', async (req, res) => {
-	const store = req.app.get('dataStore');
-	const item = await store.reviews.get(req.params.id);
-	if (!item) return res.status(404).json({ error: 'Not found' });
-	res.json(item);
+	try {
+		const store = req.app.get('dataStore');
+		const service = new ReviewsService(store);
+		const review = await service.get(req.params.id, { user: req.user });
+		res.json(review);
+	} catch (error) {
+		console.error('❌ Error fetching review:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to fetch review',
+			message: error.message || 'Review not found',
+			code: error.code || 'REVIEW_FETCH_ERROR'
+		});
+	}
 });
 
 // Create or update review (any authenticated user can rate)
 reviewsRouter.post('/', requireAuth(null), async (req, res) => {
-	const store = req.app.get('dataStore');
-	const { activityId, rating, comment } = req.body;
-	
-	if (!activityId || !rating) {
-		return res.status(400).json({ error: 'activityId and rating are required' });
-	}
-	
-	if (rating < 1 || rating > 5) {
-		return res.status(400).json({ error: 'Rating must be between 1 and 5' });
-	}
-	
-	// Check if user already reviewed this activity
-	const allReviews = await store.reviews.list();
-	const existingReview = allReviews.find(r => 
-		r.activityId === activityId && 
-		(r.parentId === req.user.id || r.userId === req.user.id)
-	);
-	
-	const now = new Date().toISOString();
-	
-	if (existingReview) {
-		// Update existing review
-		const updated = await store.reviews.update(existingReview.id, {
-			rating: Number(rating),
-			comment: comment || existingReview.comment || '',
-			updatedAt: now
+	try {
+		const store = req.app.get('dataStore');
+		const service = new ReviewsService(store);
+		const review = await service.createOrUpdate(req.body, { user: req.user });
+		
+		// If it's a new review, return 201, otherwise 200
+		const isNew = !req.body.existingReviewId;
+		res.status(isNew ? 201 : 200).json(review);
+	} catch (error) {
+		console.error('❌ Error creating/updating review:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to create or update review',
+			message: error.message || 'An unexpected error occurred',
+			code: error.code || 'REVIEW_CREATE_ERROR'
 		});
-		res.json(updated);
-	} else {
-		// Create new review
-		const review = {
-			id: uuidv4(),
-			activityId,
-			parentId: req.user.id,
-			userId: req.user.id,
-			rating: Number(rating),
-			comment: comment || '',
-			status: 'approved', // Auto-approve ratings (can be moderated later if needed)
-			createdAt: now,
-			updatedAt: now
-		};
-		const created = await store.reviews.create(review);
-		res.status(201).json(created);
 	}
 });
 
 // Moderation
 reviewsRouter.put('/:id/moderate', requireAuth('admin'), async (req, res) => {
-	const store = req.app.get('dataStore');
-	const updated = await store.reviews.update(req.params.id, { status: req.body.status, updatedAt: new Date().toISOString() });
-	if (!updated) return res.status(404).json({ error: 'Not found' });
-	res.json(updated);
+	try {
+		const store = req.app.get('dataStore');
+		const service = new ReviewsService(store);
+		const updated = await service.moderate(req.params.id, req.body.status, { user: req.user });
+		res.json(updated);
+	} catch (error) {
+		console.error('❌ Error moderating review:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to moderate review',
+			message: error.message || 'Review not found',
+			code: error.code || 'REVIEW_MODERATE_ERROR'
+		});
+	}
 });
 
 reviewsRouter.delete('/:id', requireAuth('admin'), async (req, res) => {
-	const store = req.app.get('dataStore');
-	const ok = await store.reviews.remove(req.params.id);
-	if (!ok) return res.status(404).json({ error: 'Not found' });
-	res.json({ ok: true });
+	try {
+		const store = req.app.get('dataStore');
+		const service = new ReviewsService(store);
+		const result = await service.delete(req.params.id, { user: req.user });
+		res.json(result);
+	} catch (error) {
+		console.error('❌ Error deleting review:', error.message || error);
+		const statusCode = error.statusCode || 500;
+		res.status(statusCode).json({
+			error: 'Failed to delete review',
+			message: error.message || 'Review not found',
+			code: error.code || 'REVIEW_DELETE_ERROR'
+		});
+	}
 });
 
 

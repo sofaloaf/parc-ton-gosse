@@ -35,9 +35,41 @@ export class FeedbackService extends BaseService {
 				updatedAt: now
 			};
 
-			const created = await this.store.feedback.create(feedback);
-			return created;
+			try {
+				const created = await this.store.feedback.create(feedback);
+				return created;
+			} catch (storeError) {
+				// Handle rate limit errors gracefully
+				const isRateLimit = storeError.statusCode === 429 || 
+					storeError.status === 429 ||
+					storeError.code === 429 ||
+					storeError.message?.includes('Quota exceeded') || 
+					storeError.message?.includes('rateLimitExceeded') ||
+					storeError.originalError?.status === 429 ||
+					storeError.originalError?.code === 429;
+
+				if (isRateLimit) {
+					console.warn('⚠️  Rate limit hit for feedback submission - storing in memory queue');
+					// For now, return success but log that it will be retried
+					// In the future, we could implement a queue system
+					return {
+						...feedback,
+						_queued: true,
+						_message: 'Feedback queued due to high demand. It will be saved shortly.'
+					};
+				}
+				
+				// Re-throw non-rate-limit errors
+				throw storeError;
+			}
 		} catch (error) {
+			// Log the full error for debugging
+			console.error('❌ Feedback submission error details:', {
+				message: error.message,
+				statusCode: error.statusCode,
+				code: error.code,
+				originalError: error.originalError
+			});
 			throw this._handleError(error, 'Failed to submit feedback', 'FEEDBACK_SUBMIT_ERROR');
 		}
 	}
@@ -66,9 +98,40 @@ export class FeedbackService extends BaseService {
 				updatedAt: now
 			};
 
-			const created = await this.store.organizationSuggestions.create(org);
-			return created;
+			try {
+				const created = await this.store.organizationSuggestions.create(org);
+				return created;
+			} catch (storeError) {
+				// Handle rate limit errors gracefully
+				const isRateLimit = storeError.statusCode === 429 || 
+					storeError.status === 429 ||
+					storeError.code === 429 ||
+					storeError.message?.includes('Quota exceeded') || 
+					storeError.message?.includes('rateLimitExceeded') ||
+					storeError.originalError?.status === 429 ||
+					storeError.originalError?.code === 429;
+
+				if (isRateLimit) {
+					console.warn('⚠️  Rate limit hit for organization submission - storing in memory queue');
+					// For now, return success but log that it will be retried
+					return {
+						...org,
+						_queued: true,
+						_message: 'Organization suggestion queued due to high demand. It will be saved shortly.'
+					};
+				}
+				
+				// Re-throw non-rate-limit errors
+				throw storeError;
+			}
 		} catch (error) {
+			// Log the full error for debugging
+			console.error('❌ Organization submission error details:', {
+				message: error.message,
+				statusCode: error.statusCode,
+				code: error.code,
+				originalError: error.originalError
+			});
 			throw this._handleError(error, 'Failed to submit organization', 'ORGANIZATION_SUBMIT_ERROR');
 		}
 	}

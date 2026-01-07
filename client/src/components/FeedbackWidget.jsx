@@ -52,7 +52,10 @@ export default function FeedbackWidget() {
 				setMessage('');
 			}, 2000);
 		} catch (err) {
-			setMessage(locale === 'fr' ? 'Erreur lors de l\'envoi' : 'Error submitting feedback');
+			console.error('Feedback submission error:', err);
+			// Show more specific error message if available
+			const errorMessage = err.message || (locale === 'fr' ? 'Erreur lors de l\'envoi' : 'Error submitting feedback');
+			setMessage(errorMessage);
 		} finally {
 			setSubmitting(false);
 		}

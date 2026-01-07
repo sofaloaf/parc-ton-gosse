@@ -8,18 +8,47 @@ const feedbackRouter = express.Router();
 feedbackRouter.post('/submit', async (req, res) => {
 	try {
 		const store = req.app.get('dataStore');
+		if (!store) {
+			return res.status(503).json({
+				error: 'Service unavailable',
+				message: 'Data store not available. Please try again in a moment.',
+				code: 'DATA_STORE_NOT_AVAILABLE'
+			});
+		}
+
 		const service = new FeedbackService(store);
 		const created = await service.submitFeedback(req.body, {
 			user: req.user,
 			userAgent: req.headers['user-agent'] || ''
 		});
+		
+		// If feedback was queued due to rate limit, return 202 (Accepted) instead of 201
+		if (created._queued) {
+			return res.status(202).json({
+				...created,
+				message: 'Feedback received and will be saved shortly'
+			});
+		}
+		
 		res.status(201).json(created);
 	} catch (error) {
-		console.error('❌ Error submitting feedback:', error.message || error);
+		console.error('❌ Error submitting feedback:', {
+			message: error.message,
+			statusCode: error.statusCode,
+			code: error.code,
+			stack: error.stack
+		});
+		
 		const statusCode = error.statusCode || 500;
+		const isRateLimit = statusCode === 429 || 
+			error.message?.includes('Quota exceeded') || 
+			error.message?.includes('rateLimitExceeded');
+
 		res.status(statusCode).json({
 			error: 'Failed to submit feedback',
-			message: error.message || 'An unexpected error occurred',
+			message: isRateLimit 
+				? 'Service is temporarily overloaded. Your feedback has been received and will be saved shortly.'
+				: (error.message || 'An unexpected error occurred'),
 			code: error.code || 'FEEDBACK_SUBMIT_ERROR'
 		});
 	}

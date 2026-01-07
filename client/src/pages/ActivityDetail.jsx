@@ -61,7 +61,25 @@ export default function ActivityDetail() {
 			.catch((err) => {
 				clearTimeout(timeoutId);
 				console.error('Error loading activity:', err);
-				setError(err.message || 'Failed to load activity');
+				
+				// Handle different error types with user-friendly messages
+				let errorMessage = err.message || 'Failed to load activity';
+				
+				if (err.message?.includes('Service temporarily unavailable') || 
+					err.message?.includes('SERVICE_UNAVAILABLE') ||
+					err.code === 'SERVICE_UNAVAILABLE') {
+					errorMessage = locale === 'fr' 
+						? 'Le service est temporairement indisponible en raison d\'une forte demande. Veuillez réessayer dans un instant.'
+						: 'Service temporarily unavailable due to high demand. Please try again in a moment.';
+				} else if (err.message?.includes('Quota exceeded') || 
+					err.message?.includes('rateLimitExceeded') ||
+					err.statusCode === 429) {
+					errorMessage = locale === 'fr'
+						? 'Le service est temporairement surchargé. Veuillez réessayer dans quelques instants.'
+						: 'Service is temporarily overloaded. Please try again in a few moments.';
+				}
+				
+				setError(errorMessage);
 			})
 			.finally(() => {
 				clearTimeout(timeoutId);

@@ -62,33 +62,67 @@ export class ActivitiesService extends BaseService {
 			} else {
 				console.log('📥 Cache miss - fetching activities from data store...');
 
-				// Add timeout protection
-				const timeoutMs = 30000; // 30 seconds
-				const timeoutPromise = new Promise((_, reject) =>
-					setTimeout(() => reject(new Error('Data store operation timed out')), timeoutMs)
-				);
+				try {
+					// Add timeout protection
+					const timeoutMs = 30000; // 30 seconds
+					const timeoutPromise = new Promise((_, reject) =>
+						setTimeout(() => reject(new Error('Data store operation timed out')), timeoutMs)
+					);
 
-				const dataPromise = this.store.activities.list();
-				all = await Promise.race([dataPromise, timeoutPromise]);
-				console.log(`✅ Retrieved ${all.length} activities from data store`);
+					const dataPromise = this.store.activities.list();
+					all = await Promise.race([dataPromise, timeoutPromise]);
+					console.log(`✅ Retrieved ${all.length} activities from data store`);
 
-				// Debug: Check title format for first few activities
-				if (all.length > 0 && process.env.NODE_ENV === 'development') {
-					const sample = all.slice(0, 3);
-					sample.forEach((a, idx) => {
-						console.log(`📋 Activity ${idx + 1}:`, {
-							id: a.id,
-							title: a.title,
-							titleType: typeof a.title,
-							title_en: a.title_en,
-							title_fr: a.title_fr,
-							name: a.name
+					// Debug: Check title format for first few activities
+					if (all.length > 0 && process.env.NODE_ENV === 'development') {
+						const sample = all.slice(0, 3);
+						sample.forEach((a, idx) => {
+							console.log(`📋 Activity ${idx + 1}:`, {
+								id: a.id,
+								title: a.title,
+								titleType: typeof a.title,
+								title_en: a.title_en,
+								title_fr: a.title_fr,
+								name: a.name
+							});
 						});
-					});
-				}
+					}
 
-				// Cache for 5 minutes (300000ms)
-				this.cache.set(cacheKey, all, 300000);
+					// Cache for 5 minutes (300000ms)
+					this.cache.set(cacheKey, all, 300000);
+				} catch (error) {
+					// Handle rate limit errors gracefully
+					const isRateLimit = error.statusCode === 429 || 
+						error.status === 429 ||
+						error.code === 429 ||
+						error.message?.includes('Quota exceeded') || 
+						error.message?.includes('rateLimitExceeded') ||
+						error.originalError?.status === 429 ||
+						error.originalError?.code === 429;
+
+					if (isRateLimit) {
+						console.warn('⚠️  Rate limit hit for activities list - checking for stale cache');
+						
+						// Try to get any cached activities list as fallback
+						// Check for unfiltered list cache
+						const fallbackCacheKey = cacheKeys.activities.list({});
+						const fallbackCache = this.cache.get(fallbackCacheKey);
+						
+						if (fallbackCache && Array.isArray(fallbackCache) && fallbackCache.length > 0) {
+							console.log(`✅ Using stale cache with ${fallbackCache.length} activities as fallback`);
+							all = fallbackCache;
+							// Update the current cache key with stale data
+							this.cache.set(cacheKey, all, 300000);
+						} else {
+							// No cache available - return empty array with warning
+							console.warn('⚠️  No cache available during rate limit - returning empty array');
+							all = [];
+						}
+					} else {
+						// Re-throw non-rate-limit errors
+						throw error;
+					}
+				}
 			}
 
 			// Filter out pending activities (only show approved ones to regular users)
@@ -174,10 +208,52 @@ export class ActivitiesService extends BaseService {
 			let activity = this.cache.get(cacheKey);
 
 			if (!activity) {
-				activity = await this.store.activities.get(id);
-				if (activity) {
-					// Cache for 10 minutes (600000ms)
-					this.cache.set(cacheKey, activity, 600000);
+				try {
+					activity = await this.store.activities.get(id);
+					if (activity) {
+						// Cache for 10 minutes (600000ms)
+						this.cache.set(cacheKey, activity, 600000);
+					}
+				} catch (storeError) {
+					// Handle rate limit errors gracefully
+					const isRateLimit = storeError.statusCode === 429 || 
+						storeError.status === 429 ||
+						storeError.code === 429 ||
+						storeError.message?.includes('Quota exceeded') || 
+						storeError.message?.includes('rateLimitExceeded') ||
+						storeError.originalError?.status === 429 ||
+						storeError.originalError?.code === 429;
+
+					if (isRateLimit) {
+						console.warn('⚠️  Rate limit hit for activity fetch - checking cache for fallback');
+						
+						// Try to get from list cache as fallback
+						const listCacheKey = cacheKeys.activities.list({});
+						const cachedList = this.cache.get(listCacheKey);
+						
+						if (cachedList && Array.isArray(cachedList)) {
+							const cachedActivity = cachedList.find(a => a.id === id);
+							if (cachedActivity) {
+								console.log('✅ Found activity in list cache as fallback');
+								// Cache this individual item too
+								this.cache.set(cacheKey, cachedActivity, 600000);
+								activity = cachedActivity;
+							}
+						}
+						
+						// If still no activity, throw a user-friendly rate limit error
+						if (!activity) {
+							throw {
+								statusCode: 503,
+								message: 'Service temporarily unavailable due to high demand. Please try again in a moment.',
+								code: 'SERVICE_UNAVAILABLE',
+								retryAfter: 60 // Suggest retry after 60 seconds
+							};
+						}
+					} else {
+						// Re-throw non-rate-limit errors
+						throw storeError;
+					}
 				}
 			} else {
 				console.log('✅ Cache hit for activity:', id);

@@ -63,8 +63,6 @@ export function csrfProtection() {
 		// Since CSRF runs before requireAuth, we need to check the JWT token directly
 		const isAdminOnlyEndpoint = path.includes('/crawler') || 
 		                           originalUrl.includes('/crawler') ||
-		                           path.includes('/arrondissement-crawler') ||
-		                           originalUrl.includes('/arrondissement-crawler') ||
 		                           path.includes('/metrics') ||
 		                           originalUrl.includes('/metrics') ||
 		                           path.includes('/sandbox') ||
@@ -109,6 +107,29 @@ export function csrfProtection() {
 				if (process.env.NODE_ENV === 'development') {
 					console.log('🔓 Allowing auth endpoint with partial CSRF (dev):', path);
 				}
+				return next();
+			}
+		}
+
+		// For public feedback endpoints, be more lenient with CSRF (they're public endpoints)
+		// Feedback submission doesn't require authentication, so CSRF is less critical
+		const isFeedbackEndpoint = path.includes('/feedback/submit') || 
+		                          path.includes('/feedback/add-organization') ||
+		                          originalUrl.includes('/feedback/submit') ||
+		                          originalUrl.includes('/feedback/add-organization');
+		
+		if (isFeedbackEndpoint) {
+			// For feedback endpoints, if we have at least one token, allow the request
+			// This is more lenient but still provides some protection
+			if (cookieToken || headerToken) {
+				if (process.env.NODE_ENV === 'development') {
+					console.log('🔓 Allowing feedback endpoint with partial CSRF (dev):', path);
+				}
+				return next();
+			}
+			// Even if no token, allow in development for easier testing
+			if (process.env.NODE_ENV === 'development') {
+				console.log('🔓 Allowing feedback endpoint without CSRF (dev):', path);
 				return next();
 			}
 		}

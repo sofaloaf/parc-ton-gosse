@@ -566,23 +566,21 @@ export default function AdminPanel() {
 				</div>
 
 				<button
-						onClick={loadMetrics}
-						style={{
-							padding: '10px 20px',
-							background: '#007bff',
-							color: 'white',
-							border: 'none',
-							borderRadius: 4,
-							cursor: 'pointer',
-							marginTop: 20
-						}}
-					>
-						Refresh Metrics
-					</button>
-				</div>
-			)}
+					onClick={loadMetrics}
+					style={{
+						padding: '10px 20px',
+						background: '#007bff',
+						color: 'white',
+						border: 'none',
+						borderRadius: 4,
+						cursor: 'pointer',
+						marginTop: 20
+					}}
+				>
+					Refresh Metrics
+				</button>
 
-			{/* Sandbox Cleanup Section */}
+				{/* Sandbox Cleanup Section */}
 				<ChartCard title="Sandbox Cleanup & Formatting">
 					<div style={{ marginBottom: 20 }}>
 					{sandboxStatus && (

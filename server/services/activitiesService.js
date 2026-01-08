@@ -399,13 +399,20 @@ export class ActivitiesService extends BaseService {
 			}
 			
 			// Age filtering: activity age range overlaps with user's desired age range
-			if (minAge || maxAge) {
-				const actMinAge = a.ageMin ?? 0;
-				const actMaxAge = a.ageMax ?? 999;
-				const userMinAge = minAge ? Number(minAge) : 0;
-				const userMaxAge = maxAge ? Number(maxAge) : 999;
-				// Ranges overlap if: actMinAge <= userMaxAge && actMaxAge >= userMinAge
-				ok = ok && actMinAge <= userMaxAge && actMaxAge >= userMinAge;
+			if (minAge !== undefined && minAge !== null && minAge !== '' || 
+			    maxAge !== undefined && maxAge !== null && maxAge !== '') {
+				const actMinAge = a.ageMin !== undefined && a.ageMin !== null ? Number(a.ageMin) : 0;
+				const actMaxAge = a.ageMax !== undefined && a.ageMax !== null ? Number(a.ageMax) : 999;
+				const userMinAge = minAge !== undefined && minAge !== null && minAge !== '' ? Number(minAge) : 0;
+				const userMaxAge = maxAge !== undefined && maxAge !== null && maxAge !== '' ? Number(maxAge) : 999;
+				
+				// Validate numbers
+				if (!isNaN(actMinAge) && !isNaN(actMaxAge) && !isNaN(userMinAge) && !isNaN(userMaxAge)) {
+					// Ranges overlap if: actMinAge <= userMaxAge && actMaxAge >= userMinAge
+					// Also check if activity's age range contains the user's desired age
+					const rangesOverlap = actMinAge <= userMaxAge && actMaxAge >= userMinAge;
+					ok = ok && rangesOverlap;
+				}
 			}
 			
 			if (neighborhood) {
@@ -429,8 +436,30 @@ export class ActivitiesService extends BaseService {
 			}
 			
 			if (q) {
-				const str = `${a.title?.en || ''} ${a.title?.fr || ''} ${a.description?.en || ''} ${a.description?.fr || ''}`.toLowerCase();
-				ok = ok && str.includes(String(q).toLowerCase());
+				const searchTerm = String(q).toLowerCase().trim();
+				if (!searchTerm) return ok; // Empty search, skip
+				
+				// Build comprehensive search text from multiple fields
+				const searchFields = [
+					a.title?.en || '',
+					a.title?.fr || '',
+					a.description?.en || '',
+					a.description?.fr || '',
+					a.organizationName || '',
+					a.categories?.join(' ') || '',
+					a.activityType || '',
+					a.neighborhood || ''
+				].join(' ').toLowerCase();
+				
+				// Tokenize search term (split by spaces) for better matching
+				const searchTokens = searchTerm.split(/\s+/).filter(t => t.length > 0);
+				
+				// Match if ALL tokens are found (AND logic) - more precise
+				// Or if the full phrase is found (for exact matches)
+				const allTokensMatch = searchTokens.every(token => searchFields.includes(token));
+				const exactMatch = searchFields.includes(searchTerm);
+				
+				ok = ok && (allTokensMatch || exactMatch);
 			}
 			
 			return ok;

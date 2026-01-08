@@ -13,10 +13,9 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { google } from 'googleapis';
-import { v4 as uuidv4 } from 'uuid';
 import fetch from 'node-fetch';
 import { JSDOM } from 'jsdom';
-import { activityToSheetRow, ACTIVITIES_COLUMN_ORDER, getHeaders } from '../utils/sheetsFormatter.js';
+import { ACTIVITIES_COLUMN_ORDER, getHeaders } from '../utils/sheetsFormatter.js';
 
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
@@ -121,52 +120,126 @@ async function getOrganizationWebsite(orgName, existingWebsite = null, categorie
 		return null;
 	}
 	
-	// Build search query using available information
-	let query = `"${orgName}"`;
+	// Build flexible search queries (try multiple strategies, from specific to general)
+	// Strategy 1: Organization name + Paris + activity type/category (most specific)
+	// Strategy 2: Organization name + Paris (medium specificity)
+	// Strategy 3: Organization name only (most general)
+	
+	const searchStrategies = [];
+	
+	// Strategy 1: Most specific
+	let queryParts1 = [orgName]; // No quotes - allow partial matches
 	if (address) {
-		// Extract arrondissement from address (750XX)
 		const arrMatch = address.match(/750(\d{2})/);
 		if (arrMatch) {
-			query += ` ${arrMatch[0]}`;
+			queryParts1.push(arrMatch[0]);
 		}
 	}
 	if (activityType) {
-		query += ` ${activityType}`;
+		queryParts1.push(activityType);
+	} else if (categories && categories.length > 0) {
+		queryParts1.push(categories[0]);
 	}
-	if (categories && categories.length > 0) {
-		query += ` ${categories[0]}`;
-	}
-	query += ` Paris`;
+	queryParts1.push('Paris');
+	searchStrategies.push(queryParts1.join(' '));
 	
-	// Search for website using Google Custom Search
-	try {
-		const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${process.env.GOOGLE_CUSTOM_SEARCH_API_KEY}&cx=${process.env.GOOGLE_CUSTOM_SEARCH_CX}&q=${encodeURIComponent(query)}&num=5`;
-		
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), 5000);
-		
-		const response = await fetch(searchUrl, {
-			headers: { 'User-Agent': 'Mozilla/5.0' },
-			signal: controller.signal
-		});
-		
-		clearTimeout(timeoutId);
-		
-		if (!response.ok) {
-			return null;
+	// Strategy 2: Medium specificity
+	let queryParts2 = [orgName];
+	if (address) {
+		const arrMatch = address.match(/750(\d{2})/);
+		if (arrMatch) {
+			queryParts2.push(arrMatch[0]);
 		}
-		
-		const data = await response.json();
-		const items = data.items || [];
-		
-		if (items.length > 0) {
-			// Return the first result that looks like the organization's website
-			const topResult = items[0].link;
-			return topResult;
-		}
-	} catch (error) {
-		// Silently fail
 	}
+	queryParts2.push('Paris');
+	searchStrategies.push(queryParts2.join(' '));
+	
+	// Strategy 3: Most general (organization name only)
+	searchStrategies.push(orgName);
+	
+	// Try each strategy until we find a good match
+	for (let strategyIndex = 0; strategyIndex < searchStrategies.length; strategyIndex++) {
+		const query = searchStrategies[strategyIndex];
+		try {
+			const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${process.env.GOOGLE_CUSTOM_SEARCH_API_KEY}&cx=${process.env.GOOGLE_CUSTOM_SEARCH_CX}&q=${encodeURIComponent(query)}&num=10`;
+			
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), 8000);
+			
+			const response = await fetch(searchUrl, {
+				headers: { 'User-Agent': 'Mozilla/5.0' },
+				signal: controller.signal
+			});
+			
+			clearTimeout(timeoutId);
+			
+			if (!response.ok) {
+				continue; // Try next strategy
+			}
+			
+			const data = await response.json();
+			const items = data.items || [];
+			
+			if (items.length > 0) {
+				// Validate results - check if title/snippet mentions organization name
+				// This allows finding websites even if domain doesn't match name exactly
+				const orgNameLower = orgName.toLowerCase();
+				const orgNameWords = orgNameLower.split(/\s+/).filter(w => w.length > 2); // Filter out short words
+				
+				for (const item of items) {
+					const title = (item.title || '').toLowerCase();
+					const snippet = (item.snippet || '').toLowerCase();
+					const link = item.link || '';
+					
+					// Skip obvious non-organization pages
+					if (link.includes('facebook.com') || 
+					    link.includes('linkedin.com') || 
+					    link.includes('wikipedia.org') ||
+					    link.includes('youtube.com') ||
+					    link.includes('twitter.com') ||
+					    link.includes('instagram.com')) {
+						continue;
+					}
+					
+					// Check if title or snippet contains significant words from organization name
+					const titleSnippet = `${title} ${snippet}`;
+					const matchingWords = orgNameWords.filter(word => titleSnippet.includes(word));
+					
+					// If at least 2 significant words match, or if it's a short name and 1 word matches
+					if (matchingWords.length >= Math.min(2, orgNameWords.length) || 
+					    (orgNameWords.length <= 2 && matchingWords.length >= 1)) {
+						console.log(`     ✅ Found website via strategy ${strategyIndex + 1}: ${link} (matched: ${matchingWords.join(', ')})`);
+						return link;
+					}
+				}
+				
+				// If no validated result, return first non-social-media result
+				for (const item of items) {
+					const link = item.link || '';
+					if (!link.includes('facebook.com') && 
+					    !link.includes('linkedin.com') && 
+					    !link.includes('wikipedia.org') &&
+					    !link.includes('youtube.com') &&
+					    !link.includes('twitter.com') &&
+					    !link.includes('instagram.com')) {
+						console.log(`     ✅ Found website via strategy ${strategyIndex + 1} (fallback): ${link}`);
+						return link;
+					}
+				}
+				
+				// Last resort: return first result
+				if (items[0] && items[0].link) {
+					console.log(`     ✅ Found website via strategy ${strategyIndex + 1} (last resort): ${items[0].link}`);
+					return items[0].link;
+				}
+			}
+		} catch (error) {
+			// Try next strategy
+			continue;
+		}
+	}
+	
+	console.log(`     ⚠️  No website found after trying ${searchStrategies.length} search strategies`);
 	
 	return null;
 }
@@ -279,6 +352,63 @@ async function extractFromWebsite(websiteUrl, orgName) {
 			}
 		}
 		
+		// Extract registration link
+		let registrationLink = null;
+		const registrationKeywords = [
+			'inscription', 'inscrire', 'registration', 'register', 'adhesion', 'adhérer',
+			's\'inscrire', 'sinscrire', 'inscription en ligne', 'inscription en ligne',
+			'formulaire', 'formulaire d\'inscription', 'formulaire inscription'
+		];
+		
+		// Look for links with registration keywords in text or URL
+		const links = document.querySelectorAll('a[href]');
+		for (const link of links) {
+			const href = link.getAttribute('href') || '';
+			const text = (link.textContent || '').toLowerCase().trim();
+			const hrefLower = href.toLowerCase();
+			
+			// Check if link text or URL contains registration keywords
+			const hasKeyword = registrationKeywords.some(keyword => 
+				text.includes(keyword) || hrefLower.includes(keyword)
+			);
+			
+			if (hasKeyword) {
+				// Make absolute URL if relative
+				if (href.startsWith('/')) {
+					const baseUrl = new URL(websiteUrl);
+					registrationLink = `${baseUrl.origin}${href}`;
+				} else if (href.startsWith('http://') || href.startsWith('https://')) {
+					registrationLink = href;
+				} else {
+					const baseUrl = new URL(websiteUrl);
+					registrationLink = `${baseUrl.origin}/${href}`;
+				}
+				break;
+			}
+		}
+		
+		// If no link found, look for forms with action URLs
+		if (!registrationLink) {
+			const forms = document.querySelectorAll('form[action]');
+			for (const form of forms) {
+				const action = form.getAttribute('action') || '';
+				const formText = (form.textContent || '').toLowerCase();
+				
+				if (registrationKeywords.some(keyword => formText.includes(keyword))) {
+					if (action.startsWith('/')) {
+						const baseUrl = new URL(websiteUrl);
+						registrationLink = `${baseUrl.origin}${action}`;
+					} else if (action.startsWith('http://') || action.startsWith('https://')) {
+						registrationLink = action;
+					} else {
+						const baseUrl = new URL(websiteUrl);
+						registrationLink = `${baseUrl.origin}/${action}`;
+					}
+					break;
+				}
+			}
+		}
+		
 		// Extract categories from content
 		const categories = [];
 		const content = html.toLowerCase();
@@ -300,114 +430,13 @@ async function extractFromWebsite(websiteUrl, orgName) {
 			email: email || null,
 			phone: phone || null,
 			address: address || null,
+			registrationLink: registrationLink || null,
 			categories: [...new Set(categories)] // Remove duplicates
 		};
 	} catch (error) {
 		console.warn(`     ⚠️  Error extracting from ${websiteUrl}:`, error.message);
 		return null;
 	}
-}
-
-/**
- * Convert organization to activity format
- */
-function convertToActivity(org, extractedInfo) {
-	const nom = (org['Nom'] || '').trim();
-	if (!nom) return null;
-	
-	// Prioritize extracted info, then fallback to sheet data
-	const description = extractedInfo?.description || org['Objet'] || `Association ${nom}`;
-	const email = extractedInfo?.email || org['Email'] || '';
-	const phone = extractedInfo?.phone || org['Téléphone'] || '';
-	const address = extractedInfo?.address || org['Adresse'] || '';
-	const website = org['Site Web'] || '';
-	
-	// Format full address - prioritize extracted address
-	let fullAddress = '';
-	if (extractedInfo?.address) {
-		fullAddress = extractedInfo.address;
-	} else {
-		const codePostal = org['Code Postal'] || '';
-		const ville = org['Ville'] || 'Paris';
-		fullAddress = [address, codePostal, ville].filter(Boolean).join(', ');
-	}
-	
-	// Format website
-	let websiteLink = website;
-	if (websiteLink && !websiteLink.startsWith('http://') && !websiteLink.startsWith('https://')) {
-		websiteLink = `https://${websiteLink}`;
-	}
-	
-	// Format email and phone as clickable links
-	const emailLink = email ? `mailto:${email}` : null;
-	const phoneLink = phone ? `tel:${phone}` : null;
-	
-	// Get registration link from extracted info
-	const registrationLink = extractedInfo?.registrationLink || null;
-	
-	// Extract age range from "Public Visé"
-	let ageMin = 0;
-	let ageMax = 99;
-	const publicVise = (org['Public Visé'] || '').toLowerCase();
-	if (publicVise.includes('jeunes enfants') || publicVise.includes('petits')) {
-		ageMin = 0;
-		ageMax = 6;
-	} else if (publicVise.includes('enfants')) {
-		ageMin = 6;
-		ageMax = 12;
-	} else if (publicVise.includes('ados') || publicVise.includes('adolescent')) {
-		ageMin = 12;
-		ageMax = 18;
-	} else if (publicVise.includes('jeunes')) {
-		ageMin = 6;
-		ageMax = 18;
-	}
-	
-	// Use extracted categories or determine from sectors
-	let categories = extractedInfo?.categories || [];
-	if (categories.length === 0) {
-		const secteurs = (org['Secteurs d\'Activités'] || '').toLowerCase();
-		if (secteurs.includes('sport')) categories.push('sports');
-		if (secteurs.includes('culture') || secteurs.includes('art')) categories.push('arts');
-		if (secteurs.includes('musique')) categories.push('music');
-		if (secteurs.includes('danse')) categories.push('dance');
-		if (secteurs.includes('théâtre') || secteurs.includes('theatre')) categories.push('theater');
-		if (secteurs.includes('arts martiaux') || secteurs.includes('art martial')) categories.push('martial-arts');
-		if (categories.length === 0) categories.push('other');
-	}
-	
-	// Determine activity type
-	const secteurs = (org['Secteurs d\'Activités'] || '').split(';')[0] || 'Association';
-	
-	return {
-		id: uuidv4(),
-		title_en: nom,
-		title_fr: nom,
-		description_en: description,
-		description_fr: description,
-		categories: categories,
-		activityType: secteurs.trim(),
-		ageMin: ageMin,
-		ageMax: ageMax,
-		adults: false,
-		price_amount: 0,
-		currency: 'eur',
-		addresses: fullAddress,
-		neighborhood: codePostal ? `750${codePostal.substring(3)}` : 'Paris',
-		websiteLink: websiteLink || null,
-		contactEmail: emailLink || null,
-		contactPhone: phoneLink || null,
-		disponibiliteJours: '',
-		disponibiliteDates: '',
-		registrationLink: registrationLink || null,
-		images: [],
-		providerId: '',
-		additionalNotes: `Imported from Paris Open Data. Public Visé: ${org['Public Visé'] || 'N/A'}. Secteurs: ${org['Secteurs d\'Activités'] || 'N/A'}`,
-		approvalStatus: 'pending', // Set to pending until curated
-		crawledAt: new Date().toISOString(),
-		createdAt: new Date().toISOString(),
-		updatedAt: new Date().toISOString()
-	};
 }
 
 /**
@@ -438,18 +467,13 @@ async function getExistingActivityNames(sheets, sheetId) {
 }
 
 /**
- * Save activities to pending sheet
+ * Save activities to pending sheet, focusing only on columns N, O, P, Q
+ * (contactEmail, contactPhone, websiteLink, registrationLink)
  */
 async function saveToPendingSheet(sheets, sheetId, activities) {
-	console.log(`\n📋 Saving ${activities.length} activities to pending sheet...`);
+	console.log(`\n📋 Saving ${activities.length} activities to pending sheet (columns N, O, P, Q only)...`);
 	
 	const pendingSheetName = 'Pending - 2026-01-06 - paris-open-data-import';
-	
-	// Convert to sheet rows
-	const rowsToSave = activities.map(activity => {
-		const rowObject = activityToSheetRow(activity);
-		return ACTIVITIES_COLUMN_ORDER.map(col => rowObject[col] || '');
-	});
 	
 	// Get or create sheet
 	const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
@@ -464,7 +488,7 @@ async function saveToPendingSheet(sheets, sheetId, activities) {
 					addSheet: {
 						properties: {
 							title: pendingSheetName,
-							gridProperties: { rowCount: Math.max(1000, rowsToSave.length + 100), columnCount: ACTIVITIES_COLUMN_ORDER.length }
+							gridProperties: { rowCount: Math.max(1000, activities.length + 100), columnCount: ACTIVITIES_COLUMN_ORDER.length }
 						}
 					}
 				}]
@@ -482,22 +506,94 @@ async function saveToPendingSheet(sheets, sheetId, activities) {
 		console.log(`  📄 Using existing sheet: "${pendingSheetName}"`);
 	}
 	
-	// Get existing rows to append
+	// Get existing data to match by organization name
 	const existingData = await sheets.spreadsheets.values.get({
 		spreadsheetId: sheetId,
 		range: `${pendingSheetName}!A:Z`
 	}).catch(() => ({ data: { values: [] } }));
 	
 	const existingRows = existingData.data.values || [];
-	const startRow = existingRows.length > 1 ? existingRows.length + 1 : 2;
+	const headers = existingRows[0] || getHeaders(ACTIVITIES_COLUMN_ORDER);
 	
-	// Append rows
-	if (rowsToSave.length > 0) {
+	// Find column indices for N, O, P, Q (contactEmail, contactPhone, websiteLink, registrationLink)
+	const colIndices = {
+		contactEmail: ACTIVITIES_COLUMN_ORDER.indexOf('contactEmail'),
+		contactPhone: ACTIVITIES_COLUMN_ORDER.indexOf('contactPhone'),
+		websiteLink: ACTIVITIES_COLUMN_ORDER.indexOf('websiteLink'),
+		registrationLink: ACTIVITIES_COLUMN_ORDER.indexOf('registrationLink'),
+		title_fr: ACTIVITIES_COLUMN_ORDER.indexOf('title_fr'),
+		title_en: ACTIVITIES_COLUMN_ORDER.indexOf('title_en')
+	};
+	
+	// Create a map of existing rows by organization name (title_fr or title_en)
+	const existingByName = new Map();
+	existingRows.slice(1).forEach((row, index) => {
+		const name = (row[colIndices.title_fr] || row[colIndices.title_en] || '').trim().toLowerCase();
+		if (name) {
+			existingByName.set(name, { rowIndex: index + 2, row }); // +2 because row 1 is header, and 0-indexed
+		}
+	});
+	
+	// Prepare updates: either update existing rows or append new ones
+	const updates = [];
+	const newRows = [];
+	
+	for (const activity of activities) {
+		const activityName = ((activity.title_fr || activity.title_en || '').trim().toLowerCase());
+		const existing = existingByName.get(activityName);
+		
+		// Format values for columns N, O, P, Q
+		const contactEmail = activity.contactEmail || '';
+		const contactPhone = activity.contactPhone || '';
+		const websiteLink = activity.websiteLink || '';
+		const registrationLink = activity.registrationLink || '';
+		
+		if (existing) {
+			// Update existing row - only columns N, O, P, Q
+			const rowNum = existing.rowIndex;
+			updates.push({
+				range: `${pendingSheetName}!N${rowNum}:Q${rowNum}`,
+				values: [[contactEmail, contactPhone, websiteLink, registrationLink]]
+			});
+		} else {
+			// New row - create full row but only populate N, O, P, Q
+			const fullRow = new Array(ACTIVITIES_COLUMN_ORDER.length).fill('');
+			
+			// Set basic info for identification
+			fullRow[colIndices.title_en] = activity.title_en || activity.title_fr || '';
+			fullRow[colIndices.title_fr] = activity.title_fr || activity.title_en || '';
+			
+			// Set columns N, O, P, Q
+			fullRow[colIndices.contactEmail] = contactEmail;
+			fullRow[colIndices.contactPhone] = contactPhone;
+			fullRow[colIndices.websiteLink] = websiteLink;
+			fullRow[colIndices.registrationLink] = registrationLink;
+			
+			newRows.push(fullRow);
+		}
+	}
+	
+	// Batch update existing rows
+	if (updates.length > 0) {
+		console.log(`  🔄 Updating ${updates.length} existing rows...`);
+		await sheets.spreadsheets.values.batchUpdate({
+			spreadsheetId: sheetId,
+			requestBody: {
+				valueInputOption: 'RAW',
+				data: updates
+			}
+		});
+	}
+	
+	// Append new rows
+	if (newRows.length > 0) {
+		console.log(`  ➕ Appending ${newRows.length} new rows...`);
+		const startRow = existingRows.length > 1 ? existingRows.length + 1 : 2;
 		await sheets.spreadsheets.values.append({
 			spreadsheetId: sheetId,
 			range: `${pendingSheetName}!A${startRow}`,
 			valueInputOption: 'RAW',
-			requestBody: { values: rowsToSave }
+			requestBody: { values: newRows }
 		});
 	}
 	
@@ -506,7 +602,9 @@ async function saveToPendingSheet(sheets, sheetId, activities) {
 	const updatedSheet = updatedSpreadsheet.data.sheets.find(s => s.properties.title === pendingSheetName);
 	const sheetGid = updatedSheet?.properties?.sheetId || '';
 	
-	console.log(`\n✅ Saved ${rowsToSave.length} activities to Google Sheets`);
+	console.log(`\n✅ Saved ${activities.length} activities to Google Sheets`);
+	console.log(`   - Updated: ${updates.length} existing rows`);
+	console.log(`   - Added: ${newRows.length} new rows`);
 	console.log(`📋 Sheet name: "${pendingSheetName}"`);
 	console.log(`🔗 Sheet URL: https://docs.google.com/spreadsheets/d/${sheetId}/edit#gid=${sheetGid}`);
 }
@@ -562,9 +660,21 @@ async function main() {
 				const activityType = secteurs[0] || '';
 				const categories = secteurs;
 				const address = org['Adresse'] || '';
+				const codePostal = org['Code Postal'] || '';
+				
+				// Build full address for arrondissement extraction
+				const fullAddress = [address, codePostal].filter(Boolean).join(' ');
 				
 				// Get website (from sheet or search)
-				const website = await getOrganizationWebsite(orgName, org['Site Web'], categories, activityType, address);
+				const hadWebsiteInSheet = !!(org['Site Web'] && org['Site Web'].trim());
+				const website = await getOrganizationWebsite(orgName, org['Site Web'], categories, activityType, fullAddress);
+				
+				// Log if website was found via search
+				if (website && !hadWebsiteInSheet) {
+					if (processed % 10 === 0) {
+						console.log(`  🔍 Found website via search for "${orgName}": ${website.substring(0, 60)}...`);
+					}
+				}
 				
 				// Extract information from website
 				let extractedInfo = null;
@@ -589,12 +699,18 @@ async function main() {
 					}
 				}
 				
-				// Convert to activity
-				const activity = convertToActivity(org, extractedInfo);
-				if (activity) {
-					activities.push(activity);
-					existingNames.add(nameLower);
-				}
+				// Convert to activity (minimal - only what we need for columns N, O, P, Q)
+				const activity = {
+					title_en: orgName,
+					title_fr: orgName,
+					contactEmail: extractedInfo?.email ? `mailto:${extractedInfo.email}` : '',
+					contactPhone: extractedInfo?.phone ? `tel:${extractedInfo.phone}` : '',
+					websiteLink: website || '',
+					registrationLink: extractedInfo?.registrationLink || ''
+				};
+				
+				activities.push(activity);
+				existingNames.add(nameLower);
 				
 				// Add delay to avoid rate limiting
 				if (processed % 10 === 0) {

@@ -243,7 +243,6 @@ export function generateTabName(type, source = 'system', date = null) {
 	
 	const sourceMap = {
 		'crawler': 'Crawler',
-		'arrondissement-crawler': 'Arrondissement Crawler',
 		'arrondissement': 'Arrondissement Crawler',
 		'system': 'System',
 		'manual': 'Manual Import'

@@ -56,12 +56,19 @@ export default function Browse() {
 
 	useEffect(() => {
 		const qs = new URLSearchParams(Object.entries(params).filter(([,v]) => v !== '' && v != null)).toString();
+		const url = `/activities${qs ? `?${qs}` : ''}`;
+		
 		setLoading(true);
 		setError(null);
+		
+		// Request cancellation for deduplication
+		let cancelled = false;
 		
 		// Add retry logic for network failures
 		const fetchWithRetry = async (url, retries = 2) => {
 			for (let i = 0; i < retries; i++) {
+				if (cancelled) throw new Error('Request cancelled');
+				
 				try {
 					return await api(url);
 				} catch (err) {
@@ -79,8 +86,10 @@ export default function Browse() {
 			}
 		};
 		
-		fetchWithRetry(`/activities${qs ? `?${qs}` : ''}`)
+		fetchWithRetry(url)
 			.then((response) => {
+				if (cancelled) return;
+				
 				// Handle both old format (array) and new format (paginated object)
 				let activitiesList = [];
 				if (Array.isArray(response)) {
@@ -100,52 +109,100 @@ export default function Browse() {
 				setActivities(activitiesList);
 				setError(null); // Clear any previous errors
 				setLoading(false);
-				console.log(`✅ Loaded ${activitiesList.length} activities`);
 			})
 			.catch((err) => {
+				if (cancelled) return;
+				
 				// Always log errors for debugging
 				console.error('❌ Error fetching activities:', {
 					message: err.message,
-					url: `/activities${qs ? `?${qs}` : ''}`,
+					url: url,
 					timestamp: new Date().toISOString()
 				});
 				setActivities([]);
 				setError(getErrorMessage(err));
 				setLoading(false);
 			});
+		
+		// Cleanup: cancel request if params change
+		return () => {
+			cancelled = true;
+		};
 	}, [params, locale]);
 
 	// Separate effect to fetch ratings after activities are loaded (non-blocking)
+	// Use batch endpoint for better performance
 	useEffect(() => {
-		if (activities.length === 0) return;
+		if (activities.length === 0) {
+			// Clear ratings when activities are cleared
+			setRatings({});
+			return;
+		}
 		
-		// Fetch ratings in background after activities load - limit to first 20 to avoid too many requests
-		const activitiesToFetch = activities.slice(0, 20);
-		const ratingPromises = activitiesToFetch.map(activity =>
-			api(`/reviews/activity/${activity.id}/rating`)
-				.then(rating => ({ activityId: activity.id, rating }))
-				.catch(() => ({ activityId: activity.id, rating: { average: 0, count: 0 } }))
-		);
+		let cancelled = false;
+		const currentActivityIds = new Set(activities.map(a => a.id));
 		
-		// Use Promise.allSettled to ensure all requests complete even if some fail
-		Promise.allSettled(ratingPromises)
-			.then(results => {
-				const ratingsMap = {};
-				results.forEach((result) => {
-					if (result.status === 'fulfilled' && result.value.rating.count > 0) {
-						ratingsMap[result.value.activityId] = result.value.rating;
-					}
-				});
-				if (Object.keys(ratingsMap).length > 0) {
-					setRatings(prev => ({ ...prev, ...ratingsMap }));
-				}
-			})
-			.catch(err => {
-				// Silent fail - ratings are optional and don't block activities display
-				if (process.env.NODE_ENV === 'development') {
-					console.warn('Failed to fetch some ratings (non-critical):', err);
+		// Clean up ratings: only keep ratings for current activities
+		setRatings(prev => {
+			const cleaned = {};
+			Object.keys(prev).forEach(id => {
+				if (currentActivityIds.has(id)) {
+					cleaned[id] = prev[id];
 				}
 			});
+			
+			// Get activity IDs that don't have ratings yet
+			const activityIdsToFetch = activities
+				.slice(0, 50) // Limit to 50 activities
+				.map(a => a.id)
+				.filter(id => !cleaned[id]); // Only fetch ratings we don't have
+			
+			if (activityIdsToFetch.length > 0 && !cancelled) {
+				// Use batch endpoint for efficient fetching
+				api('/reviews/activities/ratings', {
+					method: 'POST',
+					body: { activityIds: activityIdsToFetch }
+				})
+					.then(ratingsMap => {
+						if (cancelled) return;
+						
+						// Only update ratings for activities we actually have
+						const filteredRatings = {};
+						Object.keys(ratingsMap).forEach(id => {
+							if (currentActivityIds.has(id)) {
+								filteredRatings[id] = ratingsMap[id];
+							}
+						});
+						
+						if (Object.keys(filteredRatings).length > 0) {
+							setRatings(prev => {
+								// Only keep ratings for current activities
+								const cleaned = {};
+								Object.keys(prev).forEach(id => {
+									if (currentActivityIds.has(id)) {
+										cleaned[id] = prev[id];
+									}
+								});
+								return { ...cleaned, ...filteredRatings };
+							});
+						}
+					})
+					.catch(err => {
+						if (cancelled) return;
+						
+						// Silent fail - ratings are optional and don't block activities display
+						if (process.env.NODE_ENV === 'development') {
+							console.warn('Failed to fetch ratings (non-critical):', err);
+						}
+					});
+			}
+			
+			return cleaned;
+		});
+		
+		return () => {
+			cancelled = true;
+		};
 	}, [activities]);
 
 	return (

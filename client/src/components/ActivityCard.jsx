@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, memo } from 'react';
 import { Link } from 'react-router-dom';
 import { translateCategories } from '../utils/categoryTranslations.js';
 import { formatTitle } from '../utils/textFormatting.js';
@@ -6,7 +6,7 @@ import { getCategoryIcons } from '../utils/categoryIcons.js';
 import { getActivityImageUrl } from '../utils/activityImages.js';
 import StarRating from './StarRating.jsx';
 
-export default function ActivityCard({ activity, locale, onView, rating = { average: 0, count: 0 } }) {
+function ActivityCard({ activity, locale, onView, rating = { average: 0, count: 0 } }) {
 	const cardRef = useRef(null);
 	const hasTracked = useRef(false);
 	const observerRef = useRef(null);
@@ -444,4 +444,13 @@ export default function ActivityCard({ activity, locale, onView, rating = { aver
 	);
 }
 
-
+// Memoize component to prevent unnecessary re-renders
+export default memo(ActivityCard, (prevProps, nextProps) => {
+	// Only re-render if these props change
+	return (
+		prevProps.activity.id === nextProps.activity.id &&
+		prevProps.locale === nextProps.locale &&
+		prevProps.rating.average === nextProps.rating.average &&
+		prevProps.rating.count === nextProps.rating.count
+	);
+});

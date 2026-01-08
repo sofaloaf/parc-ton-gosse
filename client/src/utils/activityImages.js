@@ -11,7 +11,7 @@
  * Images are optimized for 400x300px cards
  * Using arrays for multiple variations per category
  */
-const CATEGORY_IMAGE_SETS = {
+export const CATEGORY_IMAGE_SETS = {
 	// Sports category - Children playing sports (multiple variations)
 	'sport': [
 		'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b',

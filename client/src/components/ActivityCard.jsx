@@ -4,6 +4,7 @@ import { translateCategories } from '../utils/categoryTranslations.js';
 import { formatTitle } from '../utils/textFormatting.js';
 import { getCategoryIcons } from '../utils/categoryIcons.js';
 import { getActivityImageUrl } from '../utils/activityImages.js';
+import { getEnhancedActivityImageUrl } from '../utils/enhancedImageMatching.js';
 import StarRating from './StarRating.jsx';
 
 function ActivityCard({ activity, locale, onView, rating = { average: 0, count: 0 } }) {
@@ -152,14 +153,15 @@ function ActivityCard({ activity, locale, onView, rating = { average: 0, count: 
 	const price = activity.price?.amount || activity.price;
 	const images = activity.images || [];
 	
-	// Generate professional activity image based on description
+	// Generate professional activity image using enhanced matching
 	const [imageUrl, setImageUrl] = useState(() => {
-		// Use existing image if available, otherwise generate one
+		// Use existing image if available, otherwise use enhanced matching
 		if (images && images.length > 0 && typeof images[0] === 'string' && 
 		    (images[0].startsWith('http://') || images[0].startsWith('https://'))) {
 			return images[0];
 		}
-		return getActivityImageUrl(activity, locale, 400, 300);
+		// Use enhanced image matching (Priority: name → type → category → keywords → default)
+		return getEnhancedActivityImageUrl(activity, locale, 400, 300);
 	});
 	const [imageError, setImageError] = useState(false);
 	const [imageLoading, setImageLoading] = useState(true);

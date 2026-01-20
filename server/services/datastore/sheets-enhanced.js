@@ -394,6 +394,12 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 			
 			headerRow.forEach((colName, i) => {
 				const fieldName = columnMap[i];
+				
+				// Skip if fieldName is undefined or null
+				if (!fieldName) {
+					return;
+				}
+				
 				// Get value - preserve the actual value from the sheet (even if it's an empty string)
 				// Google Sheets API returns undefined for empty cells, so we need to handle that
 				let val = row[i];
@@ -424,14 +430,14 @@ async function readSheet(sheets, sheetId, sheetName, sheetType = 'activities') {
 				else if (fieldName === 'waitlist' || fieldName === 'status') {
 					obj[fieldName] = val === 'true' || val === '1' || val === 'yes' || val === 'oui';
 				}
-				// Handle numeric fields
+				// Handle numeric fields (fieldName is guaranteed to be a string here)
 				else if (fieldName.includes('age') || fieldName.includes('price') || fieldName === 'rating') {
 					obj[fieldName] = val ? Number(val) : val;
 				}
 				// Handle regular strings (including empty strings)
 				// Always set the value if we have a field name, even if it's empty
 				// This ensures title_en and title_fr are set even if empty (so we know they exist)
-				if (fieldName && fieldName !== 'id') {
+				if (fieldName !== 'id') {
 					obj[fieldName] = val;
 				}
 			});

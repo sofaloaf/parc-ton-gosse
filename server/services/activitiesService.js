@@ -41,7 +41,9 @@ export class ActivitiesService extends BaseService {
 			} = pagination;
 
 			// Parse pagination params
-			const limitNum = limitParam ? Math.min(parseInt(limitParam, 10) || 200, 500) : 200;
+			// If no limit specified, return all activities (no pagination)
+			// If limit specified, cap at 2000 to prevent excessive memory usage
+			const limitNum = limitParam ? Math.min(parseInt(limitParam, 10) || 2000, 2000) : null;
 			const offsetNum = offsetParam ? Math.max(parseInt(offsetParam, 10) || 0, 0) : 0;
 
 			// Build filter object for cache key
@@ -91,6 +93,16 @@ export class ActivitiesService extends BaseService {
 					// Cache for 5 minutes (300000ms)
 					this.cache.set(cacheKey, all, 300000);
 				} catch (error) {
+					// Log detailed error information
+					console.error('❌ Error fetching activities from data store:', {
+						message: error.message,
+						code: error.code,
+						statusCode: error.statusCode,
+						status: error.status,
+						stack: error.stack?.substring(0, 500),
+						dataStoreType: this.store?.constructor?.name || 'unknown'
+					});
+					
 					// Handle rate limit errors gracefully
 					const isRateLimit = error.statusCode === 429 || 
 						error.status === 429 ||
@@ -134,10 +146,18 @@ export class ActivitiesService extends BaseService {
 			// Apply filters
 			const filtered = this._applyFilters(approvedActivities, filters);
 
-			// Apply pagination
+			// Apply pagination (only if limit is specified)
 			const total = filtered.length;
-			const paginated = filtered.slice(offsetNum, offsetNum + limitNum);
-			const hasMore = offsetNum + limitNum < total;
+			let paginated;
+			let hasMore = false;
+			if (limitNum !== null) {
+				paginated = filtered.slice(offsetNum, offsetNum + limitNum);
+				hasMore = offsetNum + limitNum < total;
+			} else {
+				// No limit - return all filtered activities
+				paginated = filtered.slice(offsetNum);
+				hasMore = false;
+			}
 
 			const duration = Date.now() - startTime;
 			console.log(`✅ Returning ${paginated.length} activities (${total} total, ${duration}ms)`);
@@ -155,8 +175,8 @@ export class ActivitiesService extends BaseService {
 					offset: offsetNum,
 					total,
 					hasMore,
-					page: Math.floor(offsetNum / limitNum) + 1,
-					totalPages: Math.ceil(total / limitNum)
+					page: limitNum ? Math.floor(offsetNum / limitNum) + 1 : 1,
+					totalPages: limitNum ? Math.ceil(total / limitNum) : 1
 				},
 				_meta: {
 					cached: !!cached,
